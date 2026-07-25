@@ -21,6 +21,7 @@ from importlib.metadata import version as installed_version, PackageNotFoundErro
 from osv_client import query_vulnerabilities
 from license_checker import classify_license
 from sbom_generator import build_final_sbom
+from ai_explainer import explain_results
 
 try:
     from prettytable import PrettyTable
@@ -135,6 +136,9 @@ def run_scan(requirements_path: str):
     print_report(report)
     save_report(report, "scan_report.json")
     build_final_sbom(requirements_path, report, "sbom.json")
+
+    print("\n===== AI Explanation (local model via Ollama) =====\n")
+    print(explain_results(report))
 
 
 def print_report(report: list[dict]):
