@@ -2,7 +2,7 @@
   {
     "package": "requests",
     "version": "2.28.0",
-    "license_raw": "Apache 2.0",
+    "license_raw": "Apache-2.0",
     "license_status": "ALLOWED",
     "vulnerabilities": [
       {
@@ -52,17 +52,17 @@
   {
     "package": "numpy",
     "version": "1.24.0",
-    "license_raw": "BSD-3-Clause",
-    "license_status": "ALLOWED",
+    "license_raw": "NOT_INSTALLED",
+    "license_status": "UNKNOWN",
     "vulnerabilities": [],
-    "trust_score": 100,
+    "trust_score": 85,
     "verdict": "ALLOW"
   },
   {
     "package": "pyyaml",
     "version": "5.3.1",
-    "license_raw": "MIT",
-    "license_status": "ALLOWED",
+    "license_raw": "NOT_INSTALLED",
+    "license_status": "UNKNOWN",
     "vulnerabilities": [
       {
         "id": "GHSA-8q59-q68h-6hv4",
@@ -75,7 +75,7 @@
         "severity": "UNKNOWN"
       }
     ],
-    "trust_score": 80,
-    "verdict": "ALLOW"
+    "trust_score": 65,
+    "verdict": "CONDITIONAL"
   }
 ]

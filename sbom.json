@@ -17,11 +17,11 @@
       "properties": [
         {
           "name": "aibom-guard:license_status",
-          "value": "ALLOWED"
+          "value": "UNKNOWN"
         },
         {
           "name": "aibom-guard:trust_score",
-          "value": "100"
+          "value": "85"
         },
         {
           "name": "aibom-guard:verdict",
@@ -46,15 +46,15 @@
       "properties": [
         {
           "name": "aibom-guard:license_status",
-          "value": "ALLOWED"
+          "value": "UNKNOWN"
         },
         {
           "name": "aibom-guard:trust_score",
-          "value": "80"
+          "value": "65"
         },
         {
           "name": "aibom-guard:verdict",
-          "value": "ALLOW"
+          "value": "CONDITIONAL"
         }
       ]
     },
@@ -100,7 +100,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-07-25T07:17:32.100274+00:00",
+    "timestamp": "2026-07-25T12:01:51.367615+00:00",
     "tools": {
       "components": [
         {
@@ -150,7 +150,7 @@
           ],
           "name": "cyclonedx-py",
           "type": "application",
-          "version": "7.3.0"
+          "version": "7.3.1"
         },
         {
           "description": "Python library for CycloneDX",
@@ -204,7 +204,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:b154db0a-a15c-476a-b9d6-edd2cfa3b5b4",
+  "serialNumber": "urn:uuid:1a85f93a-b9f5-42f6-a5cb-7ab2c2147288",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
