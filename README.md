@@ -40,12 +40,15 @@ report (CycloneDX SBOM) that documents exactly what was found.
 
 ```
 aibom-guard/
-├─ requirements.txt      # example input: packages to scan
-├─ scanner.py             # main CLI - runs the whole pipeline
-├─ osv_client.py          # queries OSV API for known vulnerabilities
-├─ license_checker.py     # classifies license as ALLOWED / REVIEW / BLOCKED
-├─ sbom_generator.py      # builds the final CycloneDX SBOM file
-├─ DEPENDENCIES.md        # list of open source libraries this project uses
+├─ requirements.txt           # example input: packages to scan
+├─ scanner.py                 # main CLI - runs the whole pipeline
+├─ osv_client.py              # queries OSV API for known vulnerabilities
+├─ license_checker.py         # classifies license as ALLOWED / REVIEW / BLOCKED
+├─ sbom_generator.py          # builds the final CycloneDX SBOM file
+├─ repository_checker.py      # GitHub / HF / PyPI supply-chain trust checks
+├─ mcp_server.py              # MCP server entry point (Claude Desktop / Cursor)
+├─ DEPENDENCIES.md            # list of open source libraries this project uses
+├─ tests/                     # unit tests (mocked network)
 └─ scan_report.json / sbom.json   # example output from a real run
 ```
 
@@ -74,6 +77,99 @@ Example output:
 +----------+---------+----------------+-------+-------------+---------+
 ```
 
+## MCP server (Claude Desktop / Cursor)
+
+`mcp_server.py` exposes AIBOM-Guard tools over stdio MCP.
+
+### Tools
+
+| Tool | Role |
+|---|---|
+| `check_package` | CVE/advisory lookup (OSV) + installed-package license status |
+| `check_license` | Classify a license string (ALLOWED / REVIEW / BLOCKED / UNKNOWN) |
+| `check_repo_trust` | Supply-chain trust: GitHub activity, OpenSSF Scorecard, revision pinning, SHA-256, signatures/provenance, HF dataset docs |
+
+Use `check_package` when you only need vulnerabilities for a package version.
+Use `check_repo_trust` for repository / provenance / integrity questions.
+
+### Install the MCP SDK (once)
+
+```bash
+pip install mcp
+```
+
+Optional tokens (never commit real values):
+
+```text
+GITHUB_TOKEN
+GITHUB_API_VERSION
+HF_TOKEN
+HUGGINGFACE_TOKEN
+```
+
+### Claude Desktop config example
+
+Keep your existing `command` / `args` paths. Only add env vars if needed:
+
+```json
+{
+  "mcpServers": {
+    "aibom-guard": {
+      "command": "python",
+      "args": ["C:/path/to/aibom_guard/mcp_server.py"],
+      "env": {
+        "GITHUB_TOKEN": "<your-token>",
+        "HF_TOKEN": "<your-token>"
+      }
+    }
+  }
+}
+```
+
+Start the server manually to confirm imports:
+
+```bash
+python mcp_server.py
+```
+
+stdio MCP servers wait for client input — that idle state is normal.
+
+### Manual Claude Desktop prompts
+
+```text
+Flask GitHub 저장소의 신뢰도를 분석해줘.
+OpenSSF 점수, 최근 커밋, revision 고정 여부,
+서명과 provenance 상태를 함께 알려줘.
+```
+
+```text
+requests==2.31.0의 공급망 신뢰도를 검사해줘.
+CVE뿐 아니라 PyPI 공개 해시, GitHub 저장소,
+OpenSSF 점수, 버전 고정 여부도 확인해줘.
+```
+
+```text
+https://huggingface.co/datasets/namespace/name
+데이터셋의 라이선스, 출처, 수집 방법 기재 여부를 검사해줘.
+```
+
+```text
+target_type을 github로 지정해서 pallets/flask를 검사해줘.
+```
+
+`owner/repo` shorthand can mean either GitHub or Hugging Face.
+Say the platform explicitly (or set `target_type`) so the tool is not ambiguous.
+
+`local_file` paths are resolved on the machine running the MCP server,
+not on a remote chat client's filesystem.
+
+### Repository trust CLI (without MCP)
+
+```bash
+python repository_checker.py https://github.com/pallets/flask --json
+python repository_checker.py requests==2.31.0
+```
+
 ## Current status / limitations
 
 This is an early-stage personal prototype. Known limitations:
@@ -81,16 +177,15 @@ This is an early-stage personal prototype. Known limitations:
 - Only supports `package==version` pinned entries in `requirements.txt`
 - License check reads the license of the *currently installed* version,
   which may not exactly match the version pinned in `requirements.txt`
-- Trust Score formula is a simple placeholder, not the full weighted
-  scoring model
-- No AI-generated explanations yet (planned: a locally-run open-weight
-  model via Ollama, so the tool doesn't just call a closed AI API)
-- Not yet exposed as an MCP server (planned next step)
+- Package Trust Score in `scanner.py` / `check_package` is still a simple
+  CVE+license placeholder; `check_repo_trust` uses a separate weighted model
+- AI explanations via Ollama are optional and require a local model
+- Cosign verification in `repository_checker.py` needs a local `cosign` binary
 
 ## Roadmap
 
+- [x] Expose scanning as an MCP server (`mcp_server.py`)
+- [x] Add repository / HF / PyPI supply-chain trust checks
 - [ ] Add a locally-run AI model (Ollama) to explain results in plain language
-- [ ] Expose this as an MCP server so AI agents (e.g. Claude Desktop, Cursor)
-      can call it directly
-- [ ] Support AI model scanning (AIBOM / ML-BOM), not just regular packages
-- [ ] Refine the Trust Score formula
+- [ ] Support richer AI model scanning (AIBOM / ML-BOM)
+- [ ] Align package CVE Trust Score with the repository trust model
