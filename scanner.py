@@ -6,8 +6,9 @@ AIBOM-Guard personal MVP - main CLI.
 Takes a requirements.txt file and:
 1) Checks the license of each package (license_checker.py)
 2) Queries the OSV API for known vulnerabilities (osv_client.py)
-3) Prints a summary table
-4) Saves a JSON report file
+3) Checks repository / supply-chain trust (repository_checker.py)
+4) Prints a summary table
+5) Saves a JSON report file + enriched CycloneDX SBOM
 
 Usage:
     python3 scanner.py requirements.txt
@@ -20,6 +21,7 @@ from importlib.metadata import version as installed_version, PackageNotFoundErro
 
 from osv_client import query_vulnerabilities
 from license_checker import classify_license
+from repository_checker import check_repository
 from sbom_generator import build_final_sbom
 from ai_explainer import explain_results
 
@@ -74,12 +76,16 @@ def get_license_for_package(package_name: str) -> str:
         return "NOT_INSTALLED"
 
 
-def score_package(license_status: str, vulns: list) -> tuple[int, str]:
+def score_package(
+    license_status: str,
+    vulns: list,
+    supply_chain: dict | None = None,
+) -> tuple[int, str]:
     """
     Very simple risk score (0-100).
     For the real competition submission, refine this using the 7-category
     weighted scoring described in the design doc. For now this is just a
-    rough signal based on license + vulnerability count.
+    rough signal based on license + vulnerability count + supply-chain hints.
     """
     score = 100
 
@@ -95,6 +101,26 @@ def score_package(license_status: str, vulns: list) -> tuple[int, str]:
 
     score -= critical_count * 30
     score -= other_count * 10
+
+    if supply_chain:
+        openssf = supply_chain.get("openssf_score")
+        if openssf is None:
+            score -= 5
+        elif openssf < 5:
+            score -= 15
+        elif openssf < 7:
+            score -= 5
+
+        stars = supply_chain.get("github_star")
+        if stars is None:
+            score -= 5
+        elif stars < 50:
+            score -= 10
+
+        if supply_chain.get("signature") is False:
+            score -= 5
+        if supply_chain.get("provenance") is False:
+            score -= 5
 
     score = max(score, 0)
 
@@ -121,7 +147,11 @@ def run_scan(requirements_path: str):
         lic_raw = get_license_for_package(name)
         lic_status = classify_license(lic_raw)
         vulns = query_vulnerabilities(name, version)
-        score, verdict = score_package(lic_status, vulns)
+
+        print(f"  [Supply-chain] looking up repository trust for {name} ...")
+        supply_chain = check_repository(package_name=name, version=version)
+
+        score, verdict = score_package(lic_status, vulns, supply_chain)
 
         report.append({
             "package": name,
@@ -129,6 +159,7 @@ def run_scan(requirements_path: str):
             "license_raw": lic_raw,
             "license_status": lic_status,
             "vulnerabilities": vulns,
+            "supply_chain": supply_chain,
             "trust_score": score,
             "verdict": verdict,
         })
@@ -146,21 +177,36 @@ def print_report(report: list[dict]):
 
     if HAS_PRETTYTABLE:
         table = PrettyTable()
-        table.field_names = ["Package", "Version", "License Status", "Vulns", "Trust Score", "Verdict"]
+        table.field_names = [
+            "Package", "Version", "License", "Vulns",
+            "OpenSSF", "Stars", "Sig", "Trust", "Verdict",
+        ]
         for item in report:
+            sc = item.get("supply_chain") or {}
+            openssf = sc.get("openssf_score")
+            stars = sc.get("github_star")
+            sig = sc.get("signature")
             table.add_row([
                 item["package"],
                 item["version"],
                 item["license_status"],
                 len(item["vulnerabilities"]),
+                openssf if openssf is not None else "-",
+                stars if stars is not None else "-",
+                "Y" if sig else "N",
                 item["trust_score"],
                 item["verdict"],
             ])
         print(table)
     else:
         for item in report:
-            print(f"{item['package']}=={item['version']} | license:{item['license_status']} | "
-                  f"vulns:{len(item['vulnerabilities'])} | score:{item['trust_score']} | {item['verdict']}")
+            sc = item.get("supply_chain") or {}
+            print(
+                f"{item['package']}=={item['version']} | license:{item['license_status']} | "
+                f"vulns:{len(item['vulnerabilities'])} | "
+                f"openssf:{sc.get('openssf_score')} | stars:{sc.get('github_star')} | "
+                f"score:{item['trust_score']} | {item['verdict']}"
+            )
 
     # Show details for anything that isn't a clean ALLOW
     risky = [i for i in report if i["verdict"] != "ALLOW"]
@@ -172,6 +218,12 @@ def print_report(report: list[dict]):
                 print(f"    License: {item['license_raw']} -> {item['license_status']}")
             for v in item["vulnerabilities"]:
                 print(f"    Vuln {v['id']} (severity {v['severity']}): {v['summary']}")
+            sc = item.get("supply_chain") or {}
+            if sc.get("repo"):
+                print(f"    Repo: {sc['repo']} (OpenSSF={sc.get('openssf_score')}, "
+                      f"stars={sc.get('github_star')}, last_commit={sc.get('last_commit')})")
+            for issue in sc.get("issues") or []:
+                print(f"    Supply-chain [{issue.get('type')}]: {issue.get('detail')}")
 
 
 def save_report(report: list[dict], out_path: str):

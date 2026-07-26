@@ -45,6 +45,12 @@ def build_prompt(scan_report: list[dict]) -> str:
             lines.append(f"Issue: {item['vulnerabilities'][0]['summary']}")
         elif item["license_status"] != "ALLOWED":
             lines.append(f"Issue: license status is {item['license_status']}")
+        sc = item.get("supply_chain") or {}
+        sc_issues = sc.get("issues") or []
+        if sc_issues:
+            lines.append(f"Supply-chain: {sc_issues[0].get('detail')}")
+        elif sc.get("openssf_score") is not None:
+            lines.append(f"OpenSSF score: {sc.get('openssf_score')}")
         lines.append("")
 
     return "\n".join(lines)

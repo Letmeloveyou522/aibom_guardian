@@ -44,7 +44,10 @@ aibom-guard/
 ├─ scanner.py             # main CLI - runs the whole pipeline
 ├─ osv_client.py          # queries OSV API for known vulnerabilities
 ├─ license_checker.py     # classifies license as ALLOWED / REVIEW / BLOCKED
+├─ repository_checker.py  # GitHub / OpenSSF / provenance / HF dataset trust
 ├─ sbom_generator.py      # builds the final CycloneDX SBOM file
+├─ ai_explainer.py        # local Ollama explanation of risky findings
+├─ mcp_server.py          # MCP tools for AI agents
 ├─ DEPENDENCIES.md        # list of open source libraries this project uses
 └─ scan_report.json / sbom.json   # example output from a real run
 ```

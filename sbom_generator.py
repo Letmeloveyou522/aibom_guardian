@@ -26,7 +26,11 @@ def generate_base_sbom(requirements_path: str, tmp_output_path: str = "_base_sbo
         "-o", tmp_output_path,
         "--sv", "1.6",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        print("[WARNING] cyclonedx-py CLI not found on PATH; writing a minimal SBOM stub.")
+        return {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": []}
 
     if result.returncode != 0:
         print("[WARNING] cyclonedx-py failed to run:")
@@ -70,6 +74,38 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
                     "name": "aibom-guard:verdict",
                     "value": item["verdict"],
                 })
+
+                sc = item.get("supply_chain") or {}
+                if sc.get("repo"):
+                    component["properties"].append({
+                        "name": "aibom-guard:repo",
+                        "value": str(sc["repo"]),
+                    })
+                if sc.get("openssf_score") is not None:
+                    component["properties"].append({
+                        "name": "aibom-guard:openssf_score",
+                        "value": str(sc["openssf_score"]),
+                    })
+                if sc.get("github_star") is not None:
+                    component["properties"].append({
+                        "name": "aibom-guard:github_star",
+                        "value": str(sc["github_star"]),
+                    })
+                if sc.get("signature") is not None:
+                    component["properties"].append({
+                        "name": "aibom-guard:signature",
+                        "value": str(sc["signature"]).lower(),
+                    })
+                if sc.get("provenance") is not None:
+                    component["properties"].append({
+                        "name": "aibom-guard:provenance",
+                        "value": str(sc["provenance"]).lower(),
+                    })
+                if sc.get("last_commit"):
+                    component["properties"].append({
+                        "name": "aibom-guard:last_commit",
+                        "value": str(sc["last_commit"]),
+                    })
 
     vulnerabilities = []
     for item in scan_report:
