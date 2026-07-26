@@ -26,7 +26,11 @@ def generate_base_sbom(requirements_path: str, tmp_output_path: str = "_base_sbo
         "-o", tmp_output_path,
         "--sv", "1.6",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        print("[WARNING] cyclonedx-py not found. Install with: pip install cyclonedx-bom")
+        return {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": []}
 
     if result.returncode != 0:
         print("[WARNING] cyclonedx-py failed to run:")

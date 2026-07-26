@@ -22,6 +22,7 @@ from osv_client import query_vulnerabilities
 from license_checker import classify_license
 from sbom_generator import build_final_sbom
 from ai_explainer import explain_results
+from score_engine import calculate_trust_score
 
 try:
     from prettytable import PrettyTable
@@ -74,38 +75,31 @@ def get_license_for_package(package_name: str) -> str:
         return "NOT_INSTALLED"
 
 
-def score_package(license_status: str, vulns: list) -> tuple[int, str]:
-    """
-    Very simple risk score (0-100).
-    For the real competition submission, refine this using the 7-category
-    weighted scoring described in the design doc. For now this is just a
-    rough signal based on license + vulnerability count.
-    """
-    score = 100
+def _vulns_to_issues(vulns: list) -> list:
+    """OSV 취약점 목록을 score_engine이 기대하는 issues 형식으로 변환."""
+    issues = []
+    for v in vulns:
+        sev = str(v.get("severity", "unknown")).lower()
+        if sev not in ("critical", "high", "medium", "low"):
+            sev = "unknown"
+        issues.append({
+            "type": "cve",
+            "id": v.get("id"),
+            "severity": sev,
+            "summary": v.get("summary"),
+        })
+    return issues
 
-    if license_status == "BLOCKED":
-        score -= 60
-    elif license_status == "REVIEW":
-        score -= 20
-    elif license_status == "UNKNOWN":
-        score -= 15
 
-    critical_count = sum(1 for v in vulns if str(v.get("severity", "")).upper() in ("CRITICAL", "HIGH"))
-    other_count = len(vulns) - critical_count
-
-    score -= critical_count * 30
-    score -= other_count * 10
-
-    score = max(score, 0)
-
-    if score >= 80:
-        verdict = "ALLOW"
-    elif score >= 50:
-        verdict = "CONDITIONAL"
-    else:
-        verdict = "BLOCK"
-
-    return score, verdict
+def _build_check_result(license_status: str, vulns: list) -> dict:
+    """score_engine.calculate_trust_score() 입력 스키마에 맞게 조립."""
+    return {
+        "type": "library",
+        "license_status": license_status,
+        "issues": _vulns_to_issues(vulns),
+        "model_info": None,
+        "repository_info": None,
+    }
 
 
 def run_scan(requirements_path: str):
@@ -121,7 +115,7 @@ def run_scan(requirements_path: str):
         lic_raw = get_license_for_package(name)
         lic_status = classify_license(lic_raw)
         vulns = query_vulnerabilities(name, version)
-        score, verdict = score_package(lic_status, vulns)
+        score_result = calculate_trust_score(_build_check_result(lic_status, vulns))
 
         report.append({
             "package": name,
@@ -129,8 +123,11 @@ def run_scan(requirements_path: str):
             "license_raw": lic_raw,
             "license_status": lic_status,
             "vulnerabilities": vulns,
-            "trust_score": score,
-            "verdict": verdict,
+            "trust_score": score_result["trust_score"],
+            "verdict": score_result["verdict"],
+            "hard_block": score_result["hard_block"],
+            "hard_block_reasons": score_result["hard_block_reasons"],
+            "score_breakdown": score_result["breakdown"],
         })
 
     print_report(report)

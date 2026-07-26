@@ -17,7 +17,35 @@ from mcp.server.fastmcp import FastMCP
 
 from osv_client import query_vulnerabilities
 from license_checker import classify_license
+from score_engine import calculate_trust_score
 from importlib.metadata import metadata, PackageNotFoundError
+
+
+def _vulns_to_issues(vulns: list) -> list:
+    """OSV 취약점 목록을 score_engine이 기대하는 issues 형식으로 변환."""
+    issues = []
+    for v in vulns:
+        sev = str(v.get("severity", "unknown")).lower()
+        if sev not in ("critical", "high", "medium", "low"):
+            sev = "unknown"
+        issues.append({
+            "type": "cve",
+            "id": v.get("id"),
+            "severity": sev,
+            "summary": v.get("summary"),
+        })
+    return issues
+
+
+def _build_check_result(license_status: str, vulns: list) -> dict:
+    """score_engine.calculate_trust_score() 입력 스키마에 맞게 조립."""
+    return {
+        "type": "library",
+        "license_status": license_status,
+        "issues": _vulns_to_issues(vulns),
+        "model_info": None,
+        "repository_info": None,
+    }
 
 # "aibom-guard" is the name the MCP client will show for this server
 mcp = FastMCP("aibom-guard")
@@ -30,7 +58,7 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
 
     Looks up known vulnerabilities via the OSV database and checks the
     license of the installed package against an allowed-license list.
-    Returns a Trust Score (0-100) and a verdict: ALLOW, CONDITIONAL, or BLOCK.
+    Returns a Trust Score (0-100) and a verdict: ALLOW, WARNING, or BLOCK.
 
     Args:
         name: Package name, e.g. "requests"
@@ -46,27 +74,7 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
         lic_raw = "NOT_INSTALLED"
 
     lic_status = classify_license(lic_raw)
-
-    score = 100
-    if lic_status == "BLOCKED":
-        score -= 60
-    elif lic_status == "REVIEW":
-        score -= 20
-    elif lic_status == "UNKNOWN":
-        score -= 15
-
-    critical_count = sum(1 for v in vulns if str(v.get("severity", "")).upper() in ("CRITICAL", "HIGH"))
-    other_count = len(vulns) - critical_count
-    score -= critical_count * 30
-    score -= other_count * 10
-    score = max(score, 0)
-
-    if score >= 80:
-        verdict = "ALLOW"
-    elif score >= 50:
-        verdict = "CONDITIONAL"
-    else:
-        verdict = "BLOCK"
+    score_result = calculate_trust_score(_build_check_result(lic_status, vulns))
 
     return {
         "package": name,
@@ -74,8 +82,11 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
         "license_status": lic_status,
         "license_raw": lic_raw,
         "vulnerabilities": vulns,
-        "trust_score": score,
-        "verdict": verdict,
+        "trust_score": score_result["trust_score"],
+        "verdict": score_result["verdict"],
+        "hard_block": score_result["hard_block"],
+        "hard_block_reasons": score_result["hard_block_reasons"],
+        "score_breakdown": score_result["breakdown"],
     }
 
 
