@@ -86,6 +86,17 @@ PLACEHOLDER_RE = re.compile(
 # Sharded checkpoints: "model-00002-of-00007.safetensors"
 SHARD_RE = re.compile(r"-\d{5}-of-\d{5}$")
 
+# Filenames a model card can have. Checking only README.md misses the repos
+# that name it modelcard.md or model_card.md, and reports them as having no
+# card at all.
+MODEL_CARD_NAMES = ("README.md", "readme.md", "README.MD",
+                    "modelcard.md", "ModelCard.md",
+                    "model_card.md", "MODEL_CARD.md")
+
+# The Hub should resolve a revision to a 40-hex commit SHA. Anything else
+# means the report is pinned to something that can move under it.
+FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+
 # Filename stems that mean the same checkpoint in different frameworks.
 STEM_ALIASES = {"pytorch_model": "model", "tf_model": "model",
                 "flax_model": "model", "model": "model"}
@@ -425,6 +436,31 @@ class _ParseFailureLog(logging.Handler):
             self.failures.append(message)
 
 
+def _safety_label(safety) -> str:
+    """
+    Normalise picklescan's SafetyLevel into a plain string.
+
+    Compares against the SafetyLevel enum when it is importable, and falls
+    back to the string form otherwise. Matching on the string alone breaks
+    if picklescan ever changes its repr; matching on the enum alone breaks
+    if picklescan is absent or the member set changes.
+    """
+    try:
+        from picklescan.scanner import SafetyLevel
+
+        for member in SafetyLevel:
+            if safety is member or safety == member:
+                return str(member.value).lower()
+    except Exception:  # noqa: BLE001 - enum shape is not guaranteed
+        pass
+
+    text = str(getattr(safety, "value", safety) or "").lower()
+    for level in ("dangerous", "suspicious", "innocuous"):
+        if level in text:
+            return level
+    return "suspicious"      # unrecognised: grade it as worth a look
+
+
 def scan_pickle_files(model_id, revision, pickle_entries, max_size_mb, token=None):
     """
     Download each pickle file and scan it for dangerous globals.
@@ -510,14 +546,14 @@ def scan_pickle_files(model_id, revision, pickle_entries, max_size_mb, token=Non
 
         findings = []
         for global_ref in getattr(result, "globals", None) or []:
-            safety = getattr(getattr(global_ref, "safety", None), "value", "")
-            if str(safety).lower() == "innocuous":
+            safety = _safety_label(getattr(global_ref, "safety", None))
+            if safety == "innocuous":
                 continue
             findings.append({
                 "file": path,
                 "module": str(getattr(global_ref, "module", "?")),
                 "name": str(getattr(global_ref, "name", "?")),
-                "safety": str(safety).lower(),
+                "safety": safety,
             })
 
         if not findings and (getattr(result, "scan_err", False) or handler.failures):
@@ -530,6 +566,18 @@ def scan_pickle_files(model_id, revision, pickle_entries, max_size_mb, token=Non
         for finding in findings:
             bucket = "malicious" if finding["safety"] == "dangerous" else "suspicious"
             report[bucket].append(finding)
+
+        # picklescan also reports a count independently of the globals list.
+        # If it flagged the file but we extracted no global, the file is
+        # still infected - recording only the globals would lose that.
+        infected = getattr(result, "infected_files", 0) or 0
+        if infected and not findings:
+            report["malicious"].append({
+                "file": path, "module": "?", "name": "?",
+                "safety": "dangerous",
+                "detail": "picklescan reported the file as infected without "
+                          "naming a global",
+            })
 
     if report["skipped"] and not report["scanned"]:
         report["status"] = "ERROR"
@@ -621,8 +669,16 @@ def check_model_card(model_id, revision, file_names, card, token, resolved=None)
             pipeline_tag" a few lines apart.
     """
     resolved = resolved or {}
+
+    # A card is not always README.md - modelcard.md and model_card.md are
+    # both in use, and treating those repos as "no model card" is a false
+    # finding.
+    names = set(file_names)
+    card_name = next((n for n in MODEL_CARD_NAMES if n in names), None)
+
     result = {
-        "present": "README.md" in file_names,
+        "present": card_name is not None,
+        "card_file": card_name,
         "completeness": 0,
         "placeholder_count": 0,
         "is_unedited_template": False,
@@ -648,10 +704,11 @@ def check_model_card(model_id, revision, file_names, card, token, resolved=None)
     result["completeness"] = round(100 * earned / total) if total else 0
 
     if not result["present"]:
-        result["detail"] = "No README.md: this model has no model card."
+        result["detail"] = ("No model card: the repository ships no README.md, "
+                            "modelcard.md or model_card.md.")
         return result, missing
 
-    text, error = _download_text(model_id, "README.md", revision, token)
+    text, error = _download_text(model_id, card_name, revision, token)
     if error:
         result["detail"] = f"Model card could not be read: {error}"
         return result, missing
@@ -734,6 +791,9 @@ def check_model(model_ref, revision=None, max_pickle_size_mb=DEFAULT_MAX_PICKLE_
         size = getattr(sibling, "size", None)
         if size is None:
             lfs = getattr(sibling, "lfs", None)
+            # huggingface_hub returns lfs as an object on some versions and a
+            # plain dict on others; the real size only lives there for
+            # LFS-tracked files, which is every large weight file.
             size = getattr(lfs, "size", None) if lfs is not None else None
             if size is None and isinstance(lfs, dict):
                 size = lfs.get("size")
@@ -768,6 +828,9 @@ def check_model(model_ref, revision=None, max_pickle_size_mb=DEFAULT_MAX_PICKLE_
         "gated": bool(gated_raw) and gated_raw != "False",
         "private": bool(getattr(info, "private", False)),
         "file_formats": file_formats,
+        # The complete file list, sorted. An AIBOM should record what the
+        # repository actually contains, not only the files we classified.
+        "files": sorted(file_names),
         "issues": [],
     }
 
@@ -905,10 +968,17 @@ def collect_issues(report):
     if report["config_errors"]:
         add("MEDIUM", "unverified",
             "Config could not be read: " + "; ".join(report["config_errors"]))
-    if not report["commit_sha"]:
+    commit_sha = report["commit_sha"]
+    if not commit_sha:
         add("LOW", "unverified",
             "The Hub returned no commit SHA; files were fetched from a moving "
             "reference and may not match this report.")
+    elif not FULL_COMMIT_RE.fullmatch(str(commit_sha)):
+        # A short or symbolic revision is not an immutable pin - whatever it
+        # points at today can point somewhere else tomorrow.
+        add("LOW", "unverified",
+            f"Revision '{commit_sha}' is not a full 40-character commit SHA, "
+            f"so this report is not pinned to immutable content.")
 
     order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     return sorted(issues, key=lambda i: order[i["severity"]])

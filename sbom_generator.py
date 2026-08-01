@@ -74,6 +74,7 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
                     "name": "aibom-guard:verdict",
                     "value": item["verdict"],
                 })
+                component["properties"].extend(_supply_chain_properties(item))
 
     vulnerabilities = []
     for item in scan_report:
@@ -112,6 +113,41 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
         sbom["vulnerabilities"] = vulnerabilities
 
     return sbom
+
+
+def _supply_chain_properties(item: dict) -> list:
+    """
+    Expose module 2's findings as CycloneDX component properties.
+
+    scanner.py collects supply-chain trust under --supply-chain, but without
+    this the data never reached the SBOM - the document recorded the verdict
+    while dropping the evidence behind it. OpenSSF score, repository
+    activity and signature status are exactly what a downstream consumer
+    wants to see next to a component.
+    """
+    supply = item.get("supply_chain")
+    if not isinstance(supply, dict):
+        return []
+
+    fields = (
+        ("repository", supply.get("repository")),
+        ("openssf_score", supply.get("openssf_score")),
+        ("supply_chain_trust", supply.get("trust_score")),
+        ("supply_chain_verdict", supply.get("verdict")),
+        ("github_star", supply.get("github_star")),
+        ("last_commit", supply.get("last_commit")),
+        ("signature", supply.get("signature")),
+        ("provenance", supply.get("provenance")),
+    )
+
+    properties = []
+    for name, value in fields:
+        if value is None or value == "":
+            continue
+        if isinstance(value, bool):
+            value = str(value).lower()
+        properties.append({"name": f"aibom-guard:{name}", "value": str(value)})
+    return properties
 
 
 def _source_of(vuln_id: str) -> str:

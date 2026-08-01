@@ -197,3 +197,29 @@ def test_every_issue_declares_a_protocol_type():
     result = engine.analyze_package("reqeusts", "1.0.0", skip_pypi=True)
     for issue in result["issues"]:
         assert issue.get("type") in protocol, issue
+
+
+# ---------------------------------------------------------------------------
+# AI explanation prompt (merged from yelin0726)
+# ---------------------------------------------------------------------------
+
+def test_explanation_prompt_includes_supply_chain_and_fix():
+    """
+    Explaining the CVE while ignoring that the package ships unsigned from
+    an unmaintained repository tells the developer only half the story.
+    """
+    from ai_explainer import build_prompt
+
+    prompt = build_prompt([{
+        "package": "requests", "version": "2.28.0", "verdict": "CONDITIONAL",
+        "license_status": "ALLOWED",
+        "vulnerabilities": [{"summary": "proxy header leak"}],
+        "issues": [{"type": "typosquatting", "detail": "resembles requests"}],
+        "alternatives": [{"target": "requests==2.34.2"}],
+        "supply_chain": {"openssf_score": 8.2,
+                         "issues": [{"detail": "no signature found"}]},
+    }])
+
+    assert "typosquatting" in prompt          # non-CVE finding wins
+    assert "no signature found" in prompt     # supply-chain context
+    assert "requests==2.34.2" in prompt       # the fix

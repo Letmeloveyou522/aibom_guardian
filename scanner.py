@@ -380,6 +380,10 @@ def run_scan(
                 "verdict": repository_info.get("verdict"),
                 "openssf_score": repository_info.get("openssf_score"),
                 "repository": repository_info.get("github_repository"),
+                "github_star": repository_info.get("github_star"),
+                "last_commit": repository_info.get("last_commit"),
+                "signature": repository_info.get("signature"),
+                "provenance": repository_info.get("provenance"),
                 "issues": repository_info.get("issues") or [],
             }
 
@@ -422,18 +426,35 @@ def run_scan(
 def print_report(report: list[dict]):
     print("\n===== AIBOM-Guard Scan Results =====\n")
 
+    # Only widen the table when supply-chain data was actually collected;
+    # three empty columns on a normal scan is just noise.
+    has_supply = any(item.get("supply_chain") for item in report)
+
     if HAS_PRETTYTABLE:
         table = PrettyTable()
-        table.field_names = ["Package", "Version", "License Status", "Vulns", "Trust Score", "Verdict"]
+        columns = ["Package", "Version", "License Status", "Vulns"]
+        if has_supply:
+            columns += ["OpenSSF", "Signed"]
+        columns += ["Trust Score", "Verdict"]
+        table.field_names = columns
+
         for item in report:
-            table.add_row([
+            row = [
                 item["package"],
                 item["version"],
                 item["license_status"],
                 len(item["vulnerabilities"]),
-                item["trust_score"],
-                item["verdict"],
-            ])
+            ]
+            if has_supply:
+                supply = item.get("supply_chain") or {}
+                openssf = supply.get("openssf_score")
+                signed = supply.get("signature")
+                row += [
+                    openssf if openssf is not None else "-",
+                    ("yes" if signed else "no") if signed is not None else "-",
+                ]
+            row += [item["trust_score"], item["verdict"]]
+            table.add_row(row)
         print(table)
     else:
         for item in report:

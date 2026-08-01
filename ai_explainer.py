@@ -40,11 +40,35 @@ def build_prompt(scan_report: list[dict]) -> str:
 
     for item in risky:
         lines.append(f"Package: {item['package']}=={item['version']} ({item['verdict']})")
-        if item["vulnerabilities"]:
+
+        # Non-CVE findings first: a typosquat or a hallucinated package is a
+        # different problem from a known vulnerability, and the model should
+        # explain it as such.
+        other = [i for i in (item.get("issues") or [])
+                 if i.get("type") not in ("cve", None)]
+        if other:
+            lines.append(f"Issue: {other[0].get('type')} - "
+                         f"{other[0].get('detail') or other[0].get('summary')}")
+        elif item["vulnerabilities"]:
             # Only include ONE vulnerability summary to keep the prompt short
             lines.append(f"Issue: {item['vulnerabilities'][0]['summary']}")
         elif item["license_status"] != "ALLOWED":
             lines.append(f"Issue: license status is {item['license_status']}")
+
+        # Supply-chain context, when --supply-chain collected it. Without
+        # this the explanation talks about the CVE while ignoring that the
+        # package comes from an unmaintained or unsigned repository.
+        supply = item.get("supply_chain") or {}
+        supply_issues = supply.get("issues") or []
+        if supply_issues:
+            lines.append(f"Supply chain: {supply_issues[0].get('detail')}")
+        elif supply.get("openssf_score") is not None:
+            lines.append(f"Supply chain: OpenSSF score {supply['openssf_score']}")
+
+        if item.get("alternatives"):
+            alt = item["alternatives"][0]
+            lines.append(f"Known fix: {alt.get('target')}")
+
         lines.append("")
 
     return "\n".join(lines)

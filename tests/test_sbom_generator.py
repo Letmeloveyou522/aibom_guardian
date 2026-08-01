@@ -263,3 +263,55 @@ def test_model_with_minimal_metadata_does_not_raise():
     component = build_model_component({"model_id": "org/sparse"})
     assert component["type"] == "machine-learning-model"
     assert component["version"] == "main"
+
+
+# ---------------------------------------------------------------------------
+# Supply-chain evidence in the SBOM (merged from yelin0726)
+# ---------------------------------------------------------------------------
+
+SUPPLY = {
+    "trust_score": 65, "verdict": "CONDITIONAL", "openssf_score": 8.2,
+    "repository": "psf/requests", "github_star": 54200,
+    "last_commit": "2026-07-27", "signature": False, "provenance": False,
+    "issues": [{"type": "signature", "severity": "medium",
+                "detail": "no signature found"}],
+}
+
+
+def test_supply_chain_evidence_reaches_the_sbom():
+    """
+    scanner collects this under --supply-chain, but it never reached the
+    document: the SBOM recorded the verdict while dropping the evidence
+    behind it.
+    """
+    sbom = enrich_sbom_with_findings(
+        base_sbom("requests"), [package(supply_chain=SUPPLY)])
+    props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
+
+    assert props["aibom-guard:openssf_score"] == "8.2"
+    assert props["aibom-guard:repository"] == "psf/requests"
+    assert props["aibom-guard:supply_chain_trust"] == "65"
+    assert props["aibom-guard:github_star"] == "54200"
+    assert props["aibom-guard:last_commit"] == "2026-07-27"
+
+
+def test_boolean_supply_chain_fields_are_lowercased():
+    """CycloneDX property values are strings; Python's True is not valid."""
+    sbom = enrich_sbom_with_findings(
+        base_sbom("requests"), [package(supply_chain=SUPPLY)])
+    props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
+    assert props["aibom-guard:signature"] == "false"
+    assert props["aibom-guard:provenance"] == "false"
+
+
+def test_no_supply_chain_adds_no_properties():
+    sbom = enrich_sbom_with_findings(base_sbom("requests"), [package()])
+    names = {p["name"] for p in sbom["components"][0]["properties"]}
+    assert not any("openssf" in n for n in names)
+
+
+def test_missing_supply_chain_fields_are_skipped_not_emitted_as_none():
+    sbom = enrich_sbom_with_findings(base_sbom("requests"), [package(
+        supply_chain={"trust_score": 50, "openssf_score": None})])
+    values = [p["value"] for p in sbom["components"][0]["properties"]]
+    assert "None" not in values

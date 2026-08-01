@@ -692,3 +692,109 @@ def test_render_does_not_crash_on_a_minimal_report():
 def test_cli_rejects_a_dataset_url(capsys):
     assert mc.main(["https://huggingface.co/datasets/squad", "--quiet"]) == 1
     assert "ERROR" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Merged from the yelin0726 implementation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("filename", [
+    "README.md", "readme.md", "modelcard.md", "model_card.md", "MODEL_CARD.md",
+])
+def test_model_card_is_found_under_any_of_its_names(monkeypatch, filename):
+    """
+    Checking only README.md reports repos that name their card modelcard.md
+    or model_card.md as having no card at all - a false finding.
+    """
+    monkeypatch.setattr(mc, "_download_text", lambda *a: (GOOD_CARD, None))
+    result, _ = mc.check_model_card("org/m", "sha", {filename}, {}, None)
+    assert result["present"] is True
+    assert result["card_file"] == filename
+
+
+def test_card_is_downloaded_under_the_name_it_actually_has(monkeypatch):
+    requested = []
+
+    def fake_download(model_id, name, revision, token):
+        requested.append(name)
+        return GOOD_CARD, None
+
+    monkeypatch.setattr(mc, "_download_text", fake_download)
+    mc.check_model_card("org/m", "sha", {"modelcard.md"}, {}, None)
+    assert requested == ["modelcard.md"]
+
+
+def test_repository_with_no_card_under_any_name():
+    result, _ = mc.check_model_card("org/m", "sha", {"config.json"}, {}, None)
+    assert result["present"] is False
+    assert result["card_file"] is None
+    assert "model card" in result["detail"].lower()
+
+
+def test_short_revision_is_flagged_as_not_pinned():
+    """
+    A 7-character revision is not immutable - what it points at can change.
+    Only a full 40-hex SHA pins the report to fixed content.
+    """
+    issues = mc.collect_issues(_report(commit_sha="133a221"))
+    assert any(i["type"] == "unverified" and "40-character" in i["message"]
+               for i in issues)
+
+
+def test_full_sha_is_not_flagged():
+    issues = mc.collect_issues(_report(commit_sha="a" * 40))
+    assert not any("40-character" in i["message"] for i in issues)
+
+
+def test_branch_name_as_revision_is_flagged():
+    issues = mc.collect_issues(_report(commit_sha="main"))
+    assert any("40-character" in i["message"] for i in issues)
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("dangerous", "dangerous"),
+    ("suspicious", "suspicious"),
+    ("innocuous", "innocuous"),
+    ("Dangerous", "dangerous"),
+    (None, "suspicious"),
+    ("something-new", "suspicious"),
+])
+def test_safety_label_normalisation(value, expected):
+    """
+    An unrecognised safety level must grade as worth a look, never as
+    innocuous - that is how a finding silently disappears.
+    """
+    assert mc._safety_label(value) == expected
+
+
+def test_safety_label_accepts_the_picklescan_enum():
+    picklescan = pytest.importorskip("picklescan.scanner")
+    assert mc._safety_label(picklescan.SafetyLevel.Dangerous) == "dangerous"
+    assert mc._safety_label(picklescan.SafetyLevel.Innocuous) == "innocuous"
+
+
+def test_infected_file_without_named_globals_is_still_reported(fake_downloads,
+                                                               monkeypatch):
+    """
+    picklescan reports an infected-file count separately from the globals
+    list. Reading only the globals loses a file it flagged.
+    """
+    class Result:
+        globals = []
+        scan_err = False
+        infected_files = 1
+
+    fake_downloads["m.pkl"] = BENIGN_PICKLE
+    monkeypatch.setattr("picklescan.scanner.scan_file_path", lambda p: Result())
+
+    report = mc.scan_pickle_files(
+        "org/m", "sha", [_pickle_entry("m.pkl", 100)], 512)
+    assert len(report["malicious"]) == 1
+    assert "infected" in report["malicious"][0]["detail"]
+
+
+def test_report_lists_every_file_in_the_repository():
+    """An AIBOM records what the repo contains, not only classified files."""
+    formats = mc.classify_files([("a.safetensors", 1), ("README.md", 2),
+                                 ("weird.xyz", 3)])
+    assert formats["total_files"] == 3

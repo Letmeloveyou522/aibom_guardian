@@ -426,3 +426,53 @@ def test_model_findings_are_not_double_counted(monkeypatch):
             {"type": "malicious", "severity": "HIGH", "message": "eval in pickle"}]))
     result = scanner.scan_model("org/model")
     assert result["score_breakdown"]["malicious"]["issues"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Supply-chain surfacing (merged from yelin0726)
+# ---------------------------------------------------------------------------
+
+FULL_SUPPLY = {
+    "trust_score": 65, "verdict": "CONDITIONAL", "openssf_score": 8.2,
+    "github_repository": "psf/requests", "github_star": 54200,
+    "last_commit": "2026-07-27", "signature": False, "provenance": False,
+    "issues": [{"type": "signature", "severity": "medium",
+                "detail": "no signature found"}],
+}
+
+
+def _wire(monkeypatch, supply=None):
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+    if supply is not None:
+        monkeypatch.setattr(scanner, "check_repository", lambda *a, **k: supply)
+
+
+def test_supply_chain_summary_keeps_the_evidence_fields(reqs, no_side_effects,
+                                                        monkeypatch):
+    """
+    OpenSSF score, stars, last commit and signature status are what a
+    reviewer acts on; summarising them away leaves only a bare verdict.
+    """
+    _wire(monkeypatch, FULL_SUPPLY)
+    report = scanner.run_scan(reqs, supply_chain=True, explain=False)
+    supply = report[0]["supply_chain"]
+
+    assert supply["openssf_score"] == 8.2
+    assert supply["github_star"] == 54200
+    assert supply["last_commit"] == "2026-07-27"
+    assert supply["signature"] is False
+    assert supply["provenance"] is False
+
+
+def test_table_gains_supply_chain_columns_only_when_collected(reqs,
+                                                              no_side_effects,
+                                                              monkeypatch, capsys):
+    _wire(monkeypatch)
+    scanner.run_scan(reqs, explain=False)
+    assert "OpenSSF" not in capsys.readouterr().out
+
+    _wire(monkeypatch, FULL_SUPPLY)
+    scanner.run_scan(reqs, supply_chain=True, explain=False)
+    out = capsys.readouterr().out
+    assert "OpenSSF" in out and "Signed" in out
