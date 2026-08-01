@@ -1,0 +1,20 @@
+[project]
+name = "aibom-guard"
+version = "0.1.0"
+description = "Security, license and supply-chain scanner for Python and AI dependencies, with CycloneDX SBOM / ML-BOM output"
+requires-python = ">=3.10"
+readme = "README.md"
+
+# Runtime dependencies are declared in requirements.txt so the file stays
+# usable with a plain `pip install -r`. Keep the two in step.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Modules live at the repository root (scanner.py, score_engine.py, ...) while
+# tests live in tests/. Without this, `pytest` fails to import them and only
+# `python -m pytest` works - the latter happens to put the current directory
+# on sys.path, which made the suite look fine while `pytest` alone was broken.
+pythonpath = ["."]
+
+addopts = "-q"

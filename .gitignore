@@ -1,5 +1,3 @@
-# Merged from feat/module-3 and sm - union of both, nothing dropped.
-
 # Python bytecode / caches
 __pycache__/
 *.py[cod]
@@ -29,9 +27,14 @@ build/
 .DS_Store
 Thumbs.db
 
-# Local / generated noise.
-# sbom.json and scan_report.json stay committed - README presents them as
-# example output from a real run. _base_sbom.json is the temporary file
-# cyclonedx-py writes inside sbom_generator.generate_base_sbom().
-*.log
+# Scanner output.
+# These are regenerated on every run, so tracking them makes the working tree
+# dirty after each scan and produces a merge conflict per branch. Stable
+# copies for the README live in examples/*.sample.json.
+scan_report.json
+sbom.json
 _base_sbom.json
+*.log
+
+# Local model / Hub caches
+.cache/
