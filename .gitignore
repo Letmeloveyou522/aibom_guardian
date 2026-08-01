@@ -1,13 +1,27 @@
-# Bytecode / caches
+# Merged from feat/module-3 and sm - union of both, nothing dropped.
+
+# Python bytecode / caches
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 
+# Test / type / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 # Virtual environments
 .venv/
 venv/
 env/
+
+# Packaging / coverage artifacts
+*.egg-info/
+.coverage
+htmlcov/
+dist/
+build/
 
 # IDE / OS
 .idea/
@@ -15,8 +29,9 @@ env/
 .DS_Store
 Thumbs.db
 
-# Local / generated noise (keep committed sample outputs unless regenerating)
+# Local / generated noise.
+# sbom.json and scan_report.json stay committed - README presents them as
+# example output from a real run. _base_sbom.json is the temporary file
+# cyclonedx-py writes inside sbom_generator.generate_base_sbom().
 *.log
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+_base_sbom.json
