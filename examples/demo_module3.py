@@ -1,7 +1,12 @@
 """
-test_module3.py
+examples/demo_module3.py
 -----------------------------------
-③ 모듈 통합 테스트: osv_client + recommendation
+③ 모듈 데모 CLI: osv_client + recommendation
+
+이전 이름은 test_module3.py 였습니다. assert 가 없어 pytest 가 여기서
+테스트를 0개 수집하는데도 이름 때문에 테스트로 오해되었으므로,
+데모임이 드러나도록 examples/ 로 옮겼습니다.
+③ 모듈의 실제 단위 테스트는 tests/test_recommendation.py 에 있습니다.
 
 파이프라인:
   1) 패키지명/버전 파싱
@@ -10,9 +15,9 @@ test_module3.py
   4) 팀 표준 JSON {issues, alternatives} 를 예쁘게 출력
 
 Usage:
-    python test_module3.py
-    python test_module3.py requests==2.28.0 reqeusts==1.0.0
-    python test_module3.py nonexistent-ai-pkg==0.1.0
+    python examples/demo_module3.py
+    python examples/demo_module3.py requests==2.28.0 reqeusts==1.0.0
+    python examples/demo_module3.py nonexistent-ai-pkg==0.1.0
 """
 
 from __future__ import annotations
@@ -21,10 +26,16 @@ import argparse
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Optional
 
-from osv_client import query_vulnerabilities
-from recommendation import RecommendationEngine
+
+# This demo lives in examples/ but the modules it drives are at the
+# repository root, so make them importable no matter where it is run from.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from osv_client import query_vulnerabilities  # noqa: E402
+from recommendation import RecommendationEngine  # noqa: E402
 
 DEFAULT_CASES = (
     "requests==2.28.0",

@@ -1,6 +1,23 @@
-requests==2.28.0
-numpy==1.24.0
-pyyaml==5.3.1
+# AIBOM-Guard runtime dependencies.
+#
+# This file is what the project itself needs to run:
+#     pip install -r requirements.txt
+#
+# It is NOT the scan input. The example packages that used to live here
+# (requests==2.28.0, numpy==1.24.0, pyyaml==5.3.1) are pinned to deliberately
+# vulnerable versions so the scanner has something to find - installing them
+# was never the intent. They now live in examples/sample-requirements.txt:
+#     python3 scanner.py examples/sample-requirements.txt
 
-# Project runtime (MCP server)
-mcp==1.28.1
+requests>=2.32            # HTTP for the OSV, PyPI and GitHub APIs
+prettytable>=3.0          # result table in the terminal
+cyclonedx-bom>=4.0        # provides the cyclonedx-py CLI used for the SBOM
+mcp==1.28.1               # MCP server. Pinned: mcp 2.x removed
+                          # mcp.server.fastmcp and mcp_server.py will not start.
+
+# AI model scanning (module 1, model_checker.py)
+huggingface_hub>=0.24,<2.0   # Hub metadata + model file download
+picklescan>=0.0.21           # dangerous opcodes inside pickle weight files
+
+# Development / tests
+pytest>=8.0

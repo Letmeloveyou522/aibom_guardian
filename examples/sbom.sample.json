@@ -1,0 +1,606 @@
+{
+  "components": [
+    {
+      "bom-ref": "requirements-L10",
+      "description": "requirements line 10: numpy==1.24.0",
+      "externalReferences": [
+        {
+          "comment": "implicit dist url",
+          "type": "distribution",
+          "url": "https://pypi.org/simple/numpy/"
+        }
+      ],
+      "name": "numpy",
+      "purl": "pkg:pypi/numpy@1.24.0",
+      "type": "library",
+      "version": "1.24.0",
+      "properties": [
+        {
+          "name": "aibom-guard:license_status",
+          "value": "ALLOWED"
+        },
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "100"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "ALLOW"
+        }
+      ]
+    },
+    {
+      "bom-ref": "requirements-L11",
+      "description": "requirements line 11: pyyaml==5.3.1",
+      "externalReferences": [
+        {
+          "comment": "implicit dist url",
+          "type": "distribution",
+          "url": "https://pypi.org/simple/pyyaml/"
+        }
+      ],
+      "name": "pyyaml",
+      "purl": "pkg:pypi/pyyaml@5.3.1",
+      "type": "library",
+      "version": "5.3.1",
+      "properties": [
+        {
+          "name": "aibom-guard:license_status",
+          "value": "ALLOWED"
+        },
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "49"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "BLOCK"
+        }
+      ]
+    },
+    {
+      "bom-ref": "requirements-L9",
+      "description": "requirements line 9: requests==2.28.0",
+      "externalReferences": [
+        {
+          "comment": "implicit dist url",
+          "type": "distribution",
+          "url": "https://pypi.org/simple/requests/"
+        }
+      ],
+      "name": "requests",
+      "purl": "pkg:pypi/requests@2.28.0",
+      "type": "library",
+      "version": "2.28.0",
+      "properties": [
+        {
+          "name": "aibom-guard:license_status",
+          "value": "ALLOWED"
+        },
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "75"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "CONDITIONAL"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b",
+      "name": "CompVis/stable-diffusion-v1-4",
+      "version": "133a221b8aa7292a167afc5127cb63fb5005638b",
+      "purl": "pkg:huggingface/CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b",
+      "description": "Hugging Face model CompVis/stable-diffusion-v1-4 (text-to-image)",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://huggingface.co/CompVis/stable-diffusion-v1-4"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "creativeml-openrail-m"
+          }
+        }
+      ],
+      "publisher": "CompVis",
+      "modelCard": {
+        "bom-ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b#modelcard",
+        "modelParameters": {
+          "task": "text-to-image",
+          "architectureFamily": "diffusers"
+        }
+      },
+      "properties": [
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "49"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "BLOCK"
+        },
+        {
+          "name": "aibom-guard:license_status",
+          "value": "BLOCKED"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "ai-behavioural"
+        },
+        {
+          "name": "aibom-guard:weight_formats:safetensors",
+          "value": "9"
+        },
+        {
+          "name": "aibom-guard:weight_formats:pickle",
+          "value": "9"
+        },
+        {
+          "name": "aibom-guard:pickle_only",
+          "value": "false"
+        },
+        {
+          "name": "aibom-guard:trust_remote_code",
+          "value": "false"
+        },
+        {
+          "name": "aibom-guard:model_card_completeness",
+          "value": "60"
+        },
+        {
+          "name": "aibom-guard:pickle_scan_status",
+          "value": "SKIPPED"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "model:TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+      "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "version": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+      "purl": "pkg:huggingface/TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+      "description": "Hugging Face model TinyLlama/TinyLlama-1.1B-Chat-v1.0 (text-generation)",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "apache-2.0"
+          }
+        }
+      ],
+      "publisher": "TinyLlama",
+      "modelCard": {
+        "bom-ref": "model:TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6#modelcard",
+        "modelParameters": {
+          "task": "text-generation",
+          "modelArchitecture": "LlamaForCausalLM",
+          "architectureFamily": "transformers",
+          "datasets": [
+            {
+              "type": "dataset",
+              "name": "cerebras/SlimPajama-627B"
+            },
+            {
+              "type": "dataset",
+              "name": "bigcode/starcoderdata"
+            },
+            {
+              "type": "dataset",
+              "name": "HuggingFaceH4/ultrachat_200k"
+            },
+            {
+              "type": "dataset",
+              "name": "HuggingFaceH4/ultrafeedback_binarized"
+            }
+          ]
+        }
+      },
+      "properties": [
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "99"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "ALLOW"
+        },
+        {
+          "name": "aibom-guard:license_status",
+          "value": "ALLOWED"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "permissive"
+        },
+        {
+          "name": "aibom-guard:weight_formats:safetensors",
+          "value": "1"
+        },
+        {
+          "name": "aibom-guard:weight_formats:pickle",
+          "value": "0"
+        },
+        {
+          "name": "aibom-guard:pickle_only",
+          "value": "false"
+        },
+        {
+          "name": "aibom-guard:trust_remote_code",
+          "value": "false"
+        },
+        {
+          "name": "aibom-guard:model_card_completeness",
+          "value": "85"
+        },
+        {
+          "name": "aibom-guard:pickle_scan_status",
+          "value": "NOT_APPLICABLE"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "requirements-L10"
+    },
+    {
+      "ref": "requirements-L11"
+    },
+    {
+      "ref": "requirements-L9"
+    }
+  ],
+  "metadata": {
+    "timestamp": "2026-08-01T01:40:56.252398+00:00",
+    "tools": {
+      "components": [
+        {
+          "description": "CycloneDX Software Bill of Materials (SBOM) generator for Python projects and environments",
+          "externalReferences": [
+            {
+              "type": "build-system",
+              "url": "https://github.com/CycloneDX/cyclonedx-python/actions"
+            },
+            {
+              "type": "distribution",
+              "url": "https://pypi.org/project/cyclonedx-bom/"
+            },
+            {
+              "type": "documentation",
+              "url": "https://cyclonedx-bom-tool.readthedocs.io/"
+            },
+            {
+              "type": "issue-tracker",
+              "url": "https://github.com/CycloneDX/cyclonedx-python/issues"
+            },
+            {
+              "type": "license",
+              "url": "https://github.com/CycloneDX/cyclonedx-python/blob/main/LICENSE"
+            },
+            {
+              "type": "release-notes",
+              "url": "https://github.com/CycloneDX/cyclonedx-python/blob/main/CHANGELOG.md"
+            },
+            {
+              "type": "vcs",
+              "url": "https://github.com/CycloneDX/cyclonedx-python/"
+            },
+            {
+              "type": "website",
+              "url": "https://github.com/CycloneDX/cyclonedx-python/#readme"
+            }
+          ],
+          "group": "CycloneDX",
+          "licenses": [
+            {
+              "license": {
+                "acknowledgement": "declared",
+                "id": "Apache-2.0"
+              }
+            }
+          ],
+          "name": "cyclonedx-py",
+          "type": "application",
+          "version": "7.3.1"
+        },
+        {
+          "description": "Python library for CycloneDX",
+          "externalReferences": [
+            {
+              "type": "build-system",
+              "url": "https://github.com/CycloneDX/cyclonedx-python-lib/actions"
+            },
+            {
+              "type": "distribution",
+              "url": "https://pypi.org/project/cyclonedx-python-lib/"
+            },
+            {
+              "type": "documentation",
+              "url": "https://cyclonedx-python-library.readthedocs.io/"
+            },
+            {
+              "type": "issue-tracker",
+              "url": "https://github.com/CycloneDX/cyclonedx-python-lib/issues"
+            },
+            {
+              "type": "license",
+              "url": "https://github.com/CycloneDX/cyclonedx-python-lib/blob/main/LICENSE"
+            },
+            {
+              "type": "release-notes",
+              "url": "https://github.com/CycloneDX/cyclonedx-python-lib/blob/main/CHANGELOG.md"
+            },
+            {
+              "type": "vcs",
+              "url": "https://github.com/CycloneDX/cyclonedx-python-lib"
+            },
+            {
+              "type": "website",
+              "url": "https://github.com/CycloneDX/cyclonedx-python-lib/#readme"
+            }
+          ],
+          "group": "CycloneDX",
+          "licenses": [
+            {
+              "license": {
+                "acknowledgement": "declared",
+                "id": "Apache-2.0"
+              }
+            }
+          ],
+          "name": "cyclonedx-python-lib",
+          "type": "library",
+          "version": "11.11.0"
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "aibom-guard:profile",
+        "value": "ml-bom"
+      }
+    ]
+  },
+  "serialNumber": "urn:uuid:b4796e34-8a30-43f6-bfae-056591e661a6",
+  "version": 1,
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "vulnerabilities": [
+    {
+      "id": "GHSA-9hjg-9r4m-mvj7",
+      "description": "Requests vulnerable to .netrc credentials leak via malicious URLs",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "medium",
+          "score": 5.3,
+          "method": "CVSSv31"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "requirements-L9"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2026-1872",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-9wx4-h78v-vm56",
+      "description": "Requests `Session` object does not verify requests after making first request with verify=False",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "medium",
+          "score": 5.6,
+          "method": "CVSSv31"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "requirements-L9"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2026-1873",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-gc5v-m9x4-r6x2",
+      "description": "Requests has Insecure Temp File Reuse in its extract_zipped_paths() utility function",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "medium",
+          "score": 5.5,
+          "method": "CVSSv31"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "requirements-L9"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2026-2275",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-j8r2-6x86-q33q",
+      "description": "Unintended leak of Proxy-Authorization header in requests",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "medium",
+          "score": 6.1,
+          "method": "CVSSv31"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "requirements-L9"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2023-74",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-8q59-q68h-6hv4",
+      "description": "Improper Input Validation in PyYAML",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "critical",
+          "score": 9.8,
+          "method": "CVSSv31"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "requirements-L11"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2021-142",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "AIBOM-CompVis/stable-diffusion-v1-4-pickle_file-0",
+      "description": "safety_checker/pytorch_model.fp16.bin is a pickle with no safetensors equivalent.",
+      "ratings": [
+        {
+          "source": {
+            "name": "AIBOM-Guard"
+          },
+          "severity": "medium",
+          "method": "other"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b"
+        }
+      ]
+    },
+    {
+      "id": "AIBOM-CompVis/stable-diffusion-v1-4-pickle_file-1",
+      "description": "text_encoder/pytorch_model.fp16.bin is a pickle with no safetensors equivalent.",
+      "ratings": [
+        {
+          "source": {
+            "name": "AIBOM-Guard"
+          },
+          "severity": "medium",
+          "method": "other"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b"
+        }
+      ]
+    },
+    {
+      "id": "AIBOM-CompVis/stable-diffusion-v1-4-unverified-2",
+      "description": "Pickle scan did not run: Pickle scanning disabled; 9 file(s) not inspected.",
+      "ratings": [
+        {
+          "source": {
+            "name": "AIBOM-Guard"
+          },
+          "severity": "medium",
+          "method": "other"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b"
+        }
+      ]
+    },
+    {
+      "id": "AIBOM-CompVis/stable-diffusion-v1-4-incomplete_model_card-3",
+      "description": "Model card is missing required fields: base_model, datasets, language",
+      "ratings": [
+        {
+          "source": {
+            "name": "AIBOM-Guard"
+          },
+          "severity": "low",
+          "method": "other"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b"
+        }
+      ]
+    },
+    {
+      "id": "AIBOM-TinyLlama/TinyLlama-1.1B-Chat-v1.0-incomplete_model_card-0",
+      "description": "Model card is missing required fields: base_model",
+      "ratings": [
+        {
+          "source": {
+            "name": "AIBOM-Guard"
+          },
+          "severity": "low",
+          "method": "other"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "model:TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6"
+        }
+      ]
+    }
+  ]
+}
