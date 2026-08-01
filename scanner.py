@@ -90,6 +90,13 @@ def get_license_for_package(package_name: str) -> str:
     Reads license metadata for the package as currently installed in this
     Python environment.
 
+    Preference order (avoids numpy-style false positives from a 47 KB
+    License field that also embeds third-party terms):
+      1) License-Expression (SPDX id / expression)
+      2) Short License field (identifier, not full text)
+      3) License :: PyPI trove classifier
+      4) Full License text (classified by wording, not keyword scrape)
+
     NOTE: this is the license of the *installed* version, which might not
     match the version pinned in requirements.txt. For an exact check you'd
     want to install that exact version in a clean venv first. Keeping it
@@ -97,15 +104,26 @@ def get_license_for_package(package_name: str) -> str:
     """
     try:
         meta = metadata(package_name)
-        lic = meta.get("License", "")
-        if not lic or lic.upper() == "UNKNOWN":
-            # Many newer packages put the license in a Classifier instead
-            classifiers = meta.get_all("Classifier") or []
-            for c in classifiers:
-                if c.startswith("License ::"):
-                    lic = c.split("::")[-1].strip()
-                    break
-        return lic or "UNKNOWN"
+
+        expression = (meta.get("License-Expression") or "").strip()
+        if expression and expression.upper() != "UNKNOWN":
+            return expression
+
+        lic = (meta.get("License") or "").strip()
+        # A short, single-line License field is almost always an identifier
+        # (MIT, BSD-3-Clause, Apache-2.0). Prefer it over classifiers.
+        if lic and lic.upper() != "UNKNOWN" and len(lic) < 300 and lic.count("\n") <= 3:
+            return lic
+
+        classifiers = meta.get_all("Classifier") or []
+        for classifier in classifiers:
+            if classifier.startswith("License ::"):
+                return classifier
+
+        if lic and lic.upper() != "UNKNOWN":
+            return lic
+
+        return "UNKNOWN"
     except PackageNotFoundError:
         return "NOT_INSTALLED"
 

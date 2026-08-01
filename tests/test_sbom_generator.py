@@ -92,7 +92,9 @@ def test_attack_complexity_high_is_not_severity_high():
     *harder*, which lowers the score. CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/
     I:N/A:N has a base score of 5.3, which is medium.
     """
-    assert _map_severity("CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N") != "high"
+    vector = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+    assert _map_severity(vector) != "high"
+    assert _map_severity(vector) == "medium"
 
 
 # ---------------------------------------------------------------------------

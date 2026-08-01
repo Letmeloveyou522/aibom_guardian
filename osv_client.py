@@ -275,13 +275,27 @@ def _id_rank(vuln_id: str) -> int:
     return len(_ID_PREFERENCE)
 
 
+def _summary_rank(text: str) -> tuple[int, int]:
+    """
+    Rank summaries for merge: (is_real_text, length).
+
+    "No description" is the OSV placeholder when a database has no summary;
+    any real text beats it. Among real texts, longer is treated as more
+    informative.
+    """
+    cleaned = (text or "").strip()
+    if cleaned in ("", "No description"):
+        return (0, 0)
+    return (1, len(cleaned))
+
+
 def merge_aliased_vulnerabilities(items: list[dict]) -> list[dict]:
     """
     Collapse OSV entries that describe the same vulnerability.
 
     OSV returns one entry per database, so a single flaw arrives several
     times under different identifiers - requests 2.28.0 comes back as eight
-    entries of which only six are distinct:
+    entries that collapse to four distinct vulnerabilities, e.g.:
 
         GHSA-9hjg-9r4m-mvj7  ==  PYSEC-2026-1872
         GHSA-9wx4-h78v-vm56  ==  PYSEC-2026-1873
@@ -341,11 +355,11 @@ def merge_aliased_vulnerabilities(items: list[dict]) -> list[dict]:
                 or member["cvss_score"] > best["cvss_score"]
             ):
                 best["cvss_score"] = member["cvss_score"]
-            # "No description" is what OSV returns when a database has no
-            # summary; any real text beats it.
+            # Prefer real text over the OSV placeholder, then the longer
+            # (more informative) summary when both members have content.
             candidate = member.get("detail") or ""
             current = best.get("detail") or ""
-            if current in ("", "No description") and candidate not in ("", "No description"):
+            if _summary_rank(candidate) > _summary_rank(current):
                 best["detail"] = candidate
                 best["summary"] = candidate
 

@@ -115,7 +115,7 @@ def test_vulns_to_issues_preserves_aliases():
 def test_recommendation_issues_reach_the_report(reqs, no_side_effects, monkeypatch):
     """
     The whole point of the wiring: a typosquat found by module 3 has to end
-    up in the report and in the score, not just in test_module3.py.
+    up in the report and in the score, not just in examples/demo_module3.py.
     """
     monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
     engine = FakeEngine(issues=[{"type": "typosquatting",

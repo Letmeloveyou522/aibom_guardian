@@ -40,7 +40,7 @@ matching is done on word boundaries rather than raw substrings.
 
 import re
 
-__all__ = ["classify_license", "classify_license_detailed",
+__all__ = ["classify_license", "classify_license_detailed", "normalize_to_spdx",
            "ALLOWED", "REVIEW", "BLOCKED", "UNKNOWN"]
 
 ALLOWED = "ALLOWED"
@@ -152,7 +152,7 @@ _ALLOWED_PATTERNS = [
     r"\b0bsd\b",
     r"\bcc0\b", r"\bpublic\s+domain\b", r"\bunlicense\b",
     r"\bpython\s+software\s+foundation\b", r"\bpsf\b",
-    r"\bpostgresql\b", r"\bboost\b",
+    r"\bpostgresql\b", r"\bboost\b", r"\bbsl\b",
     r"\bhpnd\b", r"\bhistorical\s+permission\b",
     r"\bwtfpl\b",
 ]
@@ -190,11 +190,90 @@ def _strip_classifier(part: str) -> str:
     """
     Reduce a PyPI trove classifier to its license name.
 
-    "License :: OSI Approved :: MIT License" -> "mit license"
+    "License :: OSI Approved :: MIT License" -> "MIT License"
     """
     if "::" in part:
         part = part.split("::")[-1]
     return part.strip()
+
+
+# PyPI trove classifier tails (and common free-text aliases) → SPDX ids.
+# Matched against the normalised classifier tail / identifier before the
+# pattern lists run, so "GNU General Public License v3 (GPLv3)" is graded
+# as GPL-3.0-only rather than falling through as UNKNOWN.
+_SPDX_ALIASES = {
+    "mit": "MIT",
+    "mit license": "MIT",
+    "apache": "Apache-2.0",
+    "apache 2.0": "Apache-2.0",
+    "apache-2.0": "Apache-2.0",
+    "apache software license": "Apache-2.0",
+    "apache license 2.0": "Apache-2.0",
+    "bsd": "BSD-3-Clause",
+    "bsd license": "BSD-3-Clause",
+    "bsd-2-clause": "BSD-2-Clause",
+    "bsd-3-clause": "BSD-3-Clause",
+    "new bsd license": "BSD-3-Clause",
+    "simplified bsd license": "BSD-2-Clause",
+    "isc": "ISC",
+    "isc license": "ISC",
+    "zlib": "Zlib",
+    "zlib/libpng license": "Zlib",
+    "0bsd": "0BSD",
+    "cc0": "CC0-1.0",
+    "cc0 1.0": "CC0-1.0",
+    "cc0-1.0": "CC0-1.0",
+    "public domain": "CC0-1.0",
+    "the unlicense": "Unlicense",
+    "unlicense": "Unlicense",
+    "python software foundation license": "PSF-2.0",
+    "psf": "PSF-2.0",
+    "boost software license 1.0": "BSL-1.0",
+    "boost": "BSL-1.0",
+    "mozilla public license 2.0 (mpl 2.0)": "MPL-2.0",
+    "mozilla public license 2.0": "MPL-2.0",
+    "mpl-2.0": "MPL-2.0",
+    "eclipse public license 2.0 (epl-2.0)": "EPL-2.0",
+    "eclipse public license": "EPL-2.0",
+    "epl-2.0": "EPL-2.0",
+    "gnu general public license v3 (gplv3)": "GPL-3.0-only",
+    "gnu general public license v2 (gplv2)": "GPL-2.0-only",
+    "gnu general public license (gpl)": "GPL-2.0-or-later",
+    "gpl-3.0": "GPL-3.0-only",
+    "gpl-3.0-only": "GPL-3.0-only",
+    "gplv3": "GPL-3.0-only",
+    "gpl-2.0": "GPL-2.0-only",
+    "gpl-2.0-only": "GPL-2.0-only",
+    "gplv2": "GPL-2.0-only",
+    "gnu lesser general public license v3 (lgplv3)": "LGPL-3.0-only",
+    "gnu lesser general public license v2 (lgplv2)": "LGPL-2.0-only",
+    "gnu lesser general public license v2 or later (lgplv2+)": "LGPL-2.1-or-later",
+    "lgpl": "LGPL-2.1-or-later",
+    "lgpl-2.1": "LGPL-2.1-only",
+    "lgpl-3.0": "LGPL-3.0-only",
+    "gnu affero general public license v3 (agplv3)": "AGPL-3.0-only",
+    "agpl-3.0": "AGPL-3.0-only",
+    "agplv3": "AGPL-3.0-only",
+    "common development and distribution license 1.0 (cddl-1.0)": "CDDL-1.0",
+    "cddl-1.0": "CDDL-1.0",
+    "cc-by-sa-4.0": "CC-BY-SA-4.0",
+    "cc by sa 4.0": "CC-BY-SA-4.0",
+    "cc-by-nc-4.0": "CC-BY-NC-4.0",
+    "cc by nc 4.0": "CC-BY-NC-4.0",
+    "free for non-commercial use": "LicenseRef-NonCommercial",
+}
+
+
+def normalize_to_spdx(part: str) -> str:
+    """
+    Map a short identifier or PyPI trove classifier onto an SPDX id when
+    known. Returns the original (stripped) string when no mapping exists.
+    """
+    stripped = _strip_classifier(part)
+    key = _normalise(stripped)
+    if key in _SPDX_ALIASES:
+        return _SPDX_ALIASES[key]
+    return stripped
 
 
 def _match(patterns, text: str) -> bool:
@@ -213,7 +292,11 @@ def _classify_identifier_detailed(part: str) -> tuple:
     report can distinguish "REVIEW because GPL copyleft" from "REVIEW because
     Llama community license" - very different conversations for a reviewer.
     """
-    text = _normalise(_strip_classifier(part))
+    # Prefer an SPDX id when the input is a known classifier / alias, then
+    # grade the normalised form. This is what turns
+    # "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
+    # into a REVIEW (GPL-3.0-only) instead of UNKNOWN.
+    text = _normalise(normalize_to_spdx(part))
     if not text or text in _NON_LICENSE_VALUES:
         return UNKNOWN, "none", "No license declared."
 

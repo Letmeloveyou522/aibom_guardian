@@ -70,6 +70,25 @@ def test_trove_classifiers_are_understood(classifier, expected):
     assert classify_license(classifier) == expected
 
 
+def test_classifiers_normalise_to_spdx():
+    """
+    Classifier strings must map onto SPDX ids before grading, so
+    GPLv3 is recognised as GPL-3.0-only rather than UNKNOWN.
+    """
+    from license_checker import normalize_to_spdx
+
+    assert normalize_to_spdx(
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
+    ) == "GPL-3.0-only"
+    assert normalize_to_spdx(
+        "License :: OSI Approved :: MIT License"
+    ) == "MIT"
+    assert normalize_to_spdx(
+        "License :: OSI Approved :: Apache Software License"
+    ) == "Apache-2.0"
+    assert normalize_to_spdx("GPLv3") == "GPL-3.0-only"
+
+
 # ---------------------------------------------------------------------------
 # No false positives from ordinary words
 # ---------------------------------------------------------------------------

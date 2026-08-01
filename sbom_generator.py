@@ -12,8 +12,11 @@ our extra data into it.
 """
 
 import json
+import re
 import subprocess
 import sys
+
+from osv_client import parse_cvss_v3_vector
 
 
 def generate_base_sbom(requirements_path: str, tmp_output_path: str = "_base_sbom.json") -> dict:
@@ -350,19 +353,33 @@ def _map_severity(raw_severity) -> str:
     """
     Map a severity onto CycloneDX's allowed set.
 
-    osv_client now normalises severities to critical/high/medium/low/unknown
-    before they reach here, so this is mostly a pass-through guard. The
-    previous version also mapped any string containing "AC:H" to "high",
-    which was backwards: in a CVSS vector AC:H means Attack Complexity High -
-    the attack is *harder*, which lowers the score. It graded
-    CVSS:3.1/AV:N/AC:H/... (base 5.3, medium) as high.
+    osv_client normally normalises severities to critical/high/medium/low/
+    unknown before they reach here. When a raw CVSS v3 vector still arrives,
+    it is parsed and scored: AC:H means Attack Complexity High (harder to
+    exploit), which *lowers* the base score - it is not severity "high".
+    The previous substring map graded CVSS:3.1/AV:N/AC:H/... (base 5.3,
+    medium) as high; that path is gone.
     """
-    raw = str(raw_severity or "").strip().lower()
+    if raw_severity is None:
+        return "unknown"
+
+    original = str(raw_severity).strip()
+    raw = original.lower()
+    if not raw:
+        return "unknown"
     if raw in _CYCLONEDX_SEVERITIES:
         return raw
+
+    # CVSS vector → Base Score → qualitative severity (AC:H reduces score).
+    if original.upper().startswith("CVSS:3"):
+        parsed = parse_cvss_v3_vector(original)
+        if parsed and parsed.get("severity") in _CYCLONEDX_SEVERITIES:
+            return parsed["severity"]
+
     # Tolerate a label that arrived with extra wording, e.g. "High severity".
+    # Word boundaries keep "AC:H" / "highest" from matching "high".
     for level in ("critical", "high", "medium", "low"):
-        if level in raw:
+        if re.search(rf"\b{level}\b", raw):
             return level
     return "unknown"
 

@@ -5,10 +5,9 @@ Unit tests for module 3 (recommendation.py).
 
     python3 -m pytest test_recommendation.py -q
 
-Note: `test_module3.py` looks like a pytest suite because of its name, but
-it is a demo CLI - it prints JSON and contains no assertions, so pytest
-collects zero tests from it. These are the actual tests. No network: every
-detector is driven with a hand-built PyPIPackageInfo.
+The module 3 demo CLI lives at `examples/demo_module3.py` (no assertions).
+These are the actual unit tests. No network: every detector is driven with
+a hand-built PyPIPackageInfo.
 """
 
 from datetime import datetime, timedelta, timezone

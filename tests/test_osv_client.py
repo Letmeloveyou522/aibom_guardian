@@ -142,6 +142,20 @@ def test_real_summary_beats_no_description():
     assert merged[0]["summary"] == "Proxy header leak"
 
 
+def test_longer_summary_is_preferred():
+    """When both members have real text, keep the more informative one."""
+    merged = merge_aliased_vulnerabilities([
+        item("CVE-2024-1", aliases=["GHSA-x"], detail="Short note"),
+        item(
+            "GHSA-x",
+            aliases=["CVE-2024-1"],
+            detail="Requests does not verify TLS certificates when ...",
+        ),
+    ])
+    assert merged[0]["id"] == "CVE-2024-1"
+    assert "TLS certificates" in merged[0]["detail"]
+
+
 def test_missing_cvss_on_the_winner_is_taken_from_the_alias():
     merged = merge_aliased_vulnerabilities([
         item("CVE-2024-1", aliases=["GHSA-x"]),
