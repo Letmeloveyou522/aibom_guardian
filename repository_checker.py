@@ -221,7 +221,39 @@ class SSRFError(ValueError):
     """Raised when a URL fails SSRF validation."""
 
 
+# RFC 6052 well-known prefix used by NAT64/DNS64 to reach IPv4 hosts from an
+# IPv6-only network. Addresses inside it report is_reserved=True even though
+# the IPv4 they carry is perfectly public.
+_NAT64_WELL_KNOWN_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _embedded_ipv4(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    """
+    Return the IPv4 address an IPv6 address actually carries, if any.
+
+    Covers IPv4-mapped (::ffff:a.b.c.d) and NAT64 (64:ff9b::a.b.c.d) forms.
+    """
+    if not isinstance(ip, ipaddress.IPv6Address):
+        return None
+    if ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    if ip in _NAT64_WELL_KNOWN_PREFIX:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    return None
+
+
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    # On an IPv6-only / NAT64 network, github.com resolves to something like
+    # 64:ff9b::14c8:f5f7 - which is 20.200.245.247, a real GitHub address, but
+    # which ipaddress reports as is_reserved. Without this unwrapping every
+    # GitHub and Hugging Face lookup fails as "not publicly routable".
+    #
+    # This does not weaken the SSRF defense: the embedded IPv4 is run through
+    # exactly the same checks, so 64:ff9b::7f00:1 (127.0.0.1) is still blocked.
+    embedded = _embedded_ipv4(ip) if isinstance(ip, ipaddress.IPv6Address) else None
+    if embedded is not None:
+        return _is_blocked_ip(embedded)
+
     return bool(
         ip.is_private
         or ip.is_loopback

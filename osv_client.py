@@ -245,12 +245,120 @@ def query_vulnerabilities(
             "severity": severity,
             "detail": detail,
             "summary": detail,  # backward compatible with existing callers
+            "aliases": sorted(str(a) for a in (vuln.get("aliases") or [])),
         }
         if cvss_score is not None:
             item["cvss_score"] = cvss_score
         results.append(item)
 
-    return results
+    return merge_aliased_vulnerabilities(results)
+
+
+# ---------------------------------------------------------------------------
+# Alias de-duplication
+# ---------------------------------------------------------------------------
+
+# Which identifier to show when several describe the same vulnerability.
+# CVE is the cross-ecosystem name people recognise; GHSA entries carry the
+# best summaries; PYSEC is the least descriptive of the three.
+_ID_PREFERENCE = ("CVE-", "GHSA-", "PYSEC-", "OSV-")
+
+_SEVERITY_ORDER = {
+    "critical": 5, "high": 4, "medium": 3, "low": 2, "none": 1, "unknown": 0,
+}
+
+
+def _id_rank(vuln_id: str) -> int:
+    for rank, prefix in enumerate(_ID_PREFERENCE):
+        if vuln_id.upper().startswith(prefix):
+            return rank
+    return len(_ID_PREFERENCE)
+
+
+def merge_aliased_vulnerabilities(items: list[dict]) -> list[dict]:
+    """
+    Collapse OSV entries that describe the same vulnerability.
+
+    OSV returns one entry per database, so a single flaw arrives several
+    times under different identifiers - requests 2.28.0 comes back as eight
+    entries of which only six are distinct:
+
+        GHSA-9hjg-9r4m-mvj7  ==  PYSEC-2026-1872
+        GHSA-9wx4-h78v-vm56  ==  PYSEC-2026-1873
+
+    Each entry lists the others in its `aliases` field. Counting them
+    separately inflates the vulnerability count and, since score_engine
+    weights per finding, deducts twice for one flaw.
+
+    Entries are grouped into connected components over
+    {id} union {aliases} - a transitive relation, because A may name B and
+    B may name C without A naming C. Each group keeps the most severe
+    rating, the highest CVSS score and the most informative summary found
+    across its members, so merging never loses data.
+    """
+    if not items:
+        return []
+
+    # Union-find over identifiers.
+    parent: dict[str, str] = {}
+
+    def find(node: str) -> str:
+        parent.setdefault(node, node)
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    def union(a: str, b: str) -> None:
+        root_a, root_b = find(a), find(b)
+        if root_a != root_b:
+            parent[root_b] = root_a
+
+    for item in items:
+        vuln_id = item["id"]
+        find(vuln_id)
+        for alias in item.get("aliases") or []:
+            union(vuln_id, alias)
+
+    groups: dict[str, list[dict]] = {}
+    for item in items:
+        groups.setdefault(find(item["id"]), []).append(item)
+
+    merged = []
+    for members in groups.values():
+        # Prefer a recognisable identifier; ties break on the original order
+        # so the result is stable between runs.
+        primary = sorted(members, key=lambda m: (_id_rank(m["id"]), m["id"]))[0]
+
+        best = dict(primary)
+        for member in members:
+            if _SEVERITY_ORDER.get(member.get("severity"), 0) > _SEVERITY_ORDER.get(
+                best.get("severity"), 0
+            ):
+                best["severity"] = member["severity"]
+            if member.get("cvss_score") is not None and (
+                best.get("cvss_score") is None
+                or member["cvss_score"] > best["cvss_score"]
+            ):
+                best["cvss_score"] = member["cvss_score"]
+            # "No description" is what OSV returns when a database has no
+            # summary; any real text beats it.
+            candidate = member.get("detail") or ""
+            current = best.get("detail") or ""
+            if current in ("", "No description") and candidate not in ("", "No description"):
+                best["detail"] = candidate
+                best["summary"] = candidate
+
+        # Record what was folded in, so a reader can still find the entry
+        # under whichever identifier they know.
+        other_ids = sorted({m["id"] for m in members} - {best["id"]})
+        best["aliases"] = other_ids
+        best["merged_count"] = len(members)
+        merged.append(best)
+
+    # Most severe first, then by identifier for a stable order.
+    merged.sort(key=lambda m: (-_SEVERITY_ORDER.get(m.get("severity"), 0), m["id"]))
+    return merged
 
 
 if __name__ == "__main__":
