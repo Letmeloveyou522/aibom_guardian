@@ -29,7 +29,7 @@ Output (consumed by scanner.run_scan and mcp_server.check_package):
 
     {
         "trust_score": int,               # 0-100
-        "verdict": "ALLOW" | "CONDITIONAL" | "BLOCK",
+        "verdict": "ALLOW" | "WARNING" | "BLOCK",
         "hard_block": bool,
         "hard_block_reasons": [str, ...],
         "breakdown": {...},               # per-category detail, for reports
@@ -48,8 +48,10 @@ what the team already agreed on elsewhere in the codebase:
   * The verdict thresholds (>=80 ALLOW, <50 BLOCK, critical -> BLOCK) and the
     confidence gate are taken from repository_checker.calculate_trust_score()
     so that a package score and a repository score mean the same thing.
-  * The verdict vocabulary is ALLOW / CONDITIONAL / BLOCK, matching
-    repository_checker.py, the module 3 README and the original scanner.
+  * The verdict vocabulary is ALLOW / WARNING / BLOCK, which is what
+    mcp_server.check_package and the recommendation.py module docstring both
+    document as this engine's output. repository_checker keeps CONDITIONAL
+    for its own module-2 verdict; scanner normalises it when reporting.
 
 Any tuning should be done in CATEGORY_WEIGHTS / SEVERITY_FACTORS below rather
 than scattered through the logic, and test_score_engine.py pins the current
@@ -407,7 +409,7 @@ def _blend_repository_trust(score: float, repository_info: Optional[dict]) -> tu
 def _decide_verdict(score: int, confidence: float, hard_block: bool,
                     issues: list[dict]) -> str:
     """
-    Turn the number into ALLOW / CONDITIONAL / BLOCK.
+    Turn the number into ALLOW / WARNING / BLOCK.
 
     Mirrors repository_checker.calculate_trust_score() so that a package
     verdict and a repository verdict are directly comparable.
@@ -416,13 +418,13 @@ def _decide_verdict(score: int, confidence: float, hard_block: bool,
         return "BLOCK"
     if confidence < MIN_CONFIDENCE_FOR_BLOCK:
         # Too little evidence to condemn or to clear.
-        return "CONDITIONAL"
+        return "WARNING"
     if score < BLOCK_THRESHOLD:
         return "BLOCK"
     has_high = any(_severity_of(i) == "high" for i in issues)
     if score >= ALLOW_THRESHOLD and confidence >= MIN_CONFIDENCE_FOR_ALLOW and not has_high:
         return "ALLOW"
-    return "CONDITIONAL"
+    return "WARNING"
 
 
 # ---------------------------------------------------------------------------

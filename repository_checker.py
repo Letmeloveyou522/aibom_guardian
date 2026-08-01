@@ -1248,13 +1248,13 @@ def calculate_trust_score(
     if critical:
         verdict = "BLOCK"
     elif confidence < 0.5:
-        verdict = "CONDITIONAL"
+        verdict = "WARNING"
     elif trust < 50 and confidence >= 0.5:
         verdict = "BLOCK"
     elif trust >= 80 and confidence >= 0.7 and not high:
         verdict = "ALLOW"
     else:
-        verdict = "CONDITIONAL"
+        verdict = "WARNING"
 
     return {
         "trust_score": trust,
@@ -1359,7 +1359,7 @@ class RepositoryChecker:
             )
             result.update({
                 "trust_score": scoring["trust_score"],
-                "verdict": "CONDITIONAL",
+                "verdict": "WARNING",
                 "score_breakdown": scoring["score_breakdown"],
             })
             return result
@@ -2606,7 +2606,7 @@ class RepositoryChecker:
             "signature": False,
             "signature_verified": False,
             "trust_score": 0,
-            "verdict": "CONDITIONAL",
+            "verdict": "WARNING",
             "repository": {},
             "openssf": {
                 "available": False,

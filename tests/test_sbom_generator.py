@@ -38,7 +38,7 @@ def package(name="requests", **overrides):
     entry = {
         "package": name, "version": "2.28.0",
         "license_status": "ALLOWED", "trust_score": 75,
-        "verdict": "CONDITIONAL", "vulnerabilities": [],
+        "verdict": "WARNING", "vulnerabilities": [],
     }
     entry.update(overrides)
     return entry
@@ -102,7 +102,7 @@ def test_attack_complexity_high_is_not_severity_high():
 def test_findings_are_attached_as_properties():
     sbom = enrich_sbom_with_findings(base_sbom("requests"), [package()])
     props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
-    assert props["aibom-guard:verdict"] == "CONDITIONAL"
+    assert props["aibom-guard:verdict"] == "WARNING"
     assert props["aibom-guard:trust_score"] == "75"
     assert props["aibom-guard:license_status"] == "ALLOWED"
 
@@ -270,7 +270,7 @@ def test_model_with_minimal_metadata_does_not_raise():
 # ---------------------------------------------------------------------------
 
 SUPPLY = {
-    "trust_score": 65, "verdict": "CONDITIONAL", "openssf_score": 8.2,
+    "trust_score": 65, "verdict": "WARNING", "openssf_score": 8.2,
     "repository": "psf/requests", "github_star": 54200,
     "last_commit": "2026-07-27", "signature": False, "provenance": False,
     "issues": [{"type": "signature", "severity": "medium",

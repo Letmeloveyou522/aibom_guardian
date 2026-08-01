@@ -342,7 +342,7 @@ def run_scan(
             # None, not [] - the distinction matters. An empty list means
             # "we looked and found nothing"; None means "we never looked",
             # which score_engine turns into low confidence and a
-            # CONDITIONAL verdict instead of a clean ALLOW.
+            # WARNING verdict instead of a clean ALLOW.
             vulns, issues, alternatives = [], None, []
         else:
             vulns = query_vulnerabilities(name, version)
@@ -417,7 +417,7 @@ def run_scan(
     for model_report in model_reports:
         report_with_models.append({
             "package": model_report.get("model_id"),
-            "verdict": model_report.get("verdict", "CONDITIONAL"),
+            "verdict": model_report.get("verdict", "WARNING"),
             "_is_model": True,
         })
     return report_with_models

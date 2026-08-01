@@ -211,7 +211,7 @@ def test_explanation_prompt_includes_supply_chain_and_fix():
     from ai_explainer import build_prompt
 
     prompt = build_prompt([{
-        "package": "requests", "version": "2.28.0", "verdict": "CONDITIONAL",
+        "package": "requests", "version": "2.28.0", "verdict": "WARNING",
         "license_status": "ALLOWED",
         "vulnerabilities": [{"summary": "proxy header leak"}],
         "issues": [{"type": "typosquatting", "detail": "resembles requests"}],

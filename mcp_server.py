@@ -183,7 +183,7 @@ def build_repository_check_summary(result: dict) -> dict:
     Build a short deterministic summary from a check_repository result.
     Does not call any external LLM.
     """
-    verdict = result.get("verdict") or "CONDITIONAL"
+    verdict = result.get("verdict") or "WARNING"
     trust_score = result.get("trust_score")
     issues = result.get("issues") or []
     provenance = result.get("provenance_detail") or {}
@@ -324,7 +324,7 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
 
     Looks up known vulnerabilities via the OSV database, checks the license of
     the installed package against an allowed-license list, and returns a Trust
-    Score (0-100) plus a verdict of ALLOW, CONDITIONAL or BLOCK as computed by
+    Score (0-100) plus a verdict of ALLOW, WARNING or BLOCK as computed by
     score_engine.
 
     This tool does NOT analyze GitHub activity, OpenSSF Scorecard, commit

@@ -234,7 +234,7 @@ def test_supply_chain_failure_does_not_abort(reqs, no_side_effects, monkeypatch)
 def test_offline_does_not_report_a_clean_allow(reqs, no_side_effects, monkeypatch):
     """
     Nothing was inspected offline, so a confident ALLOW would be a lie.
-    score_engine sees issues=None, drops confidence and returns CONDITIONAL.
+    score_engine sees issues=None, drops confidence and returns WARNING.
     """
     def fail(*a, **k):
         raise AssertionError("offline mode must not touch the network")
@@ -244,7 +244,7 @@ def test_offline_does_not_report_a_clean_allow(reqs, no_side_effects, monkeypatc
 
     report = scanner.run_scan(reqs, offline=True, explain=False)
 
-    assert report[0]["verdict"] == "CONDITIONAL"
+    assert report[0]["verdict"] == "WARNING"
     assert report[0]["scanned"] is False
     assert report[0]["confidence"] < 0.7
 
@@ -433,7 +433,7 @@ def test_model_findings_are_not_double_counted(monkeypatch):
 # ---------------------------------------------------------------------------
 
 FULL_SUPPLY = {
-    "trust_score": 65, "verdict": "CONDITIONAL", "openssf_score": 8.2,
+    "trust_score": 65, "verdict": "WARNING", "openssf_score": 8.2,
     "github_repository": "psf/requests", "github_star": 54200,
     "last_commit": "2026-07-27", "signature": False, "provenance": False,
     "issues": [{"type": "signature", "severity": "medium",

@@ -464,7 +464,7 @@ class TestTrustScoreAndVerdict(unittest.TestCase):
 
     def test_low_confidence_conditional(self):
         result = calculate_trust_score(issues=[], now=FIXED_NOW, partial_data=True)
-        self.assertEqual(result["verdict"], "CONDITIONAL")
+        self.assertEqual(result["verdict"], "WARNING")
 
     def test_provenance_rules(self):
         ok, status = evaluate_provenance(
@@ -535,7 +535,7 @@ class TestPartialFailureAndJSON(unittest.TestCase):
         json.dumps(result, ensure_ascii=False)
         self.assertIn("trust_score", result)
         self.assertIn("verdict", result)
-        self.assertIn(result["verdict"], ("ALLOW", "CONDITIONAL", "BLOCK"))
+        self.assertIn(result["verdict"], ("ALLOW", "WARNING", "BLOCK"))
 
 
 class TestGitPlusAndClassify(unittest.TestCase):

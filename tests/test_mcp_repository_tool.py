@@ -102,7 +102,7 @@ def _sample_result(**overrides):
         "signature": False,
         "signature_verified": False,
         "trust_score": 65,
-        "verdict": "CONDITIONAL",
+        "verdict": "WARNING",
         "repository": {"provider": "github", "owner": "pallets", "name": "flask"},
         "openssf": {"available": True, "score": 8.0, "weak_checks": []},
         "provenance_detail": {
@@ -162,7 +162,7 @@ class TestCheckRepoTrustMCP(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["tool"], "check_repo_trust")
         self.assertEqual(result["trust_score"], 65)
-        self.assertEqual(result["verdict"], "CONDITIONAL")
+        self.assertEqual(result["verdict"], "WARNING")
         self.assertIn("summary", result)
 
     def test_pypi_versioned_target(self):
@@ -276,7 +276,7 @@ class TestCheckRepoTrustMCP(unittest.TestCase):
         with patch.object(mcp_server, "check_repository", return_value=sample):
             result = check_repo_trust("requests==2.31.0")
         summary = result["summary"]
-        self.assertEqual(summary["verdict"], "CONDITIONAL")
+        self.assertEqual(summary["verdict"], "WARNING")
         self.assertEqual(summary["trust_score"], 65)
         self.assertIn("main_reason", summary)
         self.assertIn("recommended_action", summary)
@@ -304,7 +304,7 @@ class TestCheckRepoTrustMCP(unittest.TestCase):
                 "type": "ambiguous",
                 "normalized": "owner/repo",
             },
-            verdict="CONDITIONAL",
+            verdict="WARNING",
             issues=[{
                 "type": "repository",
                 "severity": "medium",

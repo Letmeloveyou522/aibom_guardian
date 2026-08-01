@@ -58,7 +58,7 @@ def test_verdict_vocabulary_matches_the_rest_of_the_project():
     """repository_checker.py and the module 3 README use these three."""
     for payload in (check(), check("BLOCKED"), check(issues=[cve("critical")])):
         assert calculate_trust_score(payload)["verdict"] in (
-            "ALLOW", "CONDITIONAL", "BLOCK")
+            "ALLOW", "WARNING", "BLOCK")
 
 
 def test_score_is_always_within_range():
@@ -248,7 +248,7 @@ def test_high_severity_prevents_allow_even_at_a_good_score():
     """repository_checker gates ALLOW on 'not high'; this matches it."""
     result = calculate_trust_score(check(issues=[cve("high")]))
     assert result["trust_score"] >= ALLOW_THRESHOLD
-    assert result["verdict"] == "CONDITIONAL"
+    assert result["verdict"] == "WARNING"
 
 
 def test_low_confidence_withholds_a_verdict_rather_than_guessing():
@@ -260,7 +260,7 @@ def test_low_confidence_withholds_a_verdict_rather_than_guessing():
         "type": "library", "license_status": "UNKNOWN", "issues": None,
         "model_info": None, "repository_info": None})
     assert result["confidence"] < 0.5
-    assert result["verdict"] == "CONDITIONAL"
+    assert result["verdict"] == "WARNING"
 
 
 def test_optional_repository_context_does_not_block_allow():
