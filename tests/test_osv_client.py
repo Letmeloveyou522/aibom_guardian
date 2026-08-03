@@ -1,17 +1,23 @@
 """
 test_osv_client.py
 -----------------------------------
-Unit tests for osv_client's alias de-duplication.
+Unit tests for osv_client's alias de-duplication and OSV failure contract.
 
     python3 -m pytest test_osv_client.py -q
 
-No network: merge_aliased_vulnerabilities() is a pure function over the
-already-parsed entries.
+No network: merge helpers and query_vulnerabilities() use mocks.
 """
 
-import pytest
+from unittest.mock import MagicMock, patch
 
-from osv_client import merge_aliased_vulnerabilities
+import pytest
+import requests
+
+from osv_client import (
+    _extract_severity,
+    merge_aliased_vulnerabilities,
+    query_vulnerabilities,
+)
 
 
 def item(vuln_id, severity="medium", aliases=None, detail="something",
@@ -202,3 +208,88 @@ def test_single_entry_reports_merged_count_one():
 ])
 def test_partial_entries_do_not_raise(bad):
     assert len(merge_aliased_vulnerabilities([bad])) == 1
+
+
+# ---------------------------------------------------------------------------
+# P0-1: OSV failure ≠ no vulnerabilities
+# ---------------------------------------------------------------------------
+
+def test_query_network_failure_returns_none_not_empty_list():
+    """A failed OSV call must not look like 'zero CVEs found'."""
+    with patch("osv_client.requests.post") as post:
+        post.side_effect = requests.exceptions.Timeout("timed out")
+        result = query_vulnerabilities("requests", "2.28.0")
+    assert result is None
+    assert result != []
+
+
+def test_query_http_error_returns_none():
+    response = MagicMock()
+    response.raise_for_status.side_effect = requests.exceptions.HTTPError("503")
+    with patch("osv_client.requests.post", return_value=response):
+        result = query_vulnerabilities("requests", "2.28.0")
+    assert result is None
+
+
+def test_query_invalid_json_returns_none():
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.side_effect = ValueError("No JSON")
+    with patch("osv_client.requests.post", return_value=response):
+        result = query_vulnerabilities("requests", "2.28.0")
+    assert result is None
+
+
+def test_query_success_with_no_vulns_returns_empty_list():
+    """Successful empty result must stay [] so callers can tell it from None."""
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {"vulns": []}
+    with patch("osv_client.requests.post", return_value=response):
+        result = query_vulnerabilities("some-safe-pkg", "1.0.0")
+    assert result == []
+
+
+def test_query_success_returns_parsed_list():
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        "vulns": [{
+            "id": "GHSA-test",
+            "summary": "example",
+            "severity": [{
+                "type": "CVSS_V3",
+                "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            }],
+            "aliases": [],
+        }],
+    }
+    with patch("osv_client.requests.post", return_value=response):
+        result = query_vulnerabilities("requests", "2.28.0")
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert result[0]["id"] == "GHSA-test"
+    assert result[0]["severity"] == "critical"
+
+
+# ---------------------------------------------------------------------------
+# P2-13: silent except:pass → log
+# ---------------------------------------------------------------------------
+
+def test_non_numeric_severity_score_is_logged_not_swallowed_silently(caplog):
+    """
+    A free-text severity score that is neither CVSS nor float used to hit
+    bare ``except ValueError: pass``. It must now leave a debug log trail.
+    """
+    import logging
+
+    vuln = {
+        "severity": [{"type": "OTHER", "score": "not-a-number"}],
+        "database_specific": {},
+    }
+    with caplog.at_level(logging.DEBUG, logger="osv_client"):
+        label, score, vector = _extract_severity(vuln)
+    assert label == "unknown"
+    assert score is None
+    assert vector is None
+    assert any("not numeric or CVSS" in rec.message for rec in caplog.records)

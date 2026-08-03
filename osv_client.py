@@ -16,11 +16,14 @@ Severity note:
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from typing import Any, Optional
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 OSV_API_URL = "https://api.osv.dev/v1/query"
 
@@ -178,7 +181,14 @@ def _extract_severity(vuln: dict) -> tuple[str, Optional[float], Optional[str]]:
                     best_label = severity_from_score(numeric)
                 continue
             except ValueError:
-                pass
+                # Non-numeric, non-CVSS string (e.g. a free-text label).
+                # Skip this entry and keep looking; do not treat as "no severity".
+                logger.debug(
+                    "OSV severity score is not numeric or CVSS vector: %r (type=%s)",
+                    score_field,
+                    entry_type or "unknown",
+                )
+                continue
 
         # Rare: type says CVSS but score is missing; ignore
         _ = entry_type
@@ -197,12 +207,20 @@ def _extract_severity(vuln: dict) -> tuple[str, Optional[float], Optional[str]]:
 
 def query_vulnerabilities(
     package_name: str, version: str, ecosystem: str = "PyPI"
-) -> list[dict]:
+) -> Optional[list[dict]]:
     """
     Query the OSV API for known vulnerabilities affecting a specific
     package name + version.
 
-    Returns a list of issue-shaped dicts (team Data Protocol):
+    Return contract (consumers — scanner / mcp_server — must distinguish these):
+
+      * ``list`` (possibly empty) — OSV responded successfully.
+        ``[]`` means "checked, no known vulnerabilities", NOT a failed query.
+      * ``None`` — OSV / network / response failure. Treat as **unverified**:
+        do NOT score this as zero CVEs. Prefer an ``unverified`` issue and
+        lower confidence instead.
+
+    Successful list items follow the team Data Protocol:
       {
         "type": "cve",
         "id": "GHSA-...",
@@ -224,16 +242,42 @@ def query_vulnerabilities(
     try:
         response = requests.post(OSV_API_URL, json=payload, timeout=10)
         response.raise_for_status()
+        data = response.json()
     except requests.exceptions.RequestException as e:
-        # Don't crash the whole scan if the network call fails
+        # OSV failure ≠ "no vulnerabilities". Signal unverified to callers.
+        logger.warning(
+            "OSV query failed for %s==%s (%s); returning None (unverified)",
+            package_name,
+            version,
+            type(e).__name__,
+        )
         print(f"[WARNING] Failed to query vulnerabilities for {package_name}: {e}")
-        return []
+        return None
+    except ValueError as e:
+        # response.json() raises ValueError / JSONDecodeError on bad bodies
+        logger.warning(
+            "OSV response was not valid JSON for %s==%s: %s; returning None (unverified)",
+            package_name,
+            version,
+            type(e).__name__,
+        )
+        print(f"[WARNING] Failed to parse OSV response for {package_name}: {e}")
+        return None
 
-    data = response.json()
+    if not isinstance(data, dict):
+        logger.warning(
+            "OSV response for %s==%s was not an object; returning None (unverified)",
+            package_name,
+            version,
+        )
+        return None
+
     vulns = data.get("vulns", [])
 
     results = []
     for vuln in vulns:
+        if not isinstance(vuln, dict):
+            continue
         severity, cvss_score, _vector = _extract_severity(vuln)
         summary = vuln.get("summary") or vuln.get("details") or "No description"
         # Keep detail short for JSON reports / AI prompts
@@ -393,4 +437,7 @@ if __name__ == "__main__":
 
     # Live smoke test: requests 2.28.0 has known CVEs
     result = query_vulnerabilities("requests", "2.28.0")
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    if result is None:
+        print("OSV query failed (unverified)")
+    else:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
