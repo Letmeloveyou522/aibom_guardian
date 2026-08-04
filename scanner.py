@@ -66,12 +66,16 @@ except ImportError:
     HAS_MODEL_CHECKER = False
 
 
-def parse_requirements(path: str) -> list[tuple[str, str]]:
+def parse_requirements(path: str) -> tuple[list[tuple[str, str]], list[str]]:
     """
-    Very simple requirements.txt parser.
-    Only supports the 'package==version' format (good enough for this MVP).
+    Parse requirements.txt lines.
+
+    Returns (pinned_packages, unscanned_lines). Pinned entries use
+    ``name==version``; anything else is recorded in ``unscanned_lines`` so
+    it appears in the final report instead of vanishing silently.
     """
-    packages = []
+    packages: list[tuple[str, str]] = []
+    unscanned: list[str] = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -81,8 +85,9 @@ def parse_requirements(path: str) -> list[tuple[str, str]]:
             if match:
                 packages.append((match.group(1), match.group(2)))
             else:
-                print(f"[INFO] Skipping line (not in 'name==version' format): {line}")
-    return packages
+                unscanned.append(line)
+                print(f"[INFO] Unscanned line (not in 'name==version' format): {line}")
+    return packages, unscanned
 
 
 def get_license_for_package(package_name: str) -> str:
@@ -156,9 +161,19 @@ def _vulns_to_issues(vulns: list) -> list:
     return issues
 
 
+OSV_UNVERIFIED_ISSUE = {
+    "type": "unverified",
+    "severity": "unknown",
+    "detail": (
+        "OSV vulnerability lookup failed (network/API error). "
+        "CVE status is unverified — not the same as 'no known vulnerabilities'."
+    ),
+}
+
+
 def _build_check_result(
     license_status: str,
-    issues: list,
+    issues: list | None,
     repository_info: dict | None = None,
     model_info: dict | None = None,
 ) -> dict:
@@ -179,7 +194,12 @@ def _build_check_result(
     }
 
 
-def analyze_package_risks(engine, name: str, version: str, vulns: list) -> tuple[list, list]:
+def analyze_package_risks(
+    engine,
+    name: str,
+    version: str,
+    vulns: list | None,
+) -> tuple[list | None, list]:
     """
     Run module 3 over one package and return (issues, alternatives).
 
@@ -187,9 +207,15 @@ def analyze_package_risks(engine, name: str, version: str, vulns: list) -> tuple
     it into its own issue list, so its return value is the complete set -
     adding `vulns` again here would double-count every CVE.
 
+    When ``vulns`` is ``None`` (OSV lookup failed), return ``(None, [])`` so
+    the caller can pass ``issues=None`` into score_engine — meaning
+    "unverified", not "clean".
+
     A failure downgrades to the OSV issues alone rather than aborting the
     scan; the caller records the reason.
     """
+    if vulns is None:
+        return None, []
     if engine is None:
         return _vulns_to_issues(vulns), []
     try:
@@ -198,6 +224,22 @@ def analyze_package_risks(engine, name: str, version: str, vulns: list) -> tuple
         print(f"  [WARNING] recommendation engine failed for {name}: {exc}")
         return _vulns_to_issues(vulns), []
     return result.get("issues") or [], result.get("alternatives") or []
+
+
+def _display_issues(issues: list | None, *, osv_unverified: bool) -> list:
+    """Issues shown in the report/terminal (may include the OSV failure marker)."""
+    shown: list = []
+    if osv_unverified:
+        shown.append(dict(OSV_UNVERIFIED_ISSUE))
+    if issues:
+        shown.extend(issues)
+    return shown
+
+
+def _vuln_count_label(vulns: list | None) -> str:
+    if vulns is None:
+        return "?"
+    return str(len(vulns))
 
 
 def scan_model(model_ref: str, max_pickle_size_mb: int = 0) -> dict | None:
@@ -266,7 +308,7 @@ def _model_issues(report: dict) -> list:
         "suspicious": "malicious",
         "pickle_only": "provenance",
         "pickle_file": "provenance",
-        "remote_code": "malicious",        # arbitrary code on from_pretrained
+        "remote_code": "provenance",       # trust_remote_code/auto_map — needs review, not confirmed malware
         "external_code": "provenance",
         "python_files": "provenance",
         "no_model_card": "provenance",
@@ -330,9 +372,11 @@ def run_scan(
     Returns the report list, so tests and other callers can assert on it
     without parsing stdout.
     """
-    packages = parse_requirements(requirements_path)
+    packages, unscanned_lines = parse_requirements(requirements_path)
     if not packages:
         print("No packages found to scan. Check your requirements.txt format.")
+        if unscanned_lines:
+            print(f"[INFO] {len(unscanned_lines)} line(s) were not in name==version format.")
         return []
 
     engine = None
@@ -362,9 +406,16 @@ def run_scan(
             # which score_engine turns into low confidence and a
             # WARNING verdict instead of a clean ALLOW.
             vulns, issues, alternatives = [], None, []
+            osv_unverified = False
         else:
             vulns = query_vulnerabilities(name, version)
-            issues, alternatives = analyze_package_risks(engine, name, version, vulns)
+            osv_unverified = vulns is None
+            if osv_unverified:
+                print(f"  [WARNING] OSV lookup failed for {name}=={version} — "
+                      f"CVE status unverified (not treated as clean).")
+                issues, alternatives = None, []
+            else:
+                issues, alternatives = analyze_package_risks(engine, name, version, vulns)
 
         repository_info = None
         if supply_chain and not offline:
@@ -380,8 +431,9 @@ def run_scan(
             "license_raw": lic_raw,
             "license_status": lic_status,
             "vulnerabilities": vulns,
-            "issues": issues or [],
-            "scanned": issues is not None,   # False = nothing was looked at
+            "issues": _display_issues(issues, osv_unverified=osv_unverified),
+            "osv_unverified": osv_unverified,
+            "scanned": issues is not None,
             "alternatives": alternatives,
             "trust_score": score_result["trust_score"],
             "verdict": score_result["verdict"],
@@ -421,13 +473,20 @@ def run_scan(
     print_report(report)
     if model_reports:
         print_model_report(model_reports)
+    if unscanned_lines:
+        print_unscanned_lines(unscanned_lines)
 
-    save_report(report, report_path, model_reports)
+    report_document = {
+        "packages": report,
+        "models": model_reports,
+        "unscanned": unscanned_lines,
+    }
+    save_report(report_document, report_path)
     build_final_sbom(requirements_path, report, sbom_path, model_reports)
 
     if explain:
         print("\n===== AI Explanation (local model via Ollama) =====\n")
-        print(explain_results(report))
+        print(explain_results(report_document))
 
     # Models participate in the exit code: a BLOCK model must fail CI just
     # like a BLOCK package.
@@ -461,7 +520,7 @@ def print_report(report: list[dict]):
                 item["package"],
                 item["version"],
                 item["license_status"],
-                len(item["vulnerabilities"]),
+                _vuln_count_label(item["vulnerabilities"]),
             ]
             if has_supply:
                 supply = item.get("supply_chain") or {}
@@ -477,7 +536,15 @@ def print_report(report: list[dict]):
     else:
         for item in report:
             print(f"{item['package']}=={item['version']} | license:{item['license_status']} | "
-                  f"vulns:{len(item['vulnerabilities'])} | score:{item['trust_score']} | {item['verdict']}")
+                  f"vulns:{_vuln_count_label(item['vulnerabilities'])} | "
+                  f"score:{item['trust_score']} | {item['verdict']}")
+
+    unverified = [i for i in report if i.get("osv_unverified")]
+    if unverified:
+        print("\n[OSV lookup failed — CVE status unverified]")
+        for item in unverified:
+            print(f"- {item['package']}=={item['version']}: "
+                  f"OSV query failed; not treated as vulnerability-free")
 
     # Show details for anything that isn't a clean ALLOW
     risky = [i for i in report if i["verdict"] != "ALLOW"]
@@ -489,6 +556,9 @@ def print_report(report: list[dict]):
 
             for reason in item.get("hard_block_reasons") or []:
                 print(f"    [HARD BLOCK] {reason}")
+
+            if item.get("osv_unverified"):
+                print(f"    [unverified] {OSV_UNVERIFIED_ISSUE['detail']}")
 
             if item["license_status"] in ("REVIEW", "BLOCKED", "UNKNOWN"):
                 license_text = str(item["license_raw"])
@@ -579,11 +649,19 @@ def print_model_report(model_reports: list[dict]):
             print(f"    [{issue.get('severity')}] {issue.get('type')}: {message}")
 
 
-def save_report(report: list[dict], out_path: str, model_reports: list | None = None):
+def print_unscanned_lines(unscanned_lines: list[str]):
+    """Report requirements.txt lines that were not in name==version format."""
+    print("\n[Unscanned requirements lines]")
+    for line in unscanned_lines:
+        print(f"- {line}")
+
+
+def save_report(report_document: dict, out_path: str):
     payload = {
-        "packages": report,
-        "models": model_reports or [],
-    } if model_reports else report
+        "packages": report_document.get("packages") or [],
+        "models": report_document.get("models") or [],
+        "unscanned": report_document.get("unscanned") or [],
+    }
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     print(f"\n[Saved] {out_path}")

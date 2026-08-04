@@ -69,15 +69,19 @@ def test_parse_requirements_reads_pinned_entries(tmp_path):
     path = tmp_path / "r.txt"
     path.write_text("# comment\n\nrequests==2.28.0\nnumpy == 1.24.0\n",
                     encoding="utf-8")
-    assert scanner.parse_requirements(str(path)) == [
-        ("requests", "2.28.0"), ("numpy", "1.24.0")]
+    packages, unscanned = scanner.parse_requirements(str(path))
+    assert packages == [("requests", "2.28.0"), ("numpy", "1.24.0")]
+    assert unscanned == []
 
 
-def test_parse_requirements_skips_unpinned(tmp_path, capsys):
+def test_parse_requirements_tracks_unpinned_lines(tmp_path, capsys):
     path = tmp_path / "r.txt"
     path.write_text("requests>=2.0\nflask\nnumpy==1.24.0\n", encoding="utf-8")
-    assert scanner.parse_requirements(str(path)) == [("numpy", "1.24.0")]
-    assert "Skipping" in capsys.readouterr().out
+    packages, unscanned = scanner.parse_requirements(str(path))
+    assert packages == [("numpy", "1.24.0")]
+    assert unscanned == ["requests>=2.0", "flask"]
+    out = capsys.readouterr().out
+    assert "Unscanned" in out
 
 
 # ---------------------------------------------------------------------------
@@ -273,8 +277,11 @@ def test_report_is_written_and_json_serialisable(reqs, no_side_effects,
     scanner.run_scan(reqs, explain=False, report_path="out.json")
 
     data = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
-    assert data[0]["package"] == "requests"
-    assert data[0]["issues"][0]["id"] == "GHSA-x"
+    assert set(data) == {"packages", "models", "unscanned"}
+    assert data["packages"][0]["package"] == "requests"
+    assert data["packages"][0]["issues"][0]["id"] == "GHSA-x"
+    assert data["models"] == []
+    assert data["unscanned"] == []
 
 
 def test_empty_requirements_returns_nothing(tmp_path, no_side_effects):
@@ -361,8 +368,23 @@ def test_model_findings_are_mapped_onto_protocol_categories(monkeypatch):
             {"type": "remote_code", "severity": "HIGH", "message": "auto_map"},
         ]))
     result = scanner.scan_model("org/model")
-    assert result["score_breakdown"]["malicious"]["issues"] == 2
+    assert result["score_breakdown"]["malicious"]["issues"] == 1
+    assert result["score_breakdown"]["provenance"]["issues"] == 1
     assert result["hard_block"] is True
+
+
+def test_remote_code_maps_to_provenance_not_malicious(monkeypatch):
+    """trust_remote_code/auto_map alone must not hard-block as confirmed malware."""
+    monkeypatch.setattr(scanner, "check_model", lambda ref, **k: dict(
+        MODEL_REPORT,
+        license="apache-2.0",
+        issues=[
+            {"type": "remote_code", "severity": "HIGH", "message": "auto_map present"},
+        ]))
+    result = scanner.scan_model("org/model")
+    assert result["score_breakdown"]["malicious"]["issues"] == 0
+    assert result["score_breakdown"]["provenance"]["issues"] == 1
+    assert result["hard_block"] is False
 
 
 def test_model_scan_failure_returns_none(monkeypatch, capsys):
@@ -476,3 +498,59 @@ def test_table_gains_supply_chain_columns_only_when_collected(reqs,
     scanner.run_scan(reqs, supply_chain=True, explain=False)
     out = capsys.readouterr().out
     assert "OpenSSF" in out and "Signed" in out
+
+
+# ---------------------------------------------------------------------------
+# OSV None contract (Task A -> Task D)
+# ---------------------------------------------------------------------------
+
+def test_osv_none_passes_issues_none_to_score_engine(reqs, no_side_effects,
+                                                      monkeypatch):
+    """OSV failure must not be scored as a clean CVE-free package."""
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: None)
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+
+    report = scanner.run_scan(reqs, explain=False)
+
+    entry = report[0]
+    assert entry["osv_unverified"] is True
+    assert entry["vulnerabilities"] is None
+    assert entry["scanned"] is False
+    assert entry["verdict"] == "WARNING"
+    assert entry["confidence"] < 0.7
+    assert any(i.get("type") == "unverified" for i in entry["issues"])
+
+
+def test_osv_none_is_announced_in_terminal(reqs, no_side_effects, monkeypatch, capsys):
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: None)
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+
+    scanner.run_scan(reqs, explain=False)
+    out = capsys.readouterr().out
+    assert "OSV lookup failed" in out
+    assert "unverified" in out.lower()
+
+
+def test_osv_empty_list_is_still_a_successful_scan(reqs, no_side_effects, monkeypatch):
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+
+    report = scanner.run_scan(reqs, explain=False)
+
+    entry = report[0]
+    assert entry["osv_unverified"] is False
+    assert entry["vulnerabilities"] == []
+    assert entry["scanned"] is True
+    assert entry["verdict"] == "ALLOW"
+
+
+def test_unscanned_lines_are_saved_in_report(reqs, no_side_effects, monkeypatch, tmp_path):
+    reqs_path = tmp_path / "mixed.txt"
+    reqs_path.write_text("requests==2.28.0\nflask\nrequests>=2.0\n", encoding="utf-8")
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+
+    scanner.run_scan(str(reqs_path), explain=False, report_path="out.json")
+
+    data = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
+    assert data["unscanned"] == ["flask", "requests>=2.0"]
