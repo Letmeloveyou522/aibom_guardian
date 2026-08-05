@@ -27,7 +27,7 @@ pip install -r requirements.txt
 pytest
 ```
 
-`418 passed`가 나오면 정상입니다. 이 테스트는 네트워크를 쓰지 않습니다.
+`pytest`가 전부 통과하면 정상입니다. 이 테스트는 네트워크를 쓰지 않습니다.
 
 ### 선택 사항
 
@@ -246,13 +246,36 @@ python examples/demo_module3.py reqeusts==1.0.0
 
 ## MCP
 
-`mcp_server.py`가 stdio MCP로 세 가지 도구를 노출합니다.
+`mcp_server.py`는 stdio MCP로 **네 가지** 도구를 노출합니다. CLI
+`scanner.py`와 달리 requirements.txt 일괄 스캔·`scan_report.json` /
+`sbom.json` 파일 출력·Ollama 설명은 하지 않습니다. 한 건씩 JSON으로
+돌려줍니다.
 
-| 도구 | 역할 |
-|---|---|
-| `check_package` | CVE + 라이선스 + Trust Score |
-| `check_license` | 라이선스 문자열 분류 |
-| `check_repo_trust` | GitHub 활동, OpenSSF, 서명, provenance, HF 데이터셋 문서 |
+| 도구 | 역할 | CLI 대응 |
+|---|---|---|
+| `check_package` | OSV CVE + 라이선스 + Trust Score. OSV 실패 시 `vulnerabilities: null`, `osv_unverified: true`, WARNING | `scanner.py` 패키지 행 |
+| `check_license` | 라이선스 문자열 분류 (ALLOWED/REVIEW/BLOCKED/UNKNOWN) | `license_checker` |
+| `check_repo_trust` | GitHub 활동, OpenSSF, 서명, provenance, HF 데이터셋 문서 | `--supply-chain` |
+| `check_model` | HF 모델 스캔. 반환값은 `scan_report.json`의 `models[]` 항목과 동일 스키마 | `--model REF` |
+
+### CLI vs MCP 스코프
+
+| | `scanner.py` (CLI) | `mcp_server.py` (MCP) |
+|---|---|---|
+| 입력 | `requirements.txt` + `--model` 반복 | 도구별 단일 대상 |
+| 출력 | 터미널 + `scan_report.json` + CycloneDX/`ML-BOM` | 도구 반환 JSON만 |
+| OSV 실패 | `vulnerabilities: null`, confidence↓, WARNING | `check_package`와 동일 계약 |
+| 모델 | `--model` → `models[]` + SBOM `machine-learning-model` | `check_model` → 동일 `models[]` 필드 |
+
+`scan_report.json` 스키마:
+
+```json
+{
+  "packages": [ { "package", "version", "license_status", "vulnerabilities", "verdict", "..." } ],
+  "models":   [ { "model_id", "license_status", "verdict", "risk_score", "issues", "model_card", "..." } ],
+  "unscanned": [ "name>=1.0 처럼 == 가 아닌 줄" ]
+}
+```
 
 Claude Desktop 설정:
 
@@ -276,7 +299,7 @@ Claude Desktop 설정:
 ## 테스트
 
 ```bash
-pytest                            # 전체 418개
+pytest                            # 전체 단위 테스트
 pytest tests/test_scanner.py -v   # 파일 단위, 테스트 이름까지 출력
 pytest -k license                 # 이름으로 필터
 ```
@@ -289,19 +312,23 @@ pytest -k license                 # 이름으로 필터
 ## 현재 상태
 
 구현 완료: 패키지 CVE·라이선스·타이포스쿼팅·환각 탐지, AI 모델 스캔,
-공급망 검사, Trust Score, SBOM / ML-BOM 생성, MCP 도구 3종, Ollama 설명.
+공급망 검사, Trust Score, SBOM / ML-BOM 생성, MCP 도구 4종
+(`check_package`, `check_license`, `check_repo_trust`, `check_model`),
+Ollama 설명.
 
 미완 및 제약:
 
 - **`LICENSE` 파일 없음.** 제출 전 추가 필요. 팀 합의 대기.
-- MCP에 모델 검사 도구 미노출. CLI만 지원.
 - 라이선스 판정은 설치된 버전의 메타데이터 기준이므로 `requirements.txt`에
   고정한 버전과 다를 수 있음.
-- `requirements.txt`는 `package==version` 형식만 지원.
+- `requirements.txt`는 `package==version` 형식만 지원. 그 외 줄은
+  `unscanned`에 기록됩니다.
 - 모델 pickle 내부 검사는 기본 비활성. 미검사 파일은 `unverified`로 보고.
 - picklescan은 알려진 위험 패턴만 탐지. 탐지 없음이 안전을 보장하지 않음.
 - gated 모델은 `HF_TOKEN`과 Hub 라이선스 동의 필요.
 - cosign 검증은 로컬 `cosign` 바이너리 필요.
+- OSV/네트워크 실패 시 CVE를 0건으로 보지 않습니다. `vulnerabilities`는
+  `null`이고 verdict는 WARNING입니다.
 
 ---
 

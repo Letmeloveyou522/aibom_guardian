@@ -24,6 +24,10 @@ Exit codes (so this can gate a CI pipeline):
     2  collected, but a HIGH severity issue was found
 
 Requires: huggingface_hub, picklescan, PyYAML   (see requirements-aibom.txt)
+
+CLI vs MCP: standalone CLI and ``scanner.py --model`` / MCP ``check_model``
+all use this collector. Scoring fields (verdict, license_status) are added
+by ``scanner.scan_model`` for the shared ``scan_report.json`` models[] shape.
 """
 
 import argparse
@@ -34,6 +38,8 @@ import posixpath
 import re
 import sys
 from urllib.parse import unquote, urlsplit
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -223,8 +229,11 @@ def _card_dict(info):
             result = card.to_dict()
             if isinstance(result, dict):
                 return result
-        except Exception:  # noqa: BLE001 - metadata shape must not break a scan
-            pass
+        except Exception as exc:  # noqa: BLE001 - metadata shape must not break a scan
+            logger.debug(
+                "card_data.to_dict() failed (%s); falling back to vars()",
+                type(exc).__name__,
+            )
     return {k: v for k, v in vars(card).items() if not k.startswith("_")}
 
 
@@ -451,8 +460,11 @@ def _safety_label(safety) -> str:
         for member in SafetyLevel:
             if safety is member or safety == member:
                 return str(member.value).lower()
-    except Exception:  # noqa: BLE001 - enum shape is not guaranteed
-        pass
+    except Exception as exc:  # noqa: BLE001 - enum shape is not guaranteed
+        logger.debug(
+            "SafetyLevel enum normalisation failed (%s); using string form",
+            type(exc).__name__,
+        )
 
     text = str(getattr(safety, "value", safety) or "").lower()
     for level in ("dangerous", "suspicious", "innocuous"):

@@ -6,17 +6,31 @@ enriches it with the vulnerability and license findings from our own
 scan (see scanner.py). The result is a single standard-compliant JSON
 file that also carries AIBOM-Guard's own risk analysis.
 
+When model scan results are present, components are emitted as
+``machine-learning-model`` with a CycloneDX ``modelCard`` (ML-BOM), and
+metadata is tagged with profile ``ml-bom`` (G7 SBOM Metadata).
+
 Under the hood this just shells out to the `cyclonedx-py` CLI tool
 (from the cyclonedx-bom package) to build the base SBOM, then merges
 our extra data into it.
+
+CLI vs MCP: this module is driven by ``scanner.py`` (batch SBOM writer).
+MCP ``check_model`` / ``check_package`` return JSON only — they do not
+call this writer.
 """
+
+from __future__ import annotations
 
 import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 from osv_client import parse_cvss_v3_vector
+
+AIBOM_GUARD_VERSION = "0.1.0"
+AIBOM_GUARD_TOOL_NAME = "AIBOM-Guard"
 
 
 def generate_base_sbom(requirements_path: str, tmp_output_path: str = "_base_sbom.json") -> dict:
@@ -44,6 +58,74 @@ def generate_base_sbom(requirements_path: str, tmp_output_path: str = "_base_sbo
         return json.load(f)
 
 
+def ensure_cyclonedx_metadata(
+    sbom: dict,
+    *,
+    profile: str = "sbom",
+) -> dict:
+    """
+    Fill G7-oriented CycloneDX metadata: timestamp, manufacturer, tools,
+    and an aibom-guard profile property (``sbom`` or ``ml-bom``).
+
+    Safe to call more than once — existing values are preserved; the
+    AIBOM-Guard tool entry and profile property are added only if missing.
+    """
+    metadata = sbom.setdefault("metadata", {})
+    if not metadata.get("timestamp"):
+        metadata["timestamp"] = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+
+    if "manufacturer" not in metadata:
+        metadata["manufacturer"] = {"name": AIBOM_GUARD_TOOL_NAME}
+
+    # CycloneDX 1.5+ tools object; fall back if a legacy list is already there.
+    tools = metadata.get("tools")
+    if tools is None:
+        tools = {"components": []}
+        metadata["tools"] = tools
+    if isinstance(tools, dict):
+        tool_components = tools.setdefault("components", [])
+        already = any(
+            isinstance(c, dict) and c.get("name") == AIBOM_GUARD_TOOL_NAME
+            for c in tool_components
+        )
+        if not already:
+            tool_components.append({
+                "type": "application",
+                "name": AIBOM_GUARD_TOOL_NAME,
+                "version": AIBOM_GUARD_VERSION,
+            })
+    elif isinstance(tools, list):
+        already = any(
+            isinstance(t, dict)
+            and (
+                t.get("name") == AIBOM_GUARD_TOOL_NAME
+                or (t.get("components") or [{}])[0].get("name") == AIBOM_GUARD_TOOL_NAME
+            )
+            for t in tools
+        )
+        if not already:
+            tools.append({
+                "vendor": AIBOM_GUARD_TOOL_NAME,
+                "name": AIBOM_GUARD_TOOL_NAME,
+                "version": AIBOM_GUARD_VERSION,
+            })
+
+    props = metadata.setdefault("properties", [])
+    profile_prop = next(
+        (p for p in props
+         if isinstance(p, dict) and p.get("name") == "aibom-guard:profile"),
+        None,
+    )
+    if profile_prop is None:
+        props.append({"name": "aibom-guard:profile", "value": profile})
+    elif profile == "ml-bom":
+        # Upgrade sbom → ml-bom when models are attached; never downgrade.
+        profile_prop["value"] = "ml-bom"
+    return sbom
+
+
 def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
     """
     Adds our scan findings (license status + vulnerabilities) into the
@@ -53,38 +135,52 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
     - Vulnerabilities get added into a top-level "vulnerabilities" array,
       which is a field CycloneDX supports natively for exactly this
       purpose (see the CycloneDX spec: bom.vulnerabilities).
+
+    When ``item["vulnerabilities"]`` is ``None`` (OSV unverified), no CVE
+    entries are emitted for that package — an empty list means verified
+    clean; ``None`` must not be iterated as if it were clean.
     """
     # Build a lookup: package name (lowercase) -> bom-ref, so we can
     # link vulnerabilities back to the right component.
+    by_name = {item["package"].lower(): item for item in scan_report}
     name_to_ref = {}
     for component in sbom.get("components", []):
         name_to_ref[component["name"].lower()] = component["bom-ref"]
-
-        # attach license info onto the component itself, in addition to
-        # whatever cyclonedx-py already put there
-        for item in scan_report:
-            if item["package"].lower() == component["name"].lower():
-                component["properties"] = component.get("properties", [])
-                component["properties"].append({
-                    "name": "aibom-guard:license_status",
-                    "value": item["license_status"],
-                })
-                component["properties"].append({
-                    "name": "aibom-guard:trust_score",
-                    "value": str(item["trust_score"]),
-                })
-                component["properties"].append({
-                    "name": "aibom-guard:verdict",
-                    "value": item["verdict"],
-                })
-                component["properties"].extend(_supply_chain_properties(item))
+        item = by_name.get(component["name"].lower())
+        if not item:
+            continue
+        component["properties"] = component.get("properties", [])
+        component["properties"].append({
+            "name": "aibom-guard:license_status",
+            "value": item["license_status"],
+        })
+        component["properties"].append({
+            "name": "aibom-guard:trust_score",
+            "value": str(item["trust_score"]),
+        })
+        component["properties"].append({
+            "name": "aibom-guard:verdict",
+            "value": item["verdict"],
+        })
+        if item.get("osv_unverified") or (
+            "vulnerabilities" in item and item["vulnerabilities"] is None
+        ):
+            component["properties"].append({
+                "name": "aibom-guard:osv_unverified",
+                "value": "true",
+            })
+        component["properties"].extend(_supply_chain_properties(item))
 
     vulnerabilities = []
     for item in scan_report:
         ref = name_to_ref.get(item["package"].lower())
         if not ref:
             continue
-        for vuln in item["vulnerabilities"]:
+        vulns = item.get("vulnerabilities")
+        if vulns is None:
+            # OSV failed — do not treat as zero CVEs.
+            continue
+        for vuln in vulns:
             rating = {
                 "source": {"name": "OSV"},
                 "severity": _map_severity(vuln.get("severity")),
@@ -115,6 +211,7 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
     if vulnerabilities:
         sbom["vulnerabilities"] = vulnerabilities
 
+    ensure_cyclonedx_metadata(sbom, profile="sbom")
     return sbom
 
 
@@ -310,6 +407,10 @@ def add_models_to_sbom(sbom: dict, model_reports: list) -> dict:
     Model issues become CycloneDX `vulnerabilities` entries the same way
     package CVEs do, so one consumer reads both. A dangerous pickle global
     is a vulnerability in every sense that matters here.
+
+    Each model becomes ``type: "machine-learning-model"`` with a
+    ``modelCard`` (CycloneDX 1.6 / G7 ML-BOM). Metadata profile is set to
+    ``ml-bom``.
     """
     if not model_reports:
         return sbom
@@ -337,10 +438,8 @@ def add_models_to_sbom(sbom: dict, model_reports: list) -> dict:
     if not vulnerabilities:
         sbom.pop("vulnerabilities", None)
 
-    # Declare the ML-BOM profile so a consumer knows models are in here.
-    sbom.setdefault("metadata", {}).setdefault("properties", []).append(
-        {"name": "aibom-guard:profile", "value": "ml-bom"}
-    )
+    # G7 / ML-BOM: stamp metadata and upgrade profile to ml-bom.
+    ensure_cyclonedx_metadata(sbom, profile="ml-bom")
     return sbom
 
 
@@ -384,27 +483,54 @@ def _map_severity(raw_severity) -> str:
     return "unknown"
 
 
+def _packages_and_models(
+    scan_report: list[dict] | dict,
+    model_reports: list[dict] | None,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Accept either a package list (legacy) or the scan_report.json document
+    ``{"packages", "models", "unscanned"}``.
+    """
+    if isinstance(scan_report, dict) and (
+        "packages" in scan_report or "models" in scan_report
+    ):
+        packages = list(scan_report.get("packages") or [])
+        models = list(scan_report.get("models") or [])
+        if model_reports:
+            models = list(model_reports)
+        return packages, models
+    return list(scan_report or []), list(model_reports or [])
+
+
 def build_final_sbom(
     requirements_path: str,
-    scan_report: list[dict],
+    scan_report: list[dict] | dict,
     output_path: str = "sbom.json",
     model_reports: list[dict] | None = None,
 ):
     """
     Full pipeline: generate base SBOM, enrich it, add models, write it out.
 
-    `model_reports` are model_checker.check_model() results. When present the
-    output is an ML-BOM: packages and AI models side by side in one
-    CycloneDX document.
+    ``scan_report`` may be the package list or the full scan_report.json
+    document. ``model_reports`` are model_checker / scan_model results.
+    When models are present the output is an ML-BOM: packages and AI
+    models side by side in one CycloneDX 1.6 document with modelCard
+    metadata (G7).
     """
+    packages, models = _packages_and_models(scan_report, model_reports)
+
     base_sbom = generate_base_sbom(requirements_path)
-    final_sbom = enrich_sbom_with_findings(base_sbom, scan_report)
-    final_sbom = add_models_to_sbom(final_sbom, model_reports or [])
+    final_sbom = enrich_sbom_with_findings(base_sbom, packages)
+    final_sbom = add_models_to_sbom(final_sbom, models)
+    ensure_cyclonedx_metadata(
+        final_sbom,
+        profile="ml-bom" if models else "sbom",
+    )
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(final_sbom, f, ensure_ascii=False, indent=2)
 
-    model_count = len(model_reports or [])
+    model_count = len(models)
     suffix = f" ({model_count} AI model component(s))" if model_count else ""
     print(f"[Saved] Enriched CycloneDX SBOM -> {output_path}{suffix}")
 

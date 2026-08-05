@@ -7,18 +7,35 @@ directly - for example, asking "is package X version Y safe to use?"
 and getting back a real answer backed by OSV + license checks.
 
 This file doesn't reimplement scanning logic - it wraps the functions
-in license_checker.py, osv_client.py, and repository_checker.py as MCP
-tools.
+in license_checker.py, osv_client.py, repository_checker.py, and
+scanner.scan_model as MCP tools.
+
+Scope (vs CLI scanner.py)
+-------------------------
+MCP tools inspect *one* target at a time and return a JSON object.
+They do not parse requirements.txt, write scan_report.json / sbom.json,
+or run Ollama explanations. For batch CI gates and SBOM/ML-BOM output,
+use ``python scanner.py requirements.txt`` instead.
+
+OSV None contract (shared with scanner / score_engine)
+------------------------------------------------------
+``query_vulnerabilities`` returns ``None`` on network/API failure.
+That must be passed through as ``issues=None`` — never coerced to ``[]`` —
+so score_engine lowers confidence and yields WARNING (unverified ≠ clean).
+
+Tools:
+    check_package   — OSV CVE + license + Trust Score for one package pin
+    check_license   — classify a license string
+    check_repo_trust — supply-chain trust for GitHub / HF / PyPI / local
+    check_model     — Hugging Face model scan (scan_report ``models[]`` shape)
 
 Run it directly to start the server:
-    python3 mcp_server.py
+    python mcp_server.py
 """
 
 from __future__ import annotations
 
 import logging
-from importlib.metadata import PackageNotFoundError, metadata
-from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -26,36 +43,64 @@ from mcp.server.fastmcp import FastMCP
 from license_checker import classify_license
 from osv_client import query_vulnerabilities
 from repository_checker import check_repository
+from scanner import get_license_for_package, scan_model
 from score_engine import calculate_trust_score
 
 logger = logging.getLogger(__name__)
 
 
-def _vulns_to_issues(vulns: list) -> list:
-    """OSV 취약점 목록을 score_engine이 기대하는 issues 형식으로 변환."""
+def _vulns_to_issues(vulns: list | None) -> list | None:
+    """
+    OSV 취약점 목록을 score_engine이 기대하는 issues 형식으로 변환.
+
+    Matches ``scanner._vulns_to_issues`` (D-part contract): cvss_score and
+    aliases are preserved so score_engine's CVSS fallback keeps working.
+
+    ``None`` means OSV lookup failed — return ``None`` unchanged. Never
+    substitute ``[]`` (empty list = verified clean).
+    """
+    if vulns is None:
+        return None
+
     issues = []
     for v in vulns:
         sev = str(v.get("severity", "unknown")).lower()
         if sev not in ("critical", "high", "medium", "low"):
             sev = "unknown"
-        issues.append({
+        issue = {
             "type": "cve",
             "id": v.get("id"),
             "severity": sev,
-            "summary": v.get("summary"),
-        })
+            "summary": v.get("summary") or v.get("detail"),
+            "detail": v.get("detail") or v.get("summary"),
+        }
+        if v.get("cvss_score") is not None:
+            issue["cvss_score"] = v["cvss_score"]
+        if v.get("aliases"):
+            issue["aliases"] = v["aliases"]
+        issues.append(issue)
     return issues
 
 
-def _build_check_result(license_status: str, vulns: list) -> dict:
-    """score_engine.calculate_trust_score() 입력 스키마에 맞게 조립."""
+def _build_check_result(
+    license_status: str,
+    issues: list | None,
+    repository_info: dict | None = None,
+    model_info: dict | None = None,
+) -> dict:
+    """
+    score_engine.calculate_trust_score() 입력 스키마에 맞게 조립.
+
+    ``issues`` may be ``None`` (OSV unverified). Do not replace with ``[]``.
+    """
     return {
         "type": "library",
         "license_status": license_status,
-        "issues": _vulns_to_issues(vulns),
-        "model_info": None,
-        "repository_info": None,
+        "issues": issues,
+        "model_info": model_info,
+        "repository_info": repository_info,
     }
+
 
 # "aibom-guard" is the name the MCP client will show for this server
 mcp = FastMCP("aibom-guard")
@@ -70,6 +115,8 @@ ALLOWED_TARGET_TYPES = frozenset({
 })
 MAX_TARGET_LENGTH = 2048
 TOOL_CHECK_REPO_TRUST = "check_repo_trust"
+TOOL_CHECK_MODEL = "check_model"
+TOOL_CHECK_PACKAGE = "check_package"
 
 
 def _error_response(
@@ -93,6 +140,8 @@ def _safe_path_label(path: str | None) -> str | None:
     if not path:
         return None
     try:
+        from pathlib import Path
+
         return Path(path).name or "<path>"
     except (TypeError, ValueError):
         return "<path>"
@@ -327,10 +376,15 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
     Score (0-100) plus a verdict of ALLOW, WARNING or BLOCK as computed by
     score_engine.
 
+    OSV failure contract: when the OSV API cannot be reached,
+    ``vulnerabilities`` is ``null`` (JSON) / ``None``, ``osv_unverified`` is
+    true, and the verdict is WARNING with low confidence — never treated as
+    "no known CVEs".
+
     This tool does NOT analyze GitHub activity, OpenSSF Scorecard, commit
     pinning, artifact SHA-256 integrity, signatures, provenance, or Hugging
     Face dataset documentation. For those supply-chain trust checks, use
-    check_repo_trust instead.
+    check_repo_trust instead. For Hugging Face models, use check_model.
 
     Args:
         name: Package name, e.g. "requests"
@@ -338,33 +392,32 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
         ecosystem: Package ecosystem, e.g. "PyPI" or "npm" (default: PyPI)
     """
     vulns = query_vulnerabilities(name, version, ecosystem)
+    osv_unverified = vulns is None
+    # Never coerce None → [] — score_engine must see issues is None.
+    issues_for_score = _vulns_to_issues(vulns)
 
-    try:
-        meta = metadata(name)
-        lic_raw = meta.get("License", "") or "UNKNOWN"
-    except PackageNotFoundError:
-        lic_raw = "NOT_INSTALLED"
-
+    lic_raw = get_license_for_package(name)
     lic_status = classify_license(lic_raw)
 
-    # Scoring lives in score_engine (module 4) so that check_package and
-    # check_repo_trust cannot drift apart. The inline formula that used to sit
-    # here compared OSV's raw CVSS vectors against "CRITICAL"/"HIGH", which
-    # never matched - every finding scored as a flat -10 regardless of how bad
-    # it was. score_engine normalises severity before weighting it.
-    score_result = calculate_trust_score(_build_check_result(lic_status, vulns))
+    score_result = calculate_trust_score(
+        _build_check_result(lic_status, issues_for_score)
+    )
 
     return {
+        "success": True,
+        "tool": TOOL_CHECK_PACKAGE,
         "package": name,
         "version": version,
         "license_status": lic_status,
         "license_raw": lic_raw,
         "vulnerabilities": vulns,
+        "osv_unverified": osv_unverified,
         "trust_score": score_result["trust_score"],
         "verdict": score_result["verdict"],
         "hard_block": score_result["hard_block"],
         "hard_block_reasons": score_result["hard_block_reasons"],
         "score_breakdown": score_result["breakdown"],
+        "confidence": score_result["confidence"],
     }
 
 
@@ -379,6 +432,92 @@ def check_license(license_string: str) -> str:
         license_string: A license name, e.g. "MIT" or "GPL-3.0"
     """
     return classify_license(license_string)
+
+
+@mcp.tool()
+def check_model(
+    model_ref: str,
+    max_pickle_size_mb: int = 0,
+) -> dict:
+    """
+    Scan one Hugging Face model for license, weight format, pickle risk,
+    model-card completeness, and Trust Score.
+
+    The returned object matches one entry of ``scan_report.json``'s
+    ``models`` array (same fields as ``scanner.scan_model``): model_id,
+    license_status, verdict, risk_score, issues, model_card, file_formats,
+    confidence, etc. Agents can merge it into
+    ``{"packages": [...], "models": [this], "unscanned": []}``.
+
+    This is the MCP counterpart of ``python scanner.py ... --model REF``.
+    It does not write SBOM files; use the CLI for CycloneDX / ML-BOM output.
+
+    Args:
+        model_ref: Hugging Face id or URL, e.g. "bert-base-uncased" or
+            "https://huggingface.co/google/gemma-2b"
+        max_pickle_size_mb: Download and scan pickle weights up to this
+            size (MB). Default 0 = metadata only (same as CLI default).
+    """
+    if not isinstance(model_ref, str) or not model_ref.strip():
+        return _error_response(
+            "invalid_input",
+            "model_ref must be a non-empty string",
+            tool=TOOL_CHECK_MODEL,
+        )
+
+    cleaned = model_ref.strip()
+    try:
+        max_mb = int(max_pickle_size_mb)
+    except (TypeError, ValueError):
+        return _error_response(
+            "invalid_input",
+            "max_pickle_size_mb must be an integer",
+            tool=TOOL_CHECK_MODEL,
+        )
+    if max_mb < 0:
+        return _error_response(
+            "invalid_input",
+            "max_pickle_size_mb must be >= 0",
+            tool=TOOL_CHECK_MODEL,
+        )
+
+    logger.info(
+        "check_model model_ref=%s max_pickle_size_mb=%s",
+        cleaned[:120],
+        max_mb,
+    )
+
+    try:
+        report = scan_model(cleaned, max_pickle_size_mb=max_mb)
+    except (ValueError, TypeError, FileNotFoundError, PermissionError, OSError) as exc:
+        logger.warning("check_model expected failure: %s", type(exc).__name__)
+        return _error_response(
+            "analysis_error",
+            "Model scan could not be completed for the given input.",
+            tool=TOOL_CHECK_MODEL,
+        )
+    except Exception:
+        logger.exception("check_model failed")
+        return _error_response(
+            "internal_error",
+            "Model scan failed unexpectedly.",
+            tool=TOOL_CHECK_MODEL,
+        )
+
+    if report is None:
+        return _error_response(
+            "analysis_error",
+            "Model could not be read (missing hub access, bad id, or checker unavailable).",
+            tool=TOOL_CHECK_MODEL,
+        )
+
+    # Preserve scan_model / scan_report models[] fields; add MCP envelope.
+    response = {
+        **report,
+        "success": True,
+        "tool": TOOL_CHECK_MODEL,
+    }
+    return response
 
 
 @mcp.tool()
@@ -399,6 +538,8 @@ def check_repo_trust(
 
     Do NOT use this for CVE-only lookups; use check_package when the user
     only wants vulnerability/advisory results for a package version.
+    For full AI-model BOM fields (pickle, model card, license family),
+    use check_model.
 
     Checks may include:
     - GitHub repository activity and maintainers

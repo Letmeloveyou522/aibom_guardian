@@ -798,3 +798,35 @@ def test_report_lists_every_file_in_the_repository():
     formats = mc.classify_files([("a.safetensors", 1), ("README.md", 2),
                                  ("weird.xyz", 3)])
     assert formats["total_files"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Exception visibility (P2-13)
+# ---------------------------------------------------------------------------
+
+def test_card_dict_logs_when_to_dict_raises(caplog):
+    """Silent ``except: pass`` must not swallow to_dict failures."""
+    class BrokenCard:
+        def to_dict(self):
+            raise RuntimeError("hub shape changed")
+
+    info = FakeInfo(card_data=BrokenCard())
+    with caplog.at_level("DEBUG", logger="model_checker"):
+        result = mc._card_dict(info)
+    assert isinstance(result, dict)
+    assert any("to_dict" in r.message for r in caplog.records)
+
+
+def test_safety_label_logs_when_enum_import_path_fails(caplog, monkeypatch):
+    """_safety_label must log and still return a usable string."""
+    import picklescan.scanner as ps
+
+    class Boom:
+        def __iter__(self):
+            raise RuntimeError("enum broken")
+
+    monkeypatch.setattr(ps, "SafetyLevel", Boom(), raising=False)
+    with caplog.at_level("DEBUG", logger="model_checker"):
+        label = mc._safety_label("SafetyLevel.DANGEROUS")
+    assert label in ("dangerous", "suspicious", "innocuous")
+    assert any("SafetyLevel" in r.message for r in caplog.records)

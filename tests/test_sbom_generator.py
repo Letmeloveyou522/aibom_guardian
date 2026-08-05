@@ -19,6 +19,7 @@ from sbom_generator import (
     add_models_to_sbom,
     build_model_component,
     enrich_sbom_with_findings,
+    ensure_cyclonedx_metadata,
 )
 
 
@@ -317,3 +318,55 @@ def test_missing_supply_chain_fields_are_skipped_not_emitted_as_none():
         supply_chain={"trust_score": 50, "openssf_score": None})])
     values = [p["value"] for p in sbom["components"][0]["properties"]]
     assert "None" not in values
+
+
+# ---------------------------------------------------------------------------
+# G7 metadata + OSV None contract
+# ---------------------------------------------------------------------------
+
+def test_g7_metadata_includes_tools_timestamp_and_manufacturer():
+    sbom = enrich_sbom_with_findings(base_sbom("requests"), [package()])
+    meta = sbom["metadata"]
+    assert "timestamp" in meta
+    assert meta["manufacturer"]["name"] == "AIBOM-Guard"
+    tools = meta["tools"]
+    assert isinstance(tools, dict)
+    names = [c["name"] for c in tools["components"]]
+    assert "AIBOM-Guard" in names
+
+
+def test_ensure_metadata_upgrades_profile_to_ml_bom():
+    sbom = enrich_sbom_with_findings(base_sbom("requests"), [package()])
+    assert {p["name"]: p["value"]
+            for p in sbom["metadata"]["properties"]}["aibom-guard:profile"] == "sbom"
+    sbom = add_models_to_sbom(sbom, [MODEL])
+    props = {p["name"]: p["value"] for p in sbom["metadata"]["properties"]}
+    assert props["aibom-guard:profile"] == "ml-bom"
+    # Profile must appear once, not duplicated.
+    assert sum(1 for p in sbom["metadata"]["properties"]
+               if p["name"] == "aibom-guard:profile") == 1
+
+
+def test_osv_none_vulnerabilities_do_not_raise_and_mark_unverified():
+    """None means unverified — must not be iterated as an empty CVE list."""
+    report = [package(vulnerabilities=None, osv_unverified=True)]
+    sbom = enrich_sbom_with_findings(base_sbom("requests"), report)
+    assert "vulnerabilities" not in sbom
+    props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
+    assert props["aibom-guard:osv_unverified"] == "true"
+
+
+def test_model_component_always_has_model_card():
+    """G7 / ML-BOM: every machine-learning-model carries a modelCard object."""
+    component = build_model_component(MODEL)
+    assert component["type"] == "machine-learning-model"
+    assert "modelCard" in component
+    assert "bom-ref" in component["modelCard"]
+
+
+def test_ensure_cyclonedx_metadata_is_idempotent():
+    sbom = base_sbom("requests")
+    ensure_cyclonedx_metadata(sbom, profile="sbom")
+    ensure_cyclonedx_metadata(sbom, profile="sbom")
+    tools = sbom["metadata"]["tools"]["components"]
+    assert sum(1 for c in tools if c["name"] == "AIBOM-Guard") == 1
