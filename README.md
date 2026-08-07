@@ -65,6 +65,7 @@ python scanner.py examples/sample-requirements.txt \
 | `--offline` | 네트워크 미사용. 라이선스만 검사합니다 |
 | `--no-explain` | Ollama 설명 생략 |
 | `--json PATH` / `--sbom PATH` | 출력 경로 지정 |
+| `--verbose` | 취약점을 전부 출력. 기본은 패키지당 심각도 상위 3건 |
 | `--fail-on` | 종료 코드 기준. `warning`(기본) / `block` / `never` |
 
 ### 입력 형식
@@ -87,9 +88,12 @@ PyPI에서 **실제로 설치될 버전**으로 좁혀 검사하고, 리포트�
 | 코드 | 의미 |
 |---|---|
 | `0` | 전부 ALLOW이고 모든 줄을 검사함 |
-| `1` | 입력 오류 |
+| `1` | 입력 오류 (파일 없음, 인자 오류, 검사할 것 없음) |
 | `2` | BLOCK 존재 |
 | `3` | BLOCK은 없지만 WARNING이 있거나 검사 못 한 줄이 있음 |
+
+인자 오류도 `1`입니다. argparse 기본값은 `2`인데 그러면 CI가 오타와 차단된
+의존성을 구분할 수 없습니다.
 
 `3`이 있는 이유가 있습니다. 이전에는 BLOCK만 실패로 봐서, OSV 조회 실패·
 존재하지 않는 패키지·읽을 수 없는 라이선스·파싱 못 한 여섯 줄이 전부 `0`으로
@@ -193,7 +197,15 @@ BLOCK만으로 게이트를 걸려면 `--fail-on block`을 쓰면 됩니다.
 | 파일 | 내용 |
 |---|---|
 | `scan_report.json` | 전체 결과. 점수 내역(`score_breakdown`)과 confidence 포함 |
-| `sbom.json` | CycloneDX SBOM. `--model` 사용 시 ML-BOM |
+| `sbom.json` | CycloneDX 1.6 SBOM. `--model` 사용 시 ML-BOM |
+
+SBOM에는 해석한 SPDX 식별자가 표준 `licenses` 필드로 들어가고, 의무사항·
+판정 근거는 `aibom-guard:` 프로퍼티로 붙습니다. 모델 컴포넌트는 가중치 파일의
+SHA-256(`hashes`), 파생 관계(`pedigree.ancestors`), 최종 수정일을 함께 싣습니다.
+
+G7 「SBOM for AI — Minimum Elements」 50개 항목 기준 커버리지는 **28개**이며,
+Models 클러스터는 13/13입니다. 나머지는 Datasets·KPI·System Level처럼
+모델 제작자만 알 수 있는 값이라 스캐너가 원리상 채울 수 없습니다.
 
 둘 다 실행할 때마다 새로 생성되므로 git에 추적하지 않습니다. 고정 사본이
 [examples/scan_report.sample.json](examples/scan_report.sample.json)과
