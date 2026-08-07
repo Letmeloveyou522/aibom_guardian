@@ -65,9 +65,38 @@ python scanner.py examples/sample-requirements.txt \
 | `--offline` | 네트워크 미사용. 라이선스만 검사합니다 |
 | `--no-explain` | Ollama 설명 생략 |
 | `--json PATH` / `--sbom PATH` | 출력 경로 지정 |
+| `--fail-on` | 종료 코드 기준. `warning`(기본) / `block` / `never` |
 
-종료 코드는 `0` 전부 ALLOW, `1` 입력 오류, `2` BLOCK 존재입니다. CI에서
-`python scanner.py requirements.txt` 한 줄로 게이트를 걸 수 있습니다.
+### 입력 형식
+
+`==` 고정뿐 아니라 `>=`, `~=`, `<`, extras, 환경 마커를 읽습니다. 범위는
+PyPI에서 **실제로 설치될 버전**으로 좁혀 검사하고, 리포트에 그 버전을 파일이
+정했는지(`version_resolved: false`) 여기서 골랐는지(`true`) 기록합니다.
+
+```
+[INFO] Resolved requests>=2.32 -> requests==2.34.2
+[Scanning] requests==2.34.2 ...  (resolved from >=2.32)
+```
+
+`-r`·`-c` 포함, URL/VCS 요구사항처럼 검사할 수 없는 줄은 `unscanned`에
+남기고 보고합니다. 조용히 넘어가지 않습니다. `--offline`이면 범위를 좁힐 수
+없으므로 그 줄도 `unscanned`가 됩니다.
+
+### 종료 코드
+
+| 코드 | 의미 |
+|---|---|
+| `0` | 전부 ALLOW이고 모든 줄을 검사함 |
+| `1` | 입력 오류 |
+| `2` | BLOCK 존재 |
+| `3` | BLOCK은 없지만 WARNING이 있거나 검사 못 한 줄이 있음 |
+
+`3`이 있는 이유가 있습니다. 이전에는 BLOCK만 실패로 봐서, OSV 조회 실패·
+존재하지 않는 패키지·읽을 수 없는 라이선스·파싱 못 한 여섯 줄이 전부 `0`으로
+통과했습니다. 아무것도 검사하지 않고 성공을 보고하는 게이트가 게이트 없는
+것보다 나쁩니다.
+
+BLOCK만으로 게이트를 걸려면 `--fail-on block`을 쓰면 됩니다.
 
 ---
 
@@ -429,8 +458,9 @@ Ollama 설명.
 
 - 라이선스는 PyPI의 고정 버전 릴리스에서 읽습니다. 조회 실패·오프라인 시
   설치 사본으로 폴백하며 `license_unverified`로 표시됩니다.
-- `requirements.txt`는 `package==version` 형식만 지원. 그 외 줄은
-  `unscanned`에 기록됩니다.
+- 버전 범위는 오늘 PyPI에 있는 최신 버전으로 좁혀 검사합니다. 실제 설치
+  시점이 다르면 다른 버전이 될 수 있고, 리포트의 `version_resolved`가 그
+  구분을 남깁니다.
 - 모델 pickle 내부 검사는 기본 비활성. 미검사 파일은 `unverified`로 보고.
 - picklescan은 알려진 위험 패턴만 탐지. 탐지 없음이 안전을 보장하지 않음.
 - gated 모델은 `HF_TOKEN`과 Hub 라이선스 동의 필요.
