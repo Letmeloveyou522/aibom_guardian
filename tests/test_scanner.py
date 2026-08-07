@@ -29,7 +29,21 @@ def reqs(tmp_path):
 
 
 @pytest.fixture
-def no_side_effects(tmp_path, monkeypatch):
+def no_network(monkeypatch):
+    """
+    Nothing here may reach pypi.org.
+
+    parse_requirements resolves version ranges against the real index, so it
+    needs stubbing too - otherwise a test's answer changes the day a new
+    release lands.
+    """
+    monkeypatch.setattr(scanner, "_pypi_versions",
+                        lambda name: ["1.0.0", "2.0.0", "2.5.0"])
+    return monkeypatch
+
+
+@pytest.fixture
+def no_side_effects(tmp_path, monkeypatch, no_network):
     """Stub out everything that touches the network or the real filesystem."""
     monkeypatch.setattr(scanner, "build_final_sbom", lambda *a, **k: None)
     monkeypatch.setattr(scanner, "explain_results", lambda r: "(stubbed)")
@@ -70,23 +84,88 @@ CVE = {"type": "cve", "id": "GHSA-x", "severity": "medium",
 # parse_requirements
 # ---------------------------------------------------------------------------
 
-def test_parse_requirements_reads_pinned_entries(tmp_path):
+def _names(packages):
+    return [(p.name, p.version) for p in packages]
+
+
+def test_parse_requirements_reads_pinned_entries(tmp_path, no_network):
     path = tmp_path / "r.txt"
     path.write_text("# comment\n\nrequests==2.28.0\nnumpy == 1.24.0\n",
                     encoding="utf-8")
     packages, unscanned = scanner.parse_requirements(str(path))
-    assert packages == [("requests", "2.28.0"), ("numpy", "1.24.0")]
+    assert _names(packages) == [("requests", "2.28.0"), ("numpy", "1.24.0")]
+    assert all(p.resolved is False for p in packages)
     assert unscanned == []
 
 
-def test_parse_requirements_tracks_unpinned_lines(tmp_path, capsys):
+def test_version_ranges_resolve_to_what_would_be_installed(tmp_path, no_network):
+    """
+    Real requirements files are not all exact pins. Only reading `==` meant
+    this project's own requirements.txt scanned one line out of seven and
+    still exited 0 - a gate that checks almost nothing and reports success.
+    """
     path = tmp_path / "r.txt"
-    path.write_text("requests>=2.0\nflask\nnumpy==1.24.0\n", encoding="utf-8")
+    path.write_text("requests>=2.0\nflask\nnumpy==1.24.0\ncelery~=2.0\n",
+                    encoding="utf-8")
+
     packages, unscanned = scanner.parse_requirements(str(path))
-    assert packages == [("numpy", "1.24.0")]
-    assert unscanned == ["requests>=2.0", "flask"]
-    out = capsys.readouterr().out
-    assert "Unscanned" in out
+
+    assert _names(packages) == [("requests", "2.5.0"), ("flask", "2.5.0"),
+                                ("numpy", "1.24.0"), ("celery", "2.5.0")]
+    assert unscanned == []
+    # The report has to say which versions the file chose and which we did.
+    assert [p.resolved for p in packages] == [True, True, False, True]
+
+
+def test_upper_bounds_are_respected(tmp_path, no_network):
+    path = tmp_path / "r.txt"
+    path.write_text("requests>=1.0,<2.5\n", encoding="utf-8")
+    packages, _ = scanner.parse_requirements(str(path))
+    assert _names(packages) == [("requests", "2.0.0")]
+
+
+def test_extras_and_markers_are_understood(tmp_path, no_network):
+    path = tmp_path / "r.txt"
+    path.write_text(
+        'celery[redis]>=1.0\n'
+        'pywin32==306 ; sys_platform == "no-such-platform"\n',
+        encoding="utf-8")
+
+    packages, unscanned = scanner.parse_requirements(str(path))
+
+    assert _names(packages) == [("celery", "2.5.0")]
+    # A marker that is false here describes a dependency this platform never
+    # installs, so it is skipped rather than reported as unscanned.
+    assert unscanned == []
+
+
+@pytest.mark.parametrize("line,reason", [
+    ("-r other.txt", "pip directive"),
+    ("--index-url https://example.invalid/simple", "pip directive"),
+    ("git+https://github.com/psf/requests.git", "URL"),
+    ("./local/wheel.whl", "not a valid requirement"),
+])
+def test_unscannable_lines_are_reported_not_dropped(tmp_path, no_network,
+                                                    capsys, line, reason):
+    path = tmp_path / "r.txt"
+    path.write_text(line + "\n", encoding="utf-8")
+
+    packages, unscanned = scanner.parse_requirements(str(path))
+
+    assert packages == []
+    assert unscanned == [line]
+    assert "Not scanned" in capsys.readouterr().out
+
+
+def test_offline_cannot_resolve_a_range_and_says_so(tmp_path, capsys):
+    path = tmp_path / "r.txt"
+    path.write_text("requests>=2.0\nnumpy==1.24.0\n", encoding="utf-8")
+
+    packages, unscanned = scanner.parse_requirements(str(path), offline=True)
+
+    assert _names(packages) == [("numpy", "1.24.0")]
+    assert unscanned == ["requests>=2.0"]
+    assert "offline" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------
@@ -551,14 +630,86 @@ def test_osv_empty_list_is_still_a_successful_scan(reqs, no_side_effects, monkey
 
 def test_unscanned_lines_are_saved_in_report(reqs, no_side_effects, monkeypatch, tmp_path):
     reqs_path = tmp_path / "mixed.txt"
-    reqs_path.write_text("requests==2.28.0\nflask\nrequests>=2.0\n", encoding="utf-8")
+    reqs_path.write_text("requests==2.28.0\n-r base.txt\n./wheel.whl\n",
+                         encoding="utf-8")
     monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
     monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
 
     scanner.run_scan(str(reqs_path), explain=False, report_path="out.json")
 
     data = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
-    assert data["unscanned"] == ["flask", "requests>=2.0"]
+    assert data["unscanned"] == ["-r base.txt", "./wheel.whl"]
+
+
+def test_the_report_says_which_versions_it_chose(reqs, no_side_effects,
+                                                 monkeypatch, tmp_path):
+    reqs_path = tmp_path / "ranged.txt"
+    reqs_path.write_text("requests==2.28.0\nflask>=1.0\n", encoding="utf-8")
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+
+    report = scanner.run_scan(str(reqs_path), explain=False)
+
+    pinned, resolved = report[0], report[1]
+    assert pinned["version_resolved"] is False
+    assert pinned["requirement"] == "==2.28.0"
+    assert resolved["version_resolved"] is True
+    assert resolved["requirement"] == ">=1.0"
+
+
+# ---------------------------------------------------------------------------
+# Exit codes - a gate that reports success while checking nothing
+# ---------------------------------------------------------------------------
+
+def test_a_block_always_fails():
+    report = [{"verdict": "ALLOW"}, {"verdict": "BLOCK"}]
+    for fail_on in ("block", "warning"):
+        assert scanner.decide_exit_code(report, [], fail_on) == scanner.EXIT_BLOCK
+
+
+def test_a_clean_scan_exits_zero():
+    report = [{"verdict": "ALLOW"}, {"verdict": "ALLOW"}]
+    assert scanner.decide_exit_code(report, []) == scanner.EXIT_CLEAN
+
+
+def test_warnings_no_longer_pass_as_clean():
+    """
+    The old rule was `2 if any BLOCK else 0`, which disagreed with the
+    documented contract that 0 means everything is ALLOW. A failed OSV lookup,
+    a package that does not exist and an unreadable license all exited 0.
+    """
+    report = [{"verdict": "ALLOW"}, {"verdict": "WARNING"}]
+    assert scanner.decide_exit_code(report, []) == scanner.EXIT_NOT_CLEAN
+    assert scanner.decide_exit_code(report, [], "block") == scanner.EXIT_CLEAN
+
+
+def test_unscanned_lines_make_the_scan_not_clean():
+    """Coverage is part of the result: six of seven lines skipped is not a pass."""
+    report = [{"verdict": "ALLOW"}]
+    assert scanner.decide_exit_code(report, ["flask"]) == scanner.EXIT_NOT_CLEAN
+    assert scanner.decide_exit_code(report, []) == scanner.EXIT_CLEAN
+
+
+def test_fail_on_never_still_reports_a_block():
+    """--fail-on never suppresses the gate, not the finding."""
+    assert scanner.decide_exit_code([{"verdict": "BLOCK"}], [], "never") \
+        == scanner.EXIT_BLOCK
+    assert scanner.decide_exit_code([{"verdict": "WARNING"}], ["x"], "never") \
+        == scanner.EXIT_CLEAN
+
+
+def test_run_scan_carries_the_unscanned_lines_to_the_exit_code(
+        reqs, no_side_effects, monkeypatch, tmp_path):
+    reqs_path = tmp_path / "mixed.txt"
+    reqs_path.write_text("requests==2.28.0\n-r base.txt\n", encoding="utf-8")
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+
+    report = scanner.run_scan(str(reqs_path), explain=False)
+
+    assert report.unscanned == ["-r base.txt"]
+    assert scanner.decide_exit_code(report, report.unscanned) \
+        == scanner.EXIT_NOT_CLEAN
 
 
 # ---------------------------------------------------------------------------
@@ -727,3 +878,86 @@ def test_the_report_carries_the_licence_obligations(reqs, no_side_effects, monke
     assert entry["license_status"] == "REVIEW"
     assert entry["license_spdx_id"] == "GPL-3.0-only"
     assert entry["license_obligations"]
+
+
+def test_a_byte_order_mark_does_not_break_the_first_line(tmp_path, no_network):
+    """
+    A requirements.txt saved by Notepad starts with a BOM. Reading it as plain
+    utf-8 glues \ufeff to the first requirement, so the first line - and only
+    the first - fails to parse.
+    """
+    path = tmp_path / "r.txt"
+    path.write_bytes("\ufeffrequests==2.28.0\nnumpy==1.24.0\n".encode("utf-8"))
+
+    packages, unscanned = scanner.parse_requirements(str(path))
+
+    assert _names(packages) == [("requests", "2.28.0"), ("numpy", "1.24.0")]
+    assert unscanned == []
+
+
+def test_releases_this_interpreter_cannot_install_are_not_chosen(monkeypatch):
+    """
+    pytest 9 needs Python 3.10. Resolving `pytest>=8.0` to it on 3.9 would
+    scan a release pip refuses to install - the wrong package entirely.
+    """
+    releases = {
+        "8.3.5": [{"filename": "a.whl", "requires_python": ">=3.8"}],
+        "9.1.1": [{"filename": "b.whl", "requires_python": ">=3.10"}],
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"releases": releases}
+
+    class FakeSession:
+        def get(self, url, timeout=None):
+            return FakeResponse()
+
+    monkeypatch.setattr(scanner, "_PYPI_SESSION", FakeSession())
+
+    class Fake39:
+        version_info = (3, 9, 18)
+
+    monkeypatch.setattr(scanner, "sys", Fake39)
+    scanner._RELEASE_CACHE.clear()
+    assert scanner._resolve_specifier("pytest", ">=8.0") == "8.3.5"
+
+    monkeypatch.undo()
+    scanner._RELEASE_CACHE.clear()
+    monkeypatch.setattr(scanner, "_PYPI_SESSION", FakeSession())
+    assert scanner._resolve_specifier("pytest", ">=8.0") == "9.1.1"
+    scanner._RELEASE_CACHE.clear()
+
+
+def test_a_bare_name_is_not_reported_as_a_pin(reqs, no_side_effects, monkeypatch,
+                                              tmp_path):
+    """
+    `flask` with no specifier resolves to a version, but the file never named
+    one. Reporting `requirement: "==3.1.3"` would claim a pin that does not
+    exist in the project.
+    """
+    path = tmp_path / "r.txt"
+    path.write_text("flask\n", encoding="utf-8")
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+
+    entry = scanner.run_scan(str(path), explain=False)[0]
+
+    assert entry["requirement"] == "(any)"
+    assert entry["version_resolved"] is True
+
+
+def test_the_same_project_spelled_differently_is_one_row(tmp_path, no_network):
+    """PEP 503: Django, django and DJANGO are one project, not three."""
+    path = tmp_path / "r.txt"
+    path.write_text("Django==2.0.0\ndjango==2.0.0\nDJANGO==2.0.0\n"
+                    "my_pkg==1.0.0\nmy-pkg==1.0.0\n", encoding="utf-8")
+
+    packages, _ = scanner.parse_requirements(str(path))
+
+    assert len(packages) == 2

@@ -30,6 +30,7 @@ import argparse
 import json
 import re
 import sys
+from typing import NamedTuple
 from importlib.metadata import version as installed_version, PackageNotFoundError, metadata
 
 from osv_client import query_vulnerabilities
@@ -66,27 +67,243 @@ except ImportError:
     HAS_MODEL_CHECKER = False
 
 
-def parse_requirements(path: str) -> tuple[list[tuple[str, str]], list[str]]:
+class ScanReport(list):
     """
-    Parse requirements.txt lines.
+    The package rows, plus the requirement lines that could not be scanned.
 
-    Returns (pinned_packages, unscanned_lines). Pinned entries use
-    ``name==version``; anything else is recorded in ``unscanned_lines`` so
-    it appears in the final report instead of vanishing silently.
+    A plain list keeps every existing caller working; `unscanned` rides along
+    because the exit code has to see it. Coverage is part of the result: a
+    scan that skipped six of seven lines is not the same answer as one that
+    read them all.
     """
-    packages: list[tuple[str, str]] = []
+
+    def __init__(self, rows=()):
+        super().__init__(rows)
+        self.unscanned: list = []
+
+
+class Pinned(NamedTuple):
+    """
+    One requirement resolved to the single version that will be installed.
+
+    `resolved` is False when the file named the version outright and True when
+    a range was narrowed down here, because those are different claims: an
+    exact pin is what the project ships, a resolved range is what it would get
+    if installed today.
+    """
+
+    name: str
+    version: str
+    spec: str
+    resolved: bool
+
+
+# Lines that are directives rather than requirements. Following them would
+# mean fetching or building something, which a scanner has no business doing.
+_DIRECTIVE_PREFIXES = ("-r", "--requirement", "-c", "--constraint",
+                       "-e", "--editable", "-f", "--find-links", "-i",
+                       "--index-url", "--extra-index-url", "--no-binary",
+                       "--only-binary", "--hash", "--pre", "--trusted-host")
+
+
+def _pypi_versions(package_name: str) -> list:
+    """
+    Versions of a package this interpreter could actually install.
+
+    Releases whose `requires_python` excludes the running interpreter are left
+    out, because resolving a range to a version pip would refuse means
+    scanning something the project will never get. pytest 9 needs Python 3.10;
+    on 3.9 the honest answer to `pytest>=8.0` is pytest 8, not pytest 9.
+    """
+    global _PYPI_SESSION
+
+    key = ("__versions__", package_name.lower())
+    if key in _RELEASE_CACHE:
+        return _RELEASE_CACHE[key]
+
+    try:
+        import requests
+        from urllib.parse import quote
+    except ImportError:                              # pragma: no cover
+        return []
+
+    if _PYPI_SESSION is None:
+        _PYPI_SESSION = requests.Session()
+
+    url = f"https://pypi.org/pypi/{quote(package_name, safe='')}/json"
+    try:
+        response = _PYPI_SESSION.get(url, timeout=PYPI_TIMEOUT_SEC)
+        response.raise_for_status()
+        releases = response.json().get("releases") or {}
+    except Exception:                                # noqa: BLE001 - network
+        _RELEASE_CACHE[key] = []
+        return []
+
+    try:
+        from packaging.specifiers import SpecifierSet
+        python_version = ".".join(str(n) for n in sys.version_info[:3])
+    except ImportError:                              # pragma: no cover
+        SpecifierSet = None
+
+    usable = []
+    for version, files in releases.items():
+        # No files means the release was never actually published; a fully
+        # yanked one should not be what a range resolves to.
+        if not files or all(f.get("yanked") for f in files):
+            continue
+        if SpecifierSet is not None:
+            requires = next((f.get("requires_python") for f in files
+                             if f.get("requires_python")), None)
+            if requires:
+                try:
+                    if python_version not in SpecifierSet(requires):
+                        continue
+                except Exception:                    # noqa: BLE001 - bad spec
+                    pass
+        usable.append(version)
+
+    _RELEASE_CACHE[key] = usable
+    return usable
+
+
+def _resolve_specifier(name: str, spec: str) -> str | None:
+    """
+    Pick the version a range would install: the newest release that satisfies
+    it. Returns None when PyPI cannot be reached or nothing matches.
+    """
+    try:
+        from packaging.specifiers import SpecifierSet
+        from packaging.version import InvalidVersion, Version
+    except ImportError:                              # pragma: no cover
+        return None
+
+    candidates = _pypi_versions(name)
+    if not candidates:
+        return None
+
+    parsed = []
+    for raw in candidates:
+        try:
+            parsed.append(Version(raw))
+        except InvalidVersion:
+            continue
+
+    try:
+        allowed = list(SpecifierSet(spec or "").filter(parsed))
+    except Exception:                                # noqa: BLE001 - bad spec
+        return None
+    if not allowed:
+        # Every match was a pre-release; take those rather than give up.
+        try:
+            allowed = list(SpecifierSet(spec or "").filter(parsed, prereleases=True))
+        except Exception:                            # noqa: BLE001
+            return None
+    if not allowed:
+        return None
+    return str(max(allowed))
+
+
+def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
+    """
+    Parse a requirements file into the exact versions to scan.
+
+    Returns (packages, unscanned_lines).
+
+    Real requirements files are not all exact pins. Only accepting
+    ``name==version`` meant this project's own requirements.txt scanned one
+    line out of seven and still exited 0 - a gate that checks almost nothing
+    and reports success. So a range is resolved against PyPI to the version it
+    would actually install, and the report records that the version was chosen
+    here rather than pinned by the file.
+
+    Anything genuinely unscannable - a ``-r`` include, a VCS or URL
+    requirement, a range that could not be resolved offline - goes into
+    `unscanned_lines` and is reported, never dropped.
+    """
+    try:
+        from packaging.requirements import InvalidRequirement, Requirement
+        from packaging.markers import UndefinedEnvironmentName
+        has_packaging = True
+    except ImportError:                              # pragma: no cover
+        has_packaging = False
+
+    packages: list = []
     unscanned: list[str] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+    seen: dict = {}
+
+    def skip(line: str, reason: str) -> None:
+        unscanned.append(line)
+        print(f"[INFO] Not scanned ({reason}): {line}")
+
+    def add(name: str, version: str, spec: str, resolved: bool) -> None:
+        # PEP 503: names differing only in case or in -/_/. are one project.
+        # Reporting Django and django as two rows would double every finding.
+        key = (re.sub(r"[-_.]+", "-", name).lower(), version)
+        if key in seen:
+            return
+        seen[key] = True
+        packages.append(Pinned(name, version, spec, resolved))
+
+    # utf-8-sig, not utf-8: a requirements.txt saved by Notepad or exported
+    # from Windows tooling starts with a BOM, and it would otherwise glue
+    # itself to the first requirement and make that line unparseable.
+    with open(path, "r", encoding="utf-8-sig") as f:
+        for raw_line in f:
+            line = raw_line.split(" #")[0].split("\t#")[0].strip()
             if not line or line.startswith("#"):
                 continue
-            match = re.match(r"^([A-Za-z0-9_\-.]+)\s*==\s*([A-Za-z0-9_.\-]+)", line)
-            if match:
-                packages.append((match.group(1), match.group(2)))
-            else:
-                unscanned.append(line)
-                print(f"[INFO] Unscanned line (not in 'name==version' format): {line}")
+
+            if line.startswith(_DIRECTIVE_PREFIXES):
+                skip(line, "pip directive, not a requirement")
+                continue
+            if "://" in line:
+                skip(line, "URL or VCS requirement")
+                continue
+
+            if not has_packaging:
+                match = re.match(r"^([A-Za-z0-9_.\-]+)\s*==\s*([A-Za-z0-9_.\-]+)$",
+                                 line)
+                if match:
+                    add(match.group(1), match.group(2),
+                        "==" + match.group(2), False)
+                else:
+                    skip(line, "packaging not installed; only name==version parsed")
+                continue
+
+            try:
+                requirement = Requirement(line)
+            except InvalidRequirement as exc:
+                skip(line, f"not a valid requirement: {exc}")
+                continue
+
+            # An environment marker that is false here describes a dependency
+            # this platform never installs.
+            if requirement.marker is not None:
+                try:
+                    if not requirement.marker.evaluate():
+                        print(f"[INFO] Skipped (marker does not apply here): {line}")
+                        continue
+                except UndefinedEnvironmentName:
+                    pass          # extras-only markers; scan the package
+
+            spec = str(requirement.specifier)
+            exact = [s for s in requirement.specifier if s.operator in ("==", "===")]
+            if len(exact) == 1 and "*" not in exact[0].version:
+                add(requirement.name, exact[0].version, spec, False)
+                continue
+
+            if offline:
+                skip(line, "offline: a version range cannot be resolved")
+                continue
+
+            version = _resolve_specifier(requirement.name, spec)
+            if version is None:
+                skip(line, "no published version satisfies this range")
+                continue
+
+            print(f"[INFO] Resolved {line} -> {requirement.name}=={version}")
+            add(requirement.name, version, spec, True)
+
     return packages, unscanned
 
 
@@ -533,7 +750,8 @@ def run_scan(
     Returns the report list, so tests and other callers can assert on it
     without parsing stdout.
     """
-    packages, unscanned_lines = parse_requirements(requirements_path)
+    packages, unscanned_lines = parse_requirements(requirements_path,
+                                                   offline=offline)
     if not packages:
         print("No packages found to scan. Check your requirements.txt format.")
         if unscanned_lines:
@@ -559,8 +777,10 @@ def run_scan(
 
     report = []
 
-    for name, version in packages:
-        print(f"[Scanning] {name}=={version} ...")
+    for entry in packages:
+        name, version = entry.name, entry.version
+        origin = f"  (resolved from {entry.spec})" if entry.resolved else ""
+        print(f"[Scanning] {name}=={version} ...{origin}")
 
         lic = resolve_license(name, version, offline=offline)
         lic_raw = lic["license"]
@@ -622,6 +842,11 @@ def run_scan(
         entry = {
             "package": name,
             "version": version,
+            # The requirement as written, not as resolved. A bare "flask"
+            # must not read back as "==3.1.3" - that would claim the file
+            # pinned a version it never named.
+            "requirement": entry.spec or "(any)",
+            "version_resolved": entry.resolved,
             "license_raw": lic_raw,
             "license_status": lic_status,
             "license_spdx_id": lic_detail["spdx_id"],
@@ -692,13 +917,14 @@ def run_scan(
 
     # Models participate in the exit code: a BLOCK model must fail CI just
     # like a BLOCK package.
-    report_with_models = list(report)
+    report_with_models = ScanReport(report)
     for model_report in model_reports:
         report_with_models.append({
             "package": model_report.get("model_id"),
             "verdict": model_report.get("verdict", "WARNING"),
             "_is_model": True,
         })
+    report_with_models.unscanned = unscanned_lines
     return report_with_models
 
 
@@ -898,7 +1124,45 @@ def build_parser() -> argparse.ArgumentParser:
                         metavar="MB",
                         help="download and picklescan model weight files up "
                              "to this size in MB (default: 0 = metadata only)")
+    parser.add_argument("--fail-on", choices=("block", "warning", "never"),
+                        default="warning",
+                        help="what makes the exit code non-zero. "
+                             "'warning' (default) also fails on WARNING and "
+                             "on requirements lines that could not be "
+                             "scanned; 'block' fails only on BLOCK; 'never' "
+                             "always exits 0 unless the input is unusable.")
     return parser
+
+
+# Exit codes. 1 is reserved for "the input could not be scanned at all", so a
+# broken invocation is never mistaken for a clean result.
+EXIT_CLEAN = 0
+EXIT_INPUT_ERROR = 1
+EXIT_BLOCK = 2
+EXIT_NOT_CLEAN = 3
+
+
+def decide_exit_code(report: list, unscanned: list, fail_on: str = "warning") -> int:
+    """
+    Turn a scan into a CI verdict.
+
+    The old rule was `2 if any BLOCK else 0`, which quietly disagreed with the
+    documented contract ("0 means everything is ALLOW"). Everything short of a
+    hard block passed: a failed OSV lookup, a package that does not exist, a
+    license nobody could read, six requirements lines that were never parsed.
+    That is the opposite of this project's rule that unexamined things do not
+    get a pass, and it is the failure mode that matters most, because a gate
+    that reports success while checking nothing is worse than no gate.
+    """
+    if any(item.get("verdict") == "BLOCK" for item in report):
+        return EXIT_BLOCK
+    if fail_on in ("block", "never"):
+        return EXIT_CLEAN
+    if unscanned:
+        return EXIT_NOT_CLEAN
+    if any(item.get("verdict") != "ALLOW" for item in report):
+        return EXIT_NOT_CLEAN
+    return EXIT_CLEAN
 
 
 def main(argv=None) -> int:
@@ -917,11 +1181,18 @@ def main(argv=None) -> int:
         )
     except FileNotFoundError:
         print(f"[ERROR] No such file: {args.requirements}", file=sys.stderr)
-        return 1
+        return EXIT_INPUT_ERROR
 
     if not report:
-        return 1
-    return 2 if any(item["verdict"] == "BLOCK" for item in report) else 0
+        return EXIT_INPUT_ERROR
+
+    code = decide_exit_code(report, getattr(report, "unscanned", []),
+                            fail_on=args.fail_on)
+    if code == EXIT_NOT_CLEAN:
+        print("\n[EXIT 3] Nothing is hard-blocked, but this scan is not clean "
+              "- see the WARNING rows and any unscanned lines above. "
+              "Use --fail-on block to gate only on BLOCK.")
+    return code
 
 
 if __name__ == "__main__":
