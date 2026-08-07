@@ -2410,7 +2410,24 @@ class RepositoryChecker:
         if local_file:
             parent = Path(local_file).resolve().parent
             base = Path(local_file).name
-            for sibling in parent.iterdir() if parent.is_dir() else []:
+            # Listing the directory is best-effort: the artifact can sit
+            # somewhere the process may read but not enumerate, and an
+            # unhandled PermissionError here aborted the whole scan. Not being
+            # able to look is recorded as unverified rather than swallowed -
+            # "we found no signature" and "we could not check" are different
+            # answers, and only one of them is evidence.
+            try:
+                siblings = list(parent.iterdir()) if parent.is_dir() else []
+            except OSError as exc:
+                siblings = []
+                issues.append(_issue(
+                    "unverified", "low",
+                    f"Could not list {parent} to look for a signature file "
+                    f"next to {base}: {exc}",
+                    recommendation="Pass the signature explicitly with "
+                                   "--signature-file / --signature-bundle.",
+                ))
+            for sibling in siblings:
                 if sibling.name == base:
                     continue
                 if _looks_like_signature(sibling.name) and (
