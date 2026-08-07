@@ -33,7 +33,7 @@ import sys
 from importlib.metadata import version as installed_version, PackageNotFoundError, metadata
 
 from osv_client import query_vulnerabilities
-from license_checker import classify_license, classify_license_detailed
+from license_checker import classify_license_detailed
 from sbom_generator import build_final_sbom
 from ai_explainer import explain_results
 from score_engine import calculate_trust_score
@@ -90,47 +90,195 @@ def parse_requirements(path: str) -> tuple[list[tuple[str, str]], list[str]]:
     return packages, unscanned
 
 
-def get_license_for_package(package_name: str) -> str:
-    """
-    Reads license metadata for the package as currently installed in this
-    Python environment.
+PYPI_RELEASE_URL = "https://pypi.org/pypi/{package}/{version}/json"
+PYPI_TIMEOUT_SEC = 8.0
 
-    Preference order (avoids numpy-style false positives from a 47 KB
-    License field that also embeds third-party terms):
-      1) License-Expression (SPDX id / expression)
-      2) Short License field (identifier, not full text)
-      3) License :: PyPI trove classifier
-      4) Full License text (classified by wording, not keyword scrape)
+# One session and one cache per process: a requirements file repeats packages
+# across transitive pins, and pypi.org should not be asked twice for the same
+# release.
+_PYPI_SESSION = None
+_RELEASE_CACHE: dict = {}
 
-    NOTE: this is the license of the *installed* version, which might not
-    match the version pinned in requirements.txt. For an exact check you'd
-    want to install that exact version in a clean venv first. Keeping it
-    simple for the MVP.
+
+def _license_candidates(fields: dict) -> list:
     """
+    License strings a distribution offers, best-structured first.
+
+    PEP 639's `License-Expression` is authoritative when present. Below it the
+    order matters less than it looks, because `_best_candidate` re-ranks by
+    what actually resolves - a short free-text `License` beats a classifier
+    only when it names a real identifier.
+    """
+    candidates = []
+
+    expression = (fields.get("license_expression") or "").strip()
+    if expression and expression.upper() != "UNKNOWN":
+        candidates.append((expression, "license_expression"))
+
+    lic = (fields.get("license") or "").strip()
+    # A short, single-line License field is almost always an identifier
+    # (MIT, BSD-3-Clause, Apache-2.0), not the full text.
+    if lic and lic.upper() != "UNKNOWN" and len(lic) < 300 and lic.count("\n") <= 3:
+        candidates.append((lic, "license"))
+
+    for classifier in fields.get("classifiers") or []:
+        if classifier.startswith("License ::"):
+            candidates.append((classifier, "classifier"))
+
+    # The full text last: it is the least ambiguous evidence but the most
+    # expensive to read, and numpy ships 47 KB of it with third-party terms
+    # appended.
+    if lic and lic.upper() != "UNKNOWN" and (lic, "license") not in candidates:
+        candidates.append((lic, "license_text"))
+
+    return candidates
+
+
+def _best_candidate(candidates: list) -> tuple:
+    """
+    Pick the license string that identifies the license most precisely.
+
+    psycopg2 publishes `License: "LGPL with exceptions"` alongside the trove
+    classifier "GNU Library or Lesser General Public License (LGPL)". Taking
+    the first field in a fixed order throws away whichever one happens to be
+    the resolvable one, so each candidate is graded and the one that resolves
+    to an SPDX identifier wins.
+    """
+    graded = [(raw, field, classify_license_detailed(raw))
+              for raw, field in candidates]
+
+    for raw, field, detail in graded:
+        if detail["spdx_id"]:
+            return raw, field
+    for raw, field, detail in graded:
+        if detail["status"] != "UNKNOWN":
+            return raw, field
+    if graded:
+        raw, field, _ = graded[0]
+        return raw, field
+    return "", ""
+
+
+def _installed_license(package_name: str) -> tuple:
+    """Read the license of the copy installed in this environment."""
     try:
         meta = metadata(package_name)
-
-        expression = (meta.get("License-Expression") or "").strip()
-        if expression and expression.upper() != "UNKNOWN":
-            return expression
-
-        lic = (meta.get("License") or "").strip()
-        # A short, single-line License field is almost always an identifier
-        # (MIT, BSD-3-Clause, Apache-2.0). Prefer it over classifiers.
-        if lic and lic.upper() != "UNKNOWN" and len(lic) < 300 and lic.count("\n") <= 3:
-            return lic
-
-        classifiers = meta.get_all("Classifier") or []
-        for classifier in classifiers:
-            if classifier.startswith("License ::"):
-                return classifier
-
-        if lic and lic.upper() != "UNKNOWN":
-            return lic
-
-        return "UNKNOWN"
     except PackageNotFoundError:
-        return "NOT_INSTALLED"
+        return "NOT_INSTALLED", "", None
+
+    fields = {
+        "license_expression": meta.get("License-Expression") or "",
+        "license": meta.get("License") or "",
+        "classifiers": meta.get_all("Classifier") or [],
+    }
+    raw, field = _best_candidate(_license_candidates(fields))
+    try:
+        found_version = installed_version(package_name)
+    except PackageNotFoundError:
+        found_version = None
+    return (raw or "UNKNOWN"), field, found_version
+
+
+def _pypi_release_license(package_name: str, version: str) -> tuple:
+    """
+    Read the license PyPI records for one exact release.
+
+    Returns (raw, field, error). `error` is a string when the release could
+    not be read, so the caller can record *why* it fell back rather than
+    silently reporting the wrong version's terms.
+    """
+    global _PYPI_SESSION
+
+    key = (package_name.lower(), version)
+    if key in _RELEASE_CACHE:
+        return _RELEASE_CACHE[key]
+
+    try:
+        import requests
+        from urllib.parse import quote
+    except ImportError as exc:                      # pragma: no cover
+        return "", "", f"requests unavailable: {exc}"
+
+    if _PYPI_SESSION is None:
+        _PYPI_SESSION = requests.Session()
+
+    url = PYPI_RELEASE_URL.format(package=quote(package_name, safe=""),
+                                  version=quote(version, safe=""))
+    try:
+        response = _PYPI_SESSION.get(url, timeout=PYPI_TIMEOUT_SEC)
+    except Exception as exc:                        # noqa: BLE001 - network
+        result = ("", "", f"network: {exc}")
+        _RELEASE_CACHE[key] = result
+        return result
+
+    if response.status_code == 404:
+        result = ("", "", f"release {package_name}=={version} not found on PyPI")
+        _RELEASE_CACHE[key] = result
+        return result
+    if response.status_code != 200:
+        result = ("", "", f"http {response.status_code}")
+        _RELEASE_CACHE[key] = result
+        return result
+
+    try:
+        info = response.json().get("info") or {}
+    except ValueError as exc:
+        result = ("", "", f"invalid json: {exc}")
+        _RELEASE_CACHE[key] = result
+        return result
+
+    raw, field = _best_candidate(_license_candidates(info))
+    result = (raw, field, None) if raw else (
+        "", "", f"{package_name}=={version} declares no license")
+    _RELEASE_CACHE[key] = result
+    return result
+
+
+def resolve_license(package_name: str, version: str = None,
+                    offline: bool = False) -> dict:
+    """
+    Resolve the license of the *requested* version of a package.
+
+    Reading the installed copy is not good enough, and the gap is not
+    theoretical: chardet 5.2.0 is LGPL-2.1 and chardet 7.5.1 is 0BSD. A
+    requirements file pinning 5.2.0 while the environment holds 7.5.1 would be
+    reported as permissive, and the copyleft obligation would be missed
+    entirely. Packages that are not installed at all reported NOT_INSTALLED
+    and were graded UNKNOWN.
+
+    So the pinned release on PyPI is the source of record, and the installed
+    copy is the fallback - marked as such, because it describes a different
+    version.
+
+    Returns:
+        license        the raw string to classify
+        source         pypi:<field> / installed:<field> / none
+        version        the version the license was read from, when known
+        unverified     True when the license does not come from the pinned
+                       release; score_engine lowers confidence on it rather
+                       than trusting a version that was never checked
+        error          why PyPI was not used, when it was not
+    """
+    if version and not offline:
+        raw, field, error = _pypi_release_license(package_name, version)
+        if raw:
+            return {"license": raw, "source": f"pypi:{field}",
+                    "version": version, "unverified": False, "error": None}
+    else:
+        error = "offline" if offline else "no version pinned"
+
+    raw, field, found_version = _installed_license(package_name)
+    source = f"installed:{field}" if field else "none"
+    # The installed copy only describes the pinned version when it *is* the
+    # pinned version.
+    matches_pin = bool(version) and found_version == version
+    return {
+        "license": raw,
+        "source": source if raw != "NOT_INSTALLED" else "none",
+        "version": found_version,
+        "unverified": not matches_pin,
+        "error": error,
+    }
 
 
 def _vulns_to_issues(vulns: list) -> list:
@@ -168,6 +316,16 @@ OSV_UNVERIFIED_ISSUE = {
         "OSV vulnerability lookup failed (network/API error). "
         "CVE status is unverified — not the same as 'no known vulnerabilities'."
     ),
+}
+
+# Same contract as above: a license read from something other than the pinned
+# release describes a version nobody asked about. severity "unknown" is what
+# score_engine._confidence keys on, so this lowers confidence rather than
+# passing off another version's terms as the answer.
+LICENSE_UNVERIFIED_ISSUE = {
+    "type": "unverified",
+    "severity": "unknown",
+    "detail": "License could not be read from the pinned release.",
 }
 
 
@@ -226,11 +384,14 @@ def analyze_package_risks(
     return result.get("issues") or [], result.get("alternatives") or []
 
 
-def _display_issues(issues: list | None, *, osv_unverified: bool) -> list:
-    """Issues shown in the report/terminal (may include the OSV failure marker)."""
+def _display_issues(issues: list | None, *, osv_unverified: bool,
+                    extra: list | None = None) -> list:
+    """Issues shown in the report/terminal (may include the unverified markers)."""
     shown: list = []
     if osv_unverified:
         shown.append(dict(OSV_UNVERIFIED_ISSUE))
+    if extra:
+        shown.extend(extra)
     if issues:
         shown.extend(issues)
     return shown
@@ -397,8 +558,31 @@ def run_scan(
     for name, version in packages:
         print(f"[Scanning] {name}=={version} ...")
 
-        lic_raw = get_license_for_package(name)
-        lic_status = classify_license(lic_raw)
+        lic = resolve_license(name, version, offline=offline)
+        lic_raw = lic["license"]
+        lic_detail = classify_license_detailed(lic_raw)
+        lic_status = lic_detail["status"]
+
+        license_issue = None
+        if lic["unverified"]:
+            if lic["source"] == "none":
+                # Nothing to read anywhere - a typo, a hallucinated name, or a
+                # private package. "The terms may differ" would be nonsense
+                # here; there are no terms.
+                detail = (f"No license could be read for {name}=={version}: "
+                          f"{lic['error']}, and it is not installed locally.")
+                warning = f"no license found — {lic['error']}"
+            else:
+                found = f" (version {lic['version']})" if lic["version"] else ""
+                detail = (f"License for {name}=={version} was read from "
+                          f"{lic['source']}{found} because {lic['error']}. A "
+                          f"package can change license between releases, so "
+                          f"these terms may not be the pinned release's.")
+                warning = (f"license read from {lic['source']}{found} — "
+                           f"{lic['error']}. Terms may differ from "
+                           f"{name}=={version}.")
+            license_issue = dict(LICENSE_UNVERIFIED_ISSUE, detail=detail)
+            print(f"  [WARNING] {warning}")
 
         if offline:
             # None, not [] - the distinction matters. An empty list means
@@ -421,8 +605,14 @@ def run_scan(
         if supply_chain and not offline:
             repository_info = check_supply_chain(name, version)
 
+        # `issues is None` means OSV never ran; keep it None so score_engine
+        # still sees "never looked" rather than a one-item list.
+        scored_issues = issues
+        if license_issue is not None and issues is not None:
+            scored_issues = issues + [license_issue]
+
         score_result = calculate_trust_score(
-            _build_check_result(lic_status, issues, repository_info)
+            _build_check_result(lic_status, scored_issues, repository_info)
         )
 
         entry = {
@@ -430,8 +620,16 @@ def run_scan(
             "version": version,
             "license_raw": lic_raw,
             "license_status": lic_status,
+            "license_spdx_id": lic_detail["spdx_id"],
+            "license_family": lic_detail["family"],
+            "license_obligations": lic_detail["obligations"],
+            "license_source": lic["source"],
+            "license_version": lic["version"],
+            "license_unverified": lic["unverified"],
             "vulnerabilities": vulns,
-            "issues": _display_issues(issues, osv_unverified=osv_unverified),
+            "issues": _display_issues(
+                issues, osv_unverified=osv_unverified,
+                extra=[license_issue] if license_issue else None),
             "osv_unverified": osv_unverified,
             "scanned": issues is not None,
             "alternatives": alternatives,

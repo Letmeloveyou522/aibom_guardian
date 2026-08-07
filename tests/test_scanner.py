@@ -33,7 +33,12 @@ def no_side_effects(tmp_path, monkeypatch):
     """Stub out everything that touches the network or the real filesystem."""
     monkeypatch.setattr(scanner, "build_final_sbom", lambda *a, **k: None)
     monkeypatch.setattr(scanner, "explain_results", lambda r: "(stubbed)")
-    monkeypatch.setattr(scanner, "get_license_for_package", lambda n: "MIT")
+    monkeypatch.setattr(
+        scanner, "resolve_license",
+        lambda name, version=None, offline=False: {
+            "license": "MIT", "source": "pypi:license_expression",
+            "version": version, "unverified": False, "error": None,
+        })
     monkeypatch.chdir(tmp_path)
 
 
@@ -554,3 +559,171 @@ def test_unscanned_lines_are_saved_in_report(reqs, no_side_effects, monkeypatch,
 
     data = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
     assert data["unscanned"] == ["flask", "requests>=2.0"]
+
+
+# ---------------------------------------------------------------------------
+# License resolution - the pinned release is the source of record
+# ---------------------------------------------------------------------------
+
+class FakeResponse:
+    """Stands in for a requests.Response from the PyPI release endpoint."""
+
+    def __init__(self, payload=None, status_code=200):
+        self.payload = payload
+        self.status_code = status_code
+
+    def json(self):
+        if self.payload is None:
+            raise ValueError("no json")
+        return self.payload
+
+
+@pytest.fixture(autouse=True)
+def clear_release_cache():
+    """resolve_license memoises per (package, version) for the process."""
+    scanner._RELEASE_CACHE.clear()
+    yield
+    scanner._RELEASE_CACHE.clear()
+
+
+def _fake_pypi(monkeypatch, info, status_code=200):
+    """Point the release lookup at a canned PyPI payload."""
+    class FakeSession:
+        def get(self, url, timeout=None):
+            return FakeResponse({"info": info}, status_code)
+
+    monkeypatch.setattr(scanner, "_PYPI_SESSION", FakeSession())
+
+
+def test_license_comes_from_the_pinned_release_not_the_installed_copy(monkeypatch):
+    """
+    chardet 5.2.0 is LGPL-2.1 and chardet 7.5.1 is 0BSD. Reading whatever the
+    environment happens to hold reports the wrong terms for a pinned
+    dependency, and the copyleft obligation is simply missed.
+    """
+    _fake_pypi(monkeypatch, {"license": "LGPL-2.1-only"})
+    monkeypatch.setattr(scanner, "_installed_license",
+                        lambda name: ("0BSD", "license", "7.5.1"))
+
+    result = scanner.resolve_license("chardet", "5.2.0")
+
+    assert result["license"] == "LGPL-2.1-only"
+    assert result["source"] == "pypi:license"
+    assert result["version"] == "5.2.0"
+    assert result["unverified"] is False
+
+
+def test_a_package_that_is_not_installed_still_resolves(monkeypatch):
+    """
+    Before this, anything absent from the environment came back
+    NOT_INSTALLED and graded UNKNOWN - so scanning a requirements file on a
+    clean machine identified nothing at all.
+    """
+    _fake_pypi(monkeypatch, {"license": "GNU General Public License v2 (GPLv2)"})
+    monkeypatch.setattr(scanner, "_installed_license",
+                        lambda name: ("NOT_INSTALLED", "", None))
+
+    result = scanner.resolve_license("mysqlclient", "2.2.4")
+
+    assert result["source"] == "pypi:license"
+    assert result["unverified"] is False
+
+
+def test_pypi_failure_falls_back_but_says_so(monkeypatch):
+    """A fallback that is not announced is indistinguishable from an answer."""
+    _fake_pypi(monkeypatch, None, status_code=503)
+    monkeypatch.setattr(scanner, "_installed_license",
+                        lambda name: ("MIT", "license", "9.9.9"))
+
+    result = scanner.resolve_license("somepkg", "1.0.0")
+
+    assert result["source"] == "installed:license"
+    assert result["unverified"] is True
+    assert "503" in result["error"]
+
+
+def test_offline_never_calls_pypi(monkeypatch):
+    def explode(*args, **kwargs):
+        raise AssertionError("offline scan must not reach the network")
+
+    monkeypatch.setattr(scanner, "_pypi_release_license", explode)
+    monkeypatch.setattr(scanner, "_installed_license",
+                        lambda name: ("MIT", "license", "1.0.0"))
+
+    result = scanner.resolve_license("somepkg", "1.0.0", offline=True)
+
+    assert result["license"] == "MIT"
+    assert result["error"] == "offline"
+
+
+def test_installed_copy_is_trusted_only_when_it_is_the_pinned_version(monkeypatch):
+    monkeypatch.setattr(scanner, "_installed_license",
+                        lambda name: ("MIT", "license", "1.0.0"))
+
+    same = scanner.resolve_license("somepkg", "1.0.0", offline=True)
+    other = scanner.resolve_license("somepkg", "2.0.0", offline=True)
+
+    assert same["unverified"] is False
+    assert other["unverified"] is True
+
+
+def test_the_field_that_identifies_the_license_wins(monkeypatch):
+    """
+    psycopg2 publishes License: "LGPL with exceptions" next to the classifier
+    "GNU Lesser General Public License v3 (LGPLv3)". Taking fields in a fixed
+    order throws away whichever one happens to be resolvable, so each is
+    graded and the one that yields an SPDX id is used.
+    """
+    _fake_pypi(monkeypatch, {
+        "license": "LGPL with exceptions",
+        "classifiers": [
+            "Programming Language :: Python :: 3",
+            "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+        ],
+    })
+
+    result = scanner.resolve_license("psycopg2", "2.9.9")
+
+    assert result["source"] == "pypi:classifier"
+
+
+def test_an_unverified_license_lowers_confidence(reqs, no_side_effects, monkeypatch):
+    """
+    Same contract as the OSV failure marker: evidence we could not gather is
+    recorded as `unverified` so score_engine lowers confidence, rather than
+    passing another version's terms off as the answer.
+    """
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+    monkeypatch.setattr(
+        scanner, "resolve_license",
+        lambda name, version=None, offline=False: {
+            "license": "MIT", "source": "installed:license",
+            "version": "9.9.9", "unverified": True, "error": "http 503",
+        })
+
+    report = scanner.run_scan(reqs, explain=False)
+
+    entry = report[0]
+    assert entry["license_unverified"] is True
+    assert entry["license_source"] == "installed:license"
+    assert any(i["type"] == "unverified" for i in entry["issues"])
+    assert entry["confidence"] < 1.0
+
+
+def test_the_report_carries_the_licence_obligations(reqs, no_side_effects, monkeypatch):
+    """"REVIEW" alone is not an instruction; the duty has to travel with it."""
+    monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
+    monkeypatch.setattr(scanner, "RecommendationEngine", lambda *a, **k: FakeEngine())
+    monkeypatch.setattr(
+        scanner, "resolve_license",
+        lambda name, version=None, offline=False: {
+            "license": "GPL-3.0-only", "source": "pypi:license_expression",
+            "version": version, "unverified": False, "error": None,
+        })
+
+    entry = scanner.run_scan(reqs, explain=False)[0]
+
+    assert entry["license_status"] == "REVIEW"
+    assert entry["license_spdx_id"] == "GPL-3.0-only"
+    assert entry["license_obligations"]
