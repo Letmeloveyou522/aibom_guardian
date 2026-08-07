@@ -33,7 +33,7 @@ import sys
 from importlib.metadata import version as installed_version, PackageNotFoundError, metadata
 
 from osv_client import query_vulnerabilities
-from license_checker import classify_license_detailed
+from license_checker import classify_license_detailed, set_offline
 from sbom_generator import build_final_sbom
 from ai_explainer import explain_results
 from score_engine import calculate_trust_score
@@ -539,6 +539,10 @@ def run_scan(
         if unscanned_lines:
             print(f"[INFO] {len(unscanned_lines)} line(s) were not in name==version format.")
         return []
+
+    # The license registries are downloaded and cached on first use; offline
+    # means "use whatever is already cached, never fetch".
+    set_offline(offline)
 
     engine = None
     if offline:

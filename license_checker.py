@@ -14,13 +14,15 @@ Identifies a package or model license and says what using it obliges you to do.
 
 Where the verdicts come from
 ----------------------------
-Licenses are *identified* against two vendored registries rather than guessed
+Licenses are *identified* against two published registries rather than guessed
 at with keywords, and the answer cites which one decided:
 
-  data/spdx-licenses.json   SPDX License List 3.28.0 - 727 identifiers, each
-                            with an `isOsiApproved` flag
-  data/blueoak-list.json    Blue Oak Council License List v16 - 225 licenses
-                            graded for how permissive they are
+  SPDX License List              727 identifiers, each with an
+                                 `isOsiApproved` flag
+  Blue Oak Council License List  225 licenses graded for how permissive
+                                 they are
+
+Both are downloaded on first use and cached; see `_cache_dir`.
 
 Neither registry alone is enough, and the reason matters:
 
@@ -69,21 +71,67 @@ Each shape is handled on its own path. Two failures this design pins:
 """
 
 import json
+import os
 import re
+import sys
+import time
 from functools import lru_cache
 from pathlib import Path
 
 __all__ = ["classify_license", "classify_license_detailed", "normalize_to_spdx",
-           "registry_versions", "ALLOWED", "REVIEW", "BLOCKED", "UNKNOWN"]
+           "registry_versions", "set_offline",
+           "ALLOWED", "REVIEW", "BLOCKED", "UNKNOWN"]
 
 ALLOWED = "ALLOWED"
 REVIEW = "REVIEW"
 BLOCKED = "BLOCKED"
 UNKNOWN = "UNKNOWN"
 
-_DATA_DIR = Path(__file__).resolve().parent / "data"
-_SPDX_FILE = _DATA_DIR / "spdx-licenses.json"
-_BLUEOAK_FILE = _DATA_DIR / "blueoak-list.json"
+# The registries are downloaded on first use and cached, the way vulnerability
+# scanners handle their databases. They are deliberately not vendored into
+# this repository: Blue Oak's terms permit automating *access* to the JSON
+# files but say nothing about redistributing them, and neither SPDX data
+# repository declares a license for the list itself. Fetching is the one thing
+# both publishers clearly allow, and a tool that grades other people's
+# licensing should not ship files whose own terms it cannot state.
+_SPDX_URL = "https://spdx.org/licenses/licenses.json"
+_BLUEOAK_URL = "https://blueoakcouncil.org/list.json"
+
+# SPDX ships roughly quarterly; a month keeps the copy current without asking
+# the network on every run. A stale cache is always preferred to no registry.
+_CACHE_MAX_AGE_SEC = 30 * 24 * 60 * 60
+_FETCH_TIMEOUT_SEC = 15.0
+
+_OFFLINE = False
+
+
+def set_offline(offline: bool) -> None:
+    """
+    Tell the registry loader not to reach the network (the CLI's --offline).
+
+    An already-cached copy is still used; only the download is suppressed.
+    """
+    global _OFFLINE
+    if bool(offline) != _OFFLINE:
+        _OFFLINE = bool(offline)
+        _registry.cache_clear()
+
+
+def _cache_dir() -> Path:
+    """
+    Where the downloaded registries live.
+
+    AIBOM_GUARD_CACHE overrides it, which is how the test suite stays offline
+    and how a CI job can pre-seed the cache.
+    """
+    override = os.environ.get("AIBOM_GUARD_CACHE")
+    if override:
+        return Path(override)
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
+    else:
+        base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
+    return Path(base) / "aibom-guard" / "registries"
 
 # Sentinels the callers pass in when there was nothing to read. They are not
 # license strings and must not be matched against anything.
@@ -108,20 +156,78 @@ def _normalise(text: str) -> str:
 # Registries
 # ---------------------------------------------------------------------------
 
+def _load_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _fetch_registry(filename: str, url: str) -> tuple:
+    """
+    Return (payload, source) for one registry.
+
+    Order: a fresh cache, then a download, then a stale cache. Falling back to
+    a stale copy matters more than being current - an out-of-date list still
+    identifies MIT, and no list at all grades everything UNKNOWN.
+    """
+    path = _cache_dir() / filename
+
+    if path.exists():
+        age = time.time() - path.stat().st_mtime
+        if age < _CACHE_MAX_AGE_SEC:
+            payload = _load_json(path)
+            if payload is not None:
+                return payload, "cache"
+
+    if not _OFFLINE:
+        try:
+            import requests
+
+            response = requests.get(url, timeout=_FETCH_TIMEOUT_SEC)
+            response.raise_for_status()
+            payload = response.json()
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(payload), encoding="utf-8")
+            except OSError:
+                pass            # an unwritable cache is not a reason to fail
+            return payload, "download"
+        except Exception:       # noqa: BLE001 - network, DNS, TLS, bad JSON
+            pass
+
+    if path.exists():
+        payload = _load_json(path)
+        if payload is not None:
+            return payload, "stale cache"
+
+    return None, None
+
+
 @lru_cache(maxsize=1)
 def _registry() -> dict:
     """
-    Load the vendored SPDX and Blue Oak lists into one lookup table.
+    Load the SPDX and Blue Oak lists into one lookup table.
 
     Keyed by the normalised SPDX id *and* the normalised license name, so
     "gpl-3.0-only" and "gnu general public license v3.0 only" both resolve.
 
-    The files are vendored rather than fetched so a scan is reproducible and
-    works offline; `registry_versions()` reports which snapshot decided a
-    verdict, and that belongs in the SBOM next to the result.
+    When neither list can be loaded the table is empty and grading falls back
+    to the rules that live in code - use restrictions and copyleft families.
+    That degrades toward REVIEW and UNKNOWN, never toward ALLOWED.
     """
-    spdx = json.loads(_SPDX_FILE.read_text(encoding="utf-8"))
-    blueoak = json.loads(_BLUEOAK_FILE.read_text(encoding="utf-8"))
+    spdx, spdx_source = _fetch_registry("spdx-licenses.json", _SPDX_URL)
+    blueoak, blueoak_source = _fetch_registry("blueoak-list.json", _BLUEOAK_URL)
+
+    if spdx is None:
+        print("[WARNING] SPDX license list unavailable "
+              f"({'offline' if _OFFLINE else 'download failed'}); licenses "
+              "will be graded from built-in rules only and most will come "
+              "back UNKNOWN. Run once with network access to populate "
+              f"{_cache_dir()}.", file=sys.stderr)
+        spdx = {"licenses": []}
+    if blueoak is None:
+        blueoak = {"ratings": []}
 
     rated = {}
     for rating in blueoak.get("ratings", []):
@@ -147,21 +253,30 @@ def _registry() -> dict:
     return {
         "records": records,
         "index": index,
-        "spdx_version": spdx.get("licenseListVersion", "unknown"),
-        "blueoak_version": str(blueoak.get("version", "unknown")),
+        "available": bool(records),
+        "spdx_version": spdx.get("licenseListVersion", "unavailable"),
+        "spdx_source": spdx_source or "unavailable",
+        "blueoak_version": str(blueoak.get("version", "unavailable")),
+        "blueoak_source": blueoak_source or "unavailable",
     }
 
 
 def registry_versions() -> dict:
     """
-    Which registry snapshots produced the verdicts.
+    Which registry snapshots produced the verdicts, and where they came from.
 
-    A license decision is only auditable if the data behind it is pinned, so
-    callers should record this alongside the result.
+    A license decision is only auditable if the data behind it is identified,
+    so callers should record this alongside the result - it belongs in the
+    SBOM next to the license fields.
     """
     reg = _registry()
-    return {"spdx_license_list": reg["spdx_version"],
-            "blue_oak_council_list": reg["blueoak_version"]}
+    return {
+        "spdx_license_list": reg["spdx_version"],
+        "spdx_source": reg["spdx_source"],
+        "blue_oak_council_list": reg["blueoak_version"],
+        "blue_oak_source": reg["blueoak_source"],
+        "available": reg["available"],
+    }
 
 
 # Spellings that are not SPDX ids or names: PyPI trove classifier tails, and
@@ -551,6 +666,16 @@ def _grade_identifier(part: str) -> dict:
     by_family = _grade_by_family(text)
     if by_family:
         return by_family
+
+    if not _registry()["available"]:
+        # Say which it is. "Unrecognised" and "we never loaded the list" look
+        # identical in a report and mean very different things.
+        return _verdict(UNKNOWN, "unrecognised",
+                        "The SPDX license list could not be loaded, so this "
+                        "string was never looked up.",
+                        ["Run once with network access to populate "
+                         f"{_cache_dir()}, then rescan."],
+                        source="registry-unavailable")
 
     return _verdict(UNKNOWN, "unrecognised",
                     "Not found in the SPDX license list. Not the same as safe.",

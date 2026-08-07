@@ -652,3 +652,87 @@ def test_malformed_expressions_fail_closed(text):
 def test_malformed_expressions_do_not_raise():
     for text in ["(", ")", "()", "((((", "MIT AND (", "/", ",", "OR OR OR"]:
         assert classify_license(text) in (ALLOWED, REVIEW, BLOCKED, UNKNOWN)
+
+
+# ---------------------------------------------------------------------------
+# Registry loading: downloaded once, cached, and degrades safely
+# ---------------------------------------------------------------------------
+
+import license_checker
+
+
+@pytest.fixture
+def isolated_registry(tmp_path, monkeypatch):
+    """Point the registry cache at an empty directory and reset the loader."""
+    monkeypatch.setattr(license_checker, "_cache_dir", lambda: tmp_path)
+    license_checker._registry.cache_clear()
+    yield tmp_path
+    license_checker.set_offline(False)
+    license_checker._registry.cache_clear()
+
+
+def test_offline_without_a_cache_never_invents_a_verdict(isolated_registry, capsys):
+    """
+    With no registry loaded the tool must not guess. It says so, and the
+    verdicts it can still reach come from rules that live in code.
+    """
+    license_checker.set_offline(True)
+
+    versions = license_checker.registry_versions()
+    assert versions["available"] is False
+    assert versions["spdx_source"] == "unavailable"
+
+    detail = classify_license_detailed("MIT")
+    assert detail["status"] == UNKNOWN
+    assert detail["source"] == "registry-unavailable"
+
+    assert "unavailable" in capsys.readouterr().err
+
+
+def test_degrading_never_turns_a_restriction_into_a_pass(isolated_registry):
+    """
+    Losing the registry may cost identification, never safety: a use
+    restriction and a copyleft family are both recognised from code alone.
+    """
+    license_checker.set_offline(True)
+
+    assert classify_license("Apache-2.0 WITH Commons Clause") == BLOCKED
+    assert classify_license("BUSL-1.1") == BLOCKED
+    assert classify_license("CreativeML OpenRAIL-M") == BLOCKED
+    assert classify_license("GPL-3.0-only") == REVIEW
+    assert classify_license("LGPL with exceptions") == REVIEW
+    # And nothing reaches ALLOWED without the registry to vouch for it.
+    for text in ["MIT", "Apache-2.0", "BSD-3-Clause", "CC0-1.0"]:
+        assert classify_license(text) != ALLOWED, text
+
+
+def test_a_cached_registry_is_used_without_the_network(isolated_registry, monkeypatch):
+    """Offline is only "do not fetch"; an existing cache still answers."""
+    import json
+    import shutil
+    from pathlib import Path
+
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    for name in ("spdx-licenses.json", "blueoak-list.json"):
+        shutil.copy(fixtures / name, isolated_registry / name)
+
+    def explode(*args, **kwargs):
+        raise AssertionError("offline must not reach the network")
+
+    monkeypatch.setattr("requests.get", explode)
+    license_checker.set_offline(True)
+
+    assert license_checker.registry_versions()["spdx_source"] == "cache"
+    assert classify_license("MIT") == ALLOWED
+    assert classify_license("GPL-3.0-only") == REVIEW
+
+
+def test_registry_versions_travel_with_the_verdict():
+    """
+    A license decision is auditable only if the data behind it is named, so
+    the loaded list versions have to be reportable.
+    """
+    versions = license_checker.registry_versions()
+    assert set(versions) >= {"spdx_license_list", "spdx_source",
+                             "blue_oak_council_list", "blue_oak_source",
+                             "available"}

@@ -1,0 +1,105 @@
+{
+ "version": "16",
+ "ratings": [
+  {
+   "name": "Silver",
+   "licenses": [
+    {
+     "name": "Apache License 2.0",
+     "id": "Apache-2.0",
+     "url": "https://spdx.org/licenses/Apache-2.0.html"
+    },
+    {
+     "name": "BSD 2-Clause \"Simplified\" License",
+     "id": "BSD-2-Clause",
+     "url": "https://spdx.org/licenses/BSD-2-Clause.html"
+    },
+    {
+     "name": "Boost Software License 1.0",
+     "id": "BSL-1.0",
+     "url": "https://spdx.org/licenses/BSL-1.0.html"
+    },
+    {
+     "name": "ISC License",
+     "id": "ISC",
+     "url": "https://spdx.org/licenses/ISC.html"
+    },
+    {
+     "name": "MIT License",
+     "id": "MIT",
+     "url": "https://spdx.org/licenses/MIT.html"
+    },
+    {
+     "name": "PostgreSQL License",
+     "id": "PostgreSQL",
+     "url": "https://spdx.org/licenses/PostgreSQL.html"
+    }
+   ]
+  },
+  {
+   "name": "Bronze",
+   "licenses": [
+    {
+     "id": "0BSD",
+     "url": "https://spdx.org/licenses/0BSD.html",
+     "name": "BSD Zero Clause License"
+    },
+    {
+     "id": "BSD-3-Clause",
+     "url": "https://spdx.org/licenses/BSD-3-Clause.html",
+     "name": "BSD 3-Clause \"New\" or \"Revised\" License"
+    },
+    {
+     "id": "BSD-4-Clause",
+     "url": "https://spdx.org/licenses/BSD-4-Clause.html",
+     "name": "BSD 4-Clause \"Original\" or \"Old\" License"
+    },
+    {
+     "id": "BSD-Source-Code",
+     "url": "https://spdx.org/licenses/BSD-Source-Code.html",
+     "name": "BSD Source Code Attribution"
+    },
+    {
+     "id": "CC0-1.0",
+     "url": "https://spdx.org/licenses/CC0-1.0.html",
+     "name": "Creative Commons Zero v1.0 Universal"
+    },
+    {
+     "id": "libpng-2.0",
+     "url": "https://spdx.org/licenses/libpng-2.0.html",
+     "name": "PNG Reference Library version 2"
+    },
+    {
+     "id": "Python-2.0",
+     "url": "https://spdx.org/licenses/Python-2.0.html",
+     "name": "Python License 2.0"
+    },
+    {
+     "id": "Unlicense",
+     "url": "https://spdx.org/licenses/Unlicense.html",
+     "name": "The Unlicense"
+    },
+    {
+     "id": "Zlib",
+     "url": "https://spdx.org/licenses/Zlib.html",
+     "name": "zlib License"
+    }
+   ]
+  },
+  {
+   "name": "Lead",
+   "licenses": [
+    {
+     "id": "HPND",
+     "url": "https://spdx.org/licenses/HPND.html",
+     "name": "Historical Permission Notice and Disclaimer"
+    },
+    {
+     "id": "WTFPL",
+     "url": "https://spdx.org/licenses/WTFPL.html",
+     "name": "Do What The F*ck You Want To Public License"
+    }
+   ]
+  }
+ ]
+}
