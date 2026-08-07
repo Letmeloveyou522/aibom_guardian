@@ -796,19 +796,31 @@ def check_model(model_ref, revision=None, max_pickle_size_mb=DEFAULT_MAX_PICKLE_
     scan_revision = commit_sha or revision
 
     file_list = []
+    file_hashes = {}
     for sibling in getattr(info, "siblings", None) or []:
         path = getattr(sibling, "rfilename", None)
         if not path:
             continue
         size = getattr(sibling, "size", None)
+        lfs = getattr(sibling, "lfs", None)
         if size is None:
-            lfs = getattr(sibling, "lfs", None)
             # huggingface_hub returns lfs as an object on some versions and a
             # plain dict on others; the real size only lives there for
             # LFS-tracked files, which is every large weight file.
             size = getattr(lfs, "size", None) if lfs is not None else None
             if size is None and isinstance(lfs, dict):
                 size = lfs.get("size")
+
+        # The Hub already publishes the SHA-256 of every LFS-tracked file, and
+        # weight files are all LFS-tracked. An SBOM that names a model without
+        # a hash cannot be used to verify anyone received the same bytes, and
+        # "model hash" is a named element in the G7 SBOM-for-AI minimum set.
+        digest = getattr(lfs, "sha256", None) if lfs is not None else None
+        if digest is None and isinstance(lfs, dict):
+            digest = lfs.get("sha256")
+        if digest:
+            file_hashes[path] = str(digest)
+
         file_list.append((path, size))
 
     file_names = {path for path, _ in file_list}
@@ -843,6 +855,9 @@ def check_model(model_ref, revision=None, max_pickle_size_mb=DEFAULT_MAX_PICKLE_
         # The complete file list, sorted. An AIBOM should record what the
         # repository actually contains, not only the files we classified.
         "files": sorted(file_names),
+        # path -> SHA-256, for every LFS-tracked file the Hub publishes one
+        # for. Lets a consumer verify they received the same weights.
+        "file_hashes": file_hashes,
         "issues": [],
     }
 
