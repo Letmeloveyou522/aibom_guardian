@@ -21,9 +21,10 @@ Usage:
     python3 scanner.py reqs.txt --no-explain --json out.json
 
 Exit codes (so this can gate CI):
-    0  every package is ALLOW
-    1  bad input / nothing to scan
-    2  at least one package is BLOCK
+    0  every package is ALLOW and every requirement line was scanned
+    1  bad input - unreadable file, bad arguments, nothing to scan
+    2  at least one package or model is BLOCK
+    3  no hard block, but a WARNING or an unscanned line - see --fail-on
 """
 
 import argparse
@@ -736,6 +737,7 @@ def run_scan(
     sbom_path: str = "sbom.json",
     models: list | None = None,
     model_pickle_size_mb: int = 0,
+    verbose: bool = False,
 ) -> list[dict]:
     """
     Scan every pinned package in `requirements_path`.
@@ -897,7 +899,7 @@ def run_scan(
         if model_report:
             model_reports.append(model_report)
 
-    print_report(report)
+    print_report(report, verbose=verbose)
     if model_reports:
         print_model_report(model_reports)
     if unscanned_lines:
@@ -928,7 +930,61 @@ def run_scan(
     return report_with_models
 
 
-def print_report(report: list[dict]):
+# How many vulnerabilities to print per package before pointing at the JSON.
+# Django 4.2.11 alone reports 36 and Pillow 15; a ten-package scan printed
+# 17,805 characters, which is not a report anyone reads. The findings are all
+# in scan_report.json - the terminal's job is to say what to act on.
+_MAX_VULNS_SHOWN = 3
+_VULN_SUMMARY_CHARS = 100
+
+_SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3,
+                   "unknown": 4, None: 5}
+
+
+def _first_sentence(text: str, limit: int = _VULN_SUMMARY_CHARS) -> str:
+    """One readable line: first sentence, or a hard truncation."""
+    text = " ".join(str(text or "").split())
+    if not text:
+        return ""
+    head = text.split(". ")[0]
+    if len(head) > limit:
+        head = head[:limit - 1].rstrip() + "…"
+    return head
+
+
+def _print_vulnerabilities(item: dict, verbose: bool = False) -> None:
+    """
+    Print a package's vulnerabilities worst-first, capped unless --verbose.
+
+    Sorting by severity matters more than the cap: OSV returns them in
+    identifier order, so the critical one that decides the verdict could
+    previously be the thirtieth line.
+    """
+    vulns = [i for i in (item.get("issues") or []) if i.get("type") == "cve"]
+    if not vulns:
+        return
+
+    vulns.sort(key=lambda i: (_SEVERITY_ORDER.get(i.get("severity"), 5),
+                              -(i.get("cvss_score") or 0)))
+    shown = vulns if verbose else vulns[:_MAX_VULNS_SHOWN]
+
+    for issue in shown:
+        extra = ""
+        if issue.get("cvss_score") is not None:
+            extra = f", CVSS {issue['cvss_score']}"
+        if verbose and issue.get("aliases"):
+            extra += f", aka {', '.join(issue['aliases'])}"
+        summary = (issue.get("summary") or issue.get("detail")
+                   if verbose else
+                   _first_sentence(issue.get("summary") or issue.get("detail")))
+        print(f"    [{issue.get('severity')}{extra}] {issue.get('id')}: {summary}")
+
+    hidden = len(vulns) - len(shown)
+    if hidden:
+        print(f"    ... and {hidden} more (--verbose, or see the JSON report)")
+
+
+def print_report(report: list[dict], verbose: bool = False):
     print("\n===== AIBOM-Guard Scan Results =====\n")
 
     # Only widen the table when supply-chain data was actually collected;
@@ -1002,17 +1058,7 @@ def print_report(report: list[dict]):
                     continue
                 print(f"    [{issue.get('type')}] {issue.get('detail') or issue.get('summary')}")
 
-            for issue in item.get("issues") or []:
-                if issue.get("type") != "cve":
-                    continue
-                extra = ""
-                if issue.get("cvss_score") is not None:
-                    extra = f", CVSS {issue['cvss_score']}"
-                if issue.get("aliases"):
-                    extra += f", aka {', '.join(issue['aliases'])}"
-                print(f"    Vuln {issue.get('id')} "
-                      f"(severity {issue.get('severity')}{extra}): "
-                      f"{issue.get('summary') or issue.get('detail')}")
+            _print_vulnerabilities(item, verbose=verbose)
 
             supply = item.get("supply_chain")
             if supply:
@@ -1095,8 +1141,22 @@ def save_report(report_document: dict, out_path: str):
     print(f"\n[Saved] {out_path}")
 
 
+class _Parser(argparse.ArgumentParser):
+    """
+    argparse exits 2 on a usage error, and 2 is our "a package is BLOCKED".
+    A CI job cannot tell a typo in the command line from a blocked dependency,
+    and the two call for opposite reactions. Usage errors are input errors, so
+    they exit 1 like every other unusable input.
+    """
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        raise SystemExit(EXIT_INPUT_ERROR)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="scanner",
         description="Scan a requirements.txt for vulnerability, license and "
                     "supply-chain risk, and emit a CycloneDX SBOM.",
@@ -1124,6 +1184,9 @@ def build_parser() -> argparse.ArgumentParser:
                         metavar="MB",
                         help="download and picklescan model weight files up "
                              "to this size in MB (default: 0 = metadata only)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="print every vulnerability instead of the worst "
+                             "few per package")
     parser.add_argument("--fail-on", choices=("block", "warning", "never"),
                         default="warning",
                         help="what makes the exit code non-zero. "
@@ -1178,6 +1241,7 @@ def main(argv=None) -> int:
             sbom_path=args.sbom_path,
             models=args.models,
             model_pickle_size_mb=args.model_pickle_scan,
+            verbose=args.verbose,
         )
     except FileNotFoundError:
         print(f"[ERROR] No such file: {args.requirements}", file=sys.stderr)
