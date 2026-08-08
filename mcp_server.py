@@ -40,10 +40,10 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from license_checker import classify_license
+from license_checker import classify_license, classify_license_detailed
 from osv_client import query_vulnerabilities
 from repository_checker import check_repository
-from scanner import get_license_for_package, scan_model
+from scanner import resolve_license, scan_model
 from score_engine import calculate_trust_score
 
 logger = logging.getLogger(__name__)
@@ -396,8 +396,10 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
     # Never coerce None → [] — score_engine must see issues is None.
     issues_for_score = _vulns_to_issues(vulns)
 
-    lic_raw = get_license_for_package(name)
-    lic_status = classify_license(lic_raw)
+    lic = resolve_license(name, version)
+    lic_raw = lic["license"]
+    lic_detail = classify_license_detailed(lic_raw)
+    lic_status = lic_detail["status"]
 
     score_result = calculate_trust_score(
         _build_check_result(lic_status, issues_for_score)
@@ -410,6 +412,12 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
         "version": version,
         "license_status": lic_status,
         "license_raw": lic_raw,
+        "license_spdx_id": lic_detail["spdx_id"],
+        "license_family": lic_detail["family"],
+        "license_obligations": lic_detail["obligations"],
+        "license_source": lic["source"],
+        "license_version": lic["version"],
+        "license_unverified": lic["unverified"],
         "vulnerabilities": vulns,
         "osv_unverified": osv_unverified,
         "trust_score": score_result["trust_score"],

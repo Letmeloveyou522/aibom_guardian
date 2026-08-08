@@ -14,7 +14,34 @@
       "purl": "pkg:pypi/numpy@1.24.0",
       "type": "library",
       "version": "1.24.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
       "properties": [
+        {
+          "name": "aibom-guard:license_spdx_id",
+          "value": "BSD-3-Clause"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "permissive"
+        },
+        {
+          "name": "aibom-guard:license_source",
+          "value": "pypi:license"
+        },
+        {
+          "name": "aibom-guard:license_declared",
+          "value": "BSD-3-Clause"
+        },
+        {
+          "name": "aibom-guard:license_obligation:0",
+          "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+        },
         {
           "name": "aibom-guard:license_status",
           "value": "ALLOWED"
@@ -43,7 +70,34 @@
       "purl": "pkg:pypi/pyyaml@5.3.1",
       "type": "library",
       "version": "5.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
       "properties": [
+        {
+          "name": "aibom-guard:license_spdx_id",
+          "value": "MIT"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "permissive"
+        },
+        {
+          "name": "aibom-guard:license_source",
+          "value": "pypi:license"
+        },
+        {
+          "name": "aibom-guard:license_declared",
+          "value": "MIT"
+        },
+        {
+          "name": "aibom-guard:license_obligation:0",
+          "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+        },
         {
           "name": "aibom-guard:license_status",
           "value": "ALLOWED"
@@ -72,7 +126,34 @@
       "purl": "pkg:pypi/requests@2.28.0",
       "type": "library",
       "version": "2.28.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
       "properties": [
+        {
+          "name": "aibom-guard:license_spdx_id",
+          "value": "Apache-2.0"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "permissive"
+        },
+        {
+          "name": "aibom-guard:license_source",
+          "value": "pypi:license"
+        },
+        {
+          "name": "aibom-guard:license_declared",
+          "value": "Apache 2.0"
+        },
+        {
+          "name": "aibom-guard:license_obligation:0",
+          "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+        },
         {
           "name": "aibom-guard:license_status",
           "value": "ALLOWED"
@@ -83,168 +164,7 @@
         },
         {
           "name": "aibom-guard:verdict",
-          "value": "CONDITIONAL"
-        }
-      ]
-    },
-    {
-      "type": "machine-learning-model",
-      "bom-ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b",
-      "name": "CompVis/stable-diffusion-v1-4",
-      "version": "133a221b8aa7292a167afc5127cb63fb5005638b",
-      "purl": "pkg:huggingface/CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b",
-      "description": "Hugging Face model CompVis/stable-diffusion-v1-4 (text-to-image)",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://huggingface.co/CompVis/stable-diffusion-v1-4"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "name": "creativeml-openrail-m"
-          }
-        }
-      ],
-      "publisher": "CompVis",
-      "modelCard": {
-        "bom-ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b#modelcard",
-        "modelParameters": {
-          "task": "text-to-image",
-          "architectureFamily": "diffusers"
-        }
-      },
-      "properties": [
-        {
-          "name": "aibom-guard:trust_score",
-          "value": "49"
-        },
-        {
-          "name": "aibom-guard:verdict",
-          "value": "BLOCK"
-        },
-        {
-          "name": "aibom-guard:license_status",
-          "value": "BLOCKED"
-        },
-        {
-          "name": "aibom-guard:license_family",
-          "value": "ai-behavioural"
-        },
-        {
-          "name": "aibom-guard:weight_formats:safetensors",
-          "value": "9"
-        },
-        {
-          "name": "aibom-guard:weight_formats:pickle",
-          "value": "9"
-        },
-        {
-          "name": "aibom-guard:pickle_only",
-          "value": "false"
-        },
-        {
-          "name": "aibom-guard:trust_remote_code",
-          "value": "false"
-        },
-        {
-          "name": "aibom-guard:model_card_completeness",
-          "value": "60"
-        },
-        {
-          "name": "aibom-guard:pickle_scan_status",
-          "value": "SKIPPED"
-        }
-      ]
-    },
-    {
-      "type": "machine-learning-model",
-      "bom-ref": "model:TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6",
-      "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-      "version": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
-      "purl": "pkg:huggingface/TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6",
-      "description": "Hugging Face model TinyLlama/TinyLlama-1.1B-Chat-v1.0 (text-generation)",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "name": "apache-2.0"
-          }
-        }
-      ],
-      "publisher": "TinyLlama",
-      "modelCard": {
-        "bom-ref": "model:TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6#modelcard",
-        "modelParameters": {
-          "task": "text-generation",
-          "modelArchitecture": "LlamaForCausalLM",
-          "architectureFamily": "transformers",
-          "datasets": [
-            {
-              "type": "dataset",
-              "name": "cerebras/SlimPajama-627B"
-            },
-            {
-              "type": "dataset",
-              "name": "bigcode/starcoderdata"
-            },
-            {
-              "type": "dataset",
-              "name": "HuggingFaceH4/ultrachat_200k"
-            },
-            {
-              "type": "dataset",
-              "name": "HuggingFaceH4/ultrafeedback_binarized"
-            }
-          ]
-        }
-      },
-      "properties": [
-        {
-          "name": "aibom-guard:trust_score",
-          "value": "99"
-        },
-        {
-          "name": "aibom-guard:verdict",
-          "value": "ALLOW"
-        },
-        {
-          "name": "aibom-guard:license_status",
-          "value": "ALLOWED"
-        },
-        {
-          "name": "aibom-guard:license_family",
-          "value": "permissive"
-        },
-        {
-          "name": "aibom-guard:weight_formats:safetensors",
-          "value": "1"
-        },
-        {
-          "name": "aibom-guard:weight_formats:pickle",
-          "value": "0"
-        },
-        {
-          "name": "aibom-guard:pickle_only",
-          "value": "false"
-        },
-        {
-          "name": "aibom-guard:trust_remote_code",
-          "value": "false"
-        },
-        {
-          "name": "aibom-guard:model_card_completeness",
-          "value": "85"
-        },
-        {
-          "name": "aibom-guard:pickle_scan_status",
-          "value": "NOT_APPLICABLE"
+          "value": "WARNING"
         }
       ]
     }
@@ -261,7 +181,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-08-01T01:40:56.252398+00:00",
+    "timestamp": "2026-08-07T16:10:20.213666+00:00",
     "tools": {
       "components": [
         {
@@ -361,17 +281,25 @@
           "name": "cyclonedx-python-lib",
           "type": "library",
           "version": "11.11.0"
+        },
+        {
+          "type": "application",
+          "name": "AIBOM-Guard",
+          "version": "0.1.0"
         }
       ]
+    },
+    "manufacturer": {
+      "name": "AIBOM-Guard"
     },
     "properties": [
       {
         "name": "aibom-guard:profile",
-        "value": "ml-bom"
+        "value": "sbom"
       }
     ]
   },
-  "serialNumber": "urn:uuid:b4796e34-8a30-43f6-bfae-056591e661a6",
+  "serialNumber": "urn:uuid:ce495511-4842-43a8-a272-899283662b88",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
@@ -433,7 +361,7 @@
     },
     {
       "id": "GHSA-gc5v-m9x4-r6x2",
-      "description": "Requests has Insecure Temp File Reuse in its extract_zipped_paths() utility function",
+      "description": "Requests is a HTTP library. Prior to version 2.33.0, the `requests.utils.extract_zipped_paths()` utility function uses a predictable filename when extracting files from zip archives into the system temporary directory. If the target file...",
       "ratings": [
         {
           "source": {
@@ -460,7 +388,7 @@
     },
     {
       "id": "GHSA-j8r2-6x86-q33q",
-      "description": "Unintended leak of Proxy-Authorization header in requests",
+      "description": "Requests is a HTTP library. Since Requests 2.3.0, Requests has been leaking Proxy-Authorization headers to destination servers when redirected to an HTTPS endpoint. This is a product of how we use `rebuild_proxies` to reattach the `Proxy...",
       "ratings": [
         {
           "source": {
@@ -487,7 +415,7 @@
     },
     {
       "id": "GHSA-8q59-q68h-6hv4",
-      "description": "Improper Input Validation in PyYAML",
+      "description": "A vulnerability was discovered in the PyYAML library in versions before 5.4, where it is susceptible to arbitrary code execution when it processes untrusted YAML files through the full_load method or with the FullLoader loader. Applicati...",
       "ratings": [
         {
           "source": {
@@ -509,96 +437,6 @@
           "source": {
             "name": "PyPI Advisory Database"
           }
-        }
-      ]
-    },
-    {
-      "id": "AIBOM-CompVis/stable-diffusion-v1-4-pickle_file-0",
-      "description": "safety_checker/pytorch_model.fp16.bin is a pickle with no safetensors equivalent.",
-      "ratings": [
-        {
-          "source": {
-            "name": "AIBOM-Guard"
-          },
-          "severity": "medium",
-          "method": "other"
-        }
-      ],
-      "affects": [
-        {
-          "ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b"
-        }
-      ]
-    },
-    {
-      "id": "AIBOM-CompVis/stable-diffusion-v1-4-pickle_file-1",
-      "description": "text_encoder/pytorch_model.fp16.bin is a pickle with no safetensors equivalent.",
-      "ratings": [
-        {
-          "source": {
-            "name": "AIBOM-Guard"
-          },
-          "severity": "medium",
-          "method": "other"
-        }
-      ],
-      "affects": [
-        {
-          "ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b"
-        }
-      ]
-    },
-    {
-      "id": "AIBOM-CompVis/stable-diffusion-v1-4-unverified-2",
-      "description": "Pickle scan did not run: Pickle scanning disabled; 9 file(s) not inspected.",
-      "ratings": [
-        {
-          "source": {
-            "name": "AIBOM-Guard"
-          },
-          "severity": "medium",
-          "method": "other"
-        }
-      ],
-      "affects": [
-        {
-          "ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b"
-        }
-      ]
-    },
-    {
-      "id": "AIBOM-CompVis/stable-diffusion-v1-4-incomplete_model_card-3",
-      "description": "Model card is missing required fields: base_model, datasets, language",
-      "ratings": [
-        {
-          "source": {
-            "name": "AIBOM-Guard"
-          },
-          "severity": "low",
-          "method": "other"
-        }
-      ],
-      "affects": [
-        {
-          "ref": "model:CompVis/stable-diffusion-v1-4@133a221b8aa7292a167afc5127cb63fb5005638b"
-        }
-      ]
-    },
-    {
-      "id": "AIBOM-TinyLlama/TinyLlama-1.1B-Chat-v1.0-incomplete_model_card-0",
-      "description": "Model card is missing required fields: base_model",
-      "ratings": [
-        {
-          "source": {
-            "name": "AIBOM-Guard"
-          },
-          "severity": "low",
-          "method": "other"
-        }
-      ],
-      "affects": [
-        {
-          "ref": "model:TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6"
         }
       ]
     }

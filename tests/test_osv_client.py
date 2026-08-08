@@ -293,3 +293,65 @@ def test_non_numeric_severity_score_is_logged_not_swallowed_silently(caplog):
     assert score is None
     assert vector is None
     assert any("not numeric or CVSS" in rec.message for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# A merged entry has to keep the title, not the preamble
+# ---------------------------------------------------------------------------
+
+def _entry(vuln_id, summary, is_title, aliases=(), severity="medium"):
+    return {"type": "cve", "id": vuln_id, "severity": severity,
+            "detail": summary, "summary": summary, "is_title": is_title,
+            "aliases": sorted(aliases)}
+
+
+def test_a_title_beats_a_longer_body_when_merging_aliases():
+    """
+    GHSA entries carry a one-line `summary`; their PYSEC aliases usually carry
+    only `details`, a paragraph that opens with background. Ranking by length
+    picked the paragraph, so the report showed "Requests is a HTTP library.
+    Prior to version 2.33.0, ..." truncated at 240 characters instead of the
+    finding itself.
+    """
+    ghsa = _entry("GHSA-gc5v-m9x4-r6x2",
+                  "Requests has Insecure Temp File Reuse in its "
+                  "extract_zipped_paths() utility function",
+                  is_title=True, aliases=["PYSEC-2026-2275"])
+    pysec = _entry("PYSEC-2026-2275",
+                   "Requests is a HTTP library. Prior to version 2.33.0, the "
+                   "requests.utils.extract_zipped_paths() utility function "
+                   "uses a predictable filename when extracting files from "
+                   "zip archives into the system temporary directory.",
+                   is_title=False, aliases=["GHSA-gc5v-m9x4-r6x2"])
+
+    merged = merge_aliased_vulnerabilities([ghsa, pysec])
+
+    assert len(merged) == 1
+    assert merged[0]["summary"].startswith("Requests has Insecure Temp File")
+
+
+def test_a_body_is_still_used_when_no_alias_has_a_title():
+    body = _entry("PYSEC-1", "A long description of the flaw.", is_title=False)
+    merged = merge_aliased_vulnerabilities([body])
+    assert merged[0]["summary"] == "A long description of the flaw."
+
+
+def test_real_text_still_beats_the_placeholder():
+    placeholder = _entry("GHSA-1", "No description", is_title=False,
+                         aliases=["PYSEC-1"])
+    real = _entry("PYSEC-1", "Actual description.", is_title=False,
+                  aliases=["GHSA-1"])
+
+    merged = merge_aliased_vulnerabilities([placeholder, real])
+
+    assert merged[0]["summary"] == "Actual description."
+
+
+def test_the_longer_text_wins_between_two_titles():
+    short = _entry("GHSA-1", "Short title", is_title=True, aliases=["PYSEC-1"])
+    longer = _entry("PYSEC-1", "A rather more specific title", is_title=True,
+                    aliases=["GHSA-1"])
+
+    merged = merge_aliased_vulnerabilities([short, longer])
+
+    assert merged[0]["summary"] == "A rather more specific title"

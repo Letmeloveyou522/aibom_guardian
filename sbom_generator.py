@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from osv_client import parse_cvss_v3_vector
 
@@ -62,10 +63,19 @@ def ensure_cyclonedx_metadata(
     sbom: dict,
     *,
     profile: str = "sbom",
+    subject: str | None = None,
 ) -> dict:
     """
-    Fill G7-oriented CycloneDX metadata: timestamp, manufacturer, tools,
-    and an aibom-guard profile property (``sbom`` or ``ml-bom``).
+    Fill the G7 Metadata cluster: who wrote this document, with what, when,
+    at which point in the lifecycle, and about what.
+
+    The G7 "SBOM for AI - Minimum Elements" paper keeps SBOM author and
+    Producer apart: the author is whoever ran the tool, the producer is
+    whoever made the thing being described. `manufacturer` covers the second;
+    `authors` was missing entirely, and so was any statement of *when* in the
+    build the document was produced - a scan of a requirements file describes
+    intent, not a built artifact, and a reader cannot tell those apart
+    without being told.
 
     Safe to call more than once — existing values are preserved; the
     AIBOM-Guard tool entry and profile property are added only if missing.
@@ -78,6 +88,25 @@ def ensure_cyclonedx_metadata(
 
     if "manufacturer" not in metadata:
         metadata["manufacturer"] = {"name": AIBOM_GUARD_TOOL_NAME}
+
+    if "authors" not in metadata:
+        metadata["authors"] = [{"name": AIBOM_GUARD_TOOL_NAME}]
+
+    # G7 "SBOM generation context". CycloneDX spells it `lifecycles`.
+    # "pre-build" is the honest phase: this reads a declared dependency list,
+    # not a built artifact, so it states what the project intends to install.
+    if "lifecycles" not in metadata:
+        metadata["lifecycles"] = [{"phase": "pre-build"}]
+
+    # G7 System Level Properties need a subject for the document to be about.
+    # Without `metadata.component` the SBOM is a bag of dependencies with no
+    # statement of what they belong to.
+    if subject and "component" not in metadata:
+        metadata["component"] = {
+            "type": "application",
+            "bom-ref": f"subject:{subject}",
+            "name": subject,
+        }
 
     # CycloneDX 1.5+ tools object; fall back if a legacy list is already there.
     tools = metadata.get("tools")
@@ -126,6 +155,79 @@ def ensure_cyclonedx_metadata(
     return sbom
 
 
+# A CycloneDX `licenses` entry is either a single license object or an SPDX
+# expression, never both.
+#
+# The operators are case-sensitive in the SPDX spec, and that matters here:
+# psycopg2 declares "LGPL with exceptions", which is prose, not an expression.
+# Matching case-insensitively emitted it as `expression` and produced an SBOM
+# no validator would accept. Lowercase "with" is a word; uppercase WITH is an
+# operator.
+_SPDX_OPERATORS = re.compile(r"\b(?:AND|OR|WITH)\b")
+
+
+def _apply_license(component: dict, item: dict) -> None:
+    """
+    Put the resolved license into the component's standard `licenses` field.
+
+    Without this the SBOM carried no license at all for anything that was not
+    installed locally - `cyclonedx-py` reads installed metadata, and a
+    requirements file names packages this environment does not have. Every
+    component came out with `licenses: null` while the scan report held the
+    SPDX identifier, so the finding never reached the document that is
+    supposed to carry it.
+
+    An identifier resolved from the pinned release is preferred over whatever
+    the base generator found, because it describes the version being scanned
+    rather than the version that happens to be installed. When the two
+    disagree the original is kept as a property so the difference is visible
+    rather than silently overwritten.
+    """
+    spdx_id = (item.get("license_spdx_id") or "").strip()
+    raw = (item.get("license_raw") or "").strip()
+
+    entry = None
+    if spdx_id:
+        entry = {"license": {"id": spdx_id}}
+    elif raw and raw.upper() not in ("UNKNOWN", "NOT_INSTALLED"):
+        # No SPDX id, but the string is still what the project declared.
+        entry = ({"expression": raw} if _SPDX_OPERATORS.search(raw)
+                 else {"license": {"name": raw[:120]}})
+
+    if entry is None:
+        return
+
+    existing = component.get("licenses")
+    if existing and existing != [entry]:
+        component.setdefault("properties", []).append({
+            "name": "aibom-guard:license_declared_by_generator",
+            "value": json.dumps(existing, ensure_ascii=False)[:200],
+        })
+    component["licenses"] = [entry]
+
+    properties = component.setdefault("properties", [])
+    for name, value in (
+        ("license_spdx_id", spdx_id),
+        ("license_family", item.get("license_family")),
+        ("license_source", item.get("license_source")),
+        ("license_declared", raw[:120]),
+    ):
+        if value:
+            properties.append({"name": f"aibom-guard:{name}", "value": str(value)})
+
+    if item.get("license_unverified"):
+        properties.append({"name": "aibom-guard:license_unverified",
+                           "value": "true"})
+
+    # The obligation is the part a reader has to act on; "REVIEW" alone is not
+    # an instruction.
+    for index, obligation in enumerate(item.get("license_obligations") or []):
+        properties.append({
+            "name": f"aibom-guard:license_obligation:{index}",
+            "value": str(obligation),
+        })
+
+
 def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
     """
     Adds our scan findings (license status + vulnerabilities) into the
@@ -149,6 +251,8 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
         item = by_name.get(component["name"].lower())
         if not item:
             continue
+        _apply_license(component, item)
+
         component["properties"] = component.get("properties", [])
         component["properties"].append({
             "name": "aibom-guard:license_status",
@@ -297,6 +401,73 @@ def _model_purl(model: dict) -> str:
     return f"pkg:huggingface/{model_id}@{revision}"
 
 
+def _primary_weight_file(model: dict) -> str | None:
+    """
+    The file that best stands for the model: the largest safetensors shard,
+    or the largest pickle when there is no safetensors at all.
+    """
+    formats = model.get("file_formats") or {}
+    for key in ("safetensors", "pickle"):
+        entries = [f for f in (formats.get(key) or []) if f.get("path")]
+        if entries:
+            return max(entries, key=lambda f: f.get("size_bytes") or 0)["path"]
+    return None
+
+
+def _weight_hashes(model: dict) -> list:
+    """
+    CycloneDX `hashes` for the model component.
+
+    The Hub publishes a SHA-256 for every LFS-tracked file, which is every
+    weight file. Only the primary weight file goes in `hashes` - that array
+    describes one artifact under different algorithms, so listing nine
+    same-algorithm digests there would misuse it. The rest are recorded as
+    properties, where a per-file map belongs.
+    """
+    digests = model.get("file_hashes") or {}
+    primary = _primary_weight_file(model)
+    if not primary or primary not in digests:
+        return []
+    return [{"alg": "SHA-256", "content": digests[primary]}]
+
+
+def _base_model_ancestors(model: dict) -> list:
+    """
+    The models this one was derived from, as CycloneDX pedigree ancestors.
+
+    model_checker already parses the Hub's `base_model` metadata, including
+    the relation (finetune, quantized, merge, adapter), but it never reached
+    the document - so an ML-BOM described a fine-tune as if it had been
+    trained from nothing.
+    """
+    ancestors = []
+    for entry in model.get("base_model") or []:
+        if isinstance(entry, dict):
+            # model_checker emits `repo_id`; accept `repo` too so a caller
+            # passing the shorter spelling is not silently dropped.
+            repo = entry.get("repo_id") or entry.get("repo")
+        else:
+            repo = str(entry)
+        if not repo:
+            continue
+        ancestor = {
+            "type": "machine-learning-model",
+            "bom-ref": f"model:{repo}",
+            "name": repo,
+            "purl": f"pkg:huggingface/{repo}",
+            "externalReferences": [
+                {"type": "distribution", "url": f"https://huggingface.co/{repo}"},
+            ],
+        }
+        relation = entry.get("relation") if isinstance(entry, dict) else None
+        if relation:
+            ancestor["properties"] = [
+                {"name": "aibom-guard:base_model_relation", "value": str(relation)},
+            ]
+        ancestors.append(ancestor)
+    return ancestors
+
+
 def build_model_component(model: dict) -> dict:
     """
     Turn one model_checker report into a CycloneDX machine-learning-model
@@ -333,6 +504,17 @@ def build_model_component(model: dict) -> dict:
 
     if model.get("author"):
         component["publisher"] = model["author"]
+
+    hashes = _weight_hashes(model)
+    if hashes:
+        component["hashes"] = hashes
+
+    ancestors = _base_model_ancestors(model)
+    if ancestors:
+        # G7 calls this the model's lineage - "how its weights were produced".
+        # A fine-tune inherits both the capabilities and the licence terms of
+        # what it was trained from, so the parent belongs in the document.
+        component["pedigree"] = {"ancestors": ancestors}
 
     # -- modelCard -----------------------------------------------------------
     model_parameters = {}
@@ -392,6 +574,19 @@ def build_model_component(model: dict) -> dict:
     ]
     for repo in model.get("external_code_repos") or []:
         properties.append(("aibom-guard:external_code_repo", repo))
+
+    # G7 "Model timestamp": when the weights last changed. The commit SHA
+    # pins *which* revision; this says how old it is.
+    if model.get("last_modified"):
+        properties.append(("aibom-guard:last_modified", str(model["last_modified"])))
+
+    # Every weight file's digest, so a consumer can verify more than the one
+    # artifact named in `hashes`.
+    for path, digest in sorted((model.get("file_hashes") or {}).items()):
+        if path in {f.get("path") for f in
+                    ((model.get("file_formats") or {}).get("safetensors") or [])
+                    + ((model.get("file_formats") or {}).get("pickle") or [])}:
+            properties.append((f"aibom-guard:sha256:{path}", digest))
 
     component["properties"] = [
         {"name": name, "value": value} for name, value in properties if value
@@ -525,6 +720,9 @@ def build_final_sbom(
     ensure_cyclonedx_metadata(
         final_sbom,
         profile="ml-bom" if models else "sbom",
+        # The requirements file names the thing this document is about. It is
+        # a weak subject, but it beats a document that describes nothing.
+        subject=Path(requirements_path).stem or None,
     )
 
     with open(output_path, "w", encoding="utf-8") as f:

@@ -14,6 +14,7 @@ import json
 
 import pytest
 
+import sbom_generator
 from sbom_generator import (
     _map_severity,
     add_models_to_sbom,
@@ -370,3 +371,186 @@ def test_ensure_cyclonedx_metadata_is_idempotent():
     ensure_cyclonedx_metadata(sbom, profile="sbom")
     tools = sbom["metadata"]["tools"]["components"]
     assert sum(1 for c in tools if c["name"] == "AIBOM-Guard") == 1
+
+
+# ---------------------------------------------------------------------------
+# The resolved license has to reach the document, not just the report
+# ---------------------------------------------------------------------------
+
+def _component(name="requests", licenses=None):
+    component = {"name": name, "bom-ref": f"ref-{name}", "type": "library"}
+    if licenses is not None:
+        component["licenses"] = licenses
+    return component
+
+
+def _scan_row(**overrides):
+    row = {
+        "package": "requests", "version": "2.32.3",
+        "license_raw": "Apache-2.0", "license_status": "ALLOWED",
+        "license_spdx_id": "Apache-2.0", "license_family": "permissive",
+        "license_source": "pypi:license", "license_unverified": False,
+        "license_obligations": ["Keep the copyright notice."],
+        "trust_score": 100, "verdict": "ALLOW", "vulnerabilities": [],
+    }
+    row.update(overrides)
+    return row
+
+
+def test_resolved_licence_fills_the_standard_licenses_field():
+    """
+    cyclonedx-py reads installed metadata, so scanning a requirements file on
+    a machine without those packages produced a document where every
+    component had `licenses: null` - while the scan report held the SPDX id.
+    The finding never reached the artifact that is supposed to carry it.
+    """
+    sbom = {"components": [_component()]}
+    sbom_generator.enrich_sbom_with_findings(sbom, [_scan_row()])
+
+    assert sbom["components"][0]["licenses"] == [{"license": {"id": "Apache-2.0"}}]
+
+
+def test_obligations_and_provenance_ride_along():
+    sbom = {"components": [_component()]}
+    sbom_generator.enrich_sbom_with_findings(sbom, [_scan_row()])
+
+    props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
+    assert props["aibom-guard:license_spdx_id"] == "Apache-2.0"
+    assert props["aibom-guard:license_source"] == "pypi:license"
+    assert props["aibom-guard:license_obligation:0"].startswith("Keep the")
+
+
+def test_a_real_spdx_expression_is_emitted_as_an_expression():
+    sbom = {"components": [_component()]}
+    sbom_generator.enrich_sbom_with_findings(
+        sbom, [_scan_row(license_raw="Apache-2.0 OR BSD-3-Clause",
+                         license_spdx_id="")])
+
+    assert sbom["components"][0]["licenses"] == [
+        {"expression": "Apache-2.0 OR BSD-3-Clause"}]
+
+
+def test_prose_is_not_passed_off_as_an_spdx_expression():
+    """
+    psycopg2 declares "LGPL with exceptions". SPDX operators are uppercase, so
+    lowercase "with" is a word here, not an operator - emitting it as an
+    expression produces a document no validator accepts.
+    """
+    sbom = {"components": [_component()]}
+    sbom_generator.enrich_sbom_with_findings(
+        sbom, [_scan_row(license_raw="LGPL with exceptions", license_spdx_id="")])
+
+    assert sbom["components"][0]["licenses"] == [
+        {"license": {"name": "LGPL with exceptions"}}]
+
+
+def test_an_unreadable_license_leaves_the_field_alone():
+    sbom = {"components": [_component()]}
+    sbom_generator.enrich_sbom_with_findings(
+        sbom, [_scan_row(license_raw="NOT_INSTALLED", license_spdx_id="")])
+
+    assert "licenses" not in sbom["components"][0]
+
+
+def test_a_licence_the_generator_already_found_is_kept_visible():
+    """Overwriting a declared license silently would hide the disagreement."""
+    sbom = {"components": [_component(licenses=[{"license": {"id": "MIT"}}])]}
+    sbom_generator.enrich_sbom_with_findings(sbom, [_scan_row()])
+
+    component = sbom["components"][0]
+    assert component["licenses"] == [{"license": {"id": "Apache-2.0"}}]
+    props = {p["name"]: p["value"] for p in component["properties"]}
+    assert "MIT" in props["aibom-guard:license_declared_by_generator"]
+
+
+# ---------------------------------------------------------------------------
+# G7: metadata cluster, model lineage and hashes
+# ---------------------------------------------------------------------------
+
+def test_metadata_names_the_author_and_the_lifecycle_phase():
+    """
+    G7 keeps "SBOM author" (who ran the tool) apart from "Producer" (who made
+    the component), and asks for the generation context. Only the producer
+    side was filled, so a reader could not tell whether the document
+    described a build or a declared dependency list.
+    """
+    sbom = ensure_cyclonedx_metadata({}, subject="my-service")
+    meta = sbom["metadata"]
+
+    assert meta["authors"] == [{"name": "AIBOM-Guard"}]
+    assert meta["lifecycles"] == [{"phase": "pre-build"}]
+    assert meta["component"]["name"] == "my-service"
+
+
+def test_metadata_never_overwrites_what_is_already_there():
+    sbom = {"metadata": {"authors": [{"name": "Someone Else"}],
+                         "lifecycles": [{"phase": "build"}]}}
+    ensure_cyclonedx_metadata(sbom, subject="x")
+
+    assert sbom["metadata"]["authors"] == [{"name": "Someone Else"}]
+    assert sbom["metadata"]["lifecycles"] == [{"phase": "build"}]
+
+
+def _model(**overrides):
+    model = {
+        "model_id": "org/tuned", "commit_sha": "abc123",
+        "license": "apache-2.0", "last_modified": "2026-01-02T03:04:05+00:00",
+        "base_model": [{"repo_id": "org/base", "relation": "finetune"}],
+        "file_hashes": {"model.safetensors": "a" * 64,
+                        "pytorch_model.bin": "b" * 64},
+        "file_formats": {
+            "safetensors": [{"path": "model.safetensors", "size_bytes": 900}],
+            "pickle": [{"path": "pytorch_model.bin", "size_bytes": 800}],
+        },
+    }
+    model.update(overrides)
+    return model
+
+
+def test_a_fine_tune_records_the_model_it_came_from():
+    """
+    model_checker parses the Hub's base_model metadata, relation included,
+    but it never reached the document - an ML-BOM described a fine-tune as if
+    it had been trained from nothing. G7 calls this the model's lineage.
+    """
+    component = build_model_component(_model())
+
+    ancestors = component["pedigree"]["ancestors"]
+    assert ancestors[0]["name"] == "org/base"
+    assert ancestors[0]["purl"] == "pkg:huggingface/org/base"
+    relation = {p["name"]: p["value"] for p in ancestors[0]["properties"]}
+    assert relation["aibom-guard:base_model_relation"] == "finetune"
+
+
+def test_the_primary_weight_file_is_hashed():
+    """
+    `hashes` describes one artifact under different algorithms, so the
+    largest safetensors shard goes there and the rest become properties -
+    nine same-algorithm digests in that array would misuse the field.
+    """
+    component = build_model_component(_model())
+
+    assert component["hashes"] == [{"alg": "SHA-256", "content": "a" * 64}]
+    props = {p["name"]: p["value"] for p in component["properties"]}
+    assert props["aibom-guard:sha256:model.safetensors"] == "a" * 64
+    assert props["aibom-guard:sha256:pytorch_model.bin"] == "b" * 64
+
+
+def test_a_pickle_only_model_still_gets_a_hash():
+    component = build_model_component(_model(
+        file_formats={"pickle": [{"path": "pytorch_model.bin",
+                                  "size_bytes": 800}]},
+        file_hashes={"pytorch_model.bin": "c" * 64}))
+
+    assert component["hashes"] == [{"alg": "SHA-256", "content": "c" * 64}]
+
+
+def test_a_model_without_published_hashes_omits_the_field():
+    component = build_model_component(_model(file_hashes={}))
+    assert "hashes" not in component
+
+
+def test_the_model_timestamp_is_recorded():
+    props = {p["name"]: p["value"]
+             for p in build_model_component(_model())["properties"]}
+    assert props["aibom-guard:last_modified"] == "2026-01-02T03:04:05+00:00"

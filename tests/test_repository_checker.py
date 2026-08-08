@@ -201,6 +201,32 @@ class TestHashAndSignature(unittest.TestCase):
         prov = checker.check_provenance(expected_sha256="not-a-hash")
         self.assertTrue(any("not a valid" in i["detail"] for i in prov["issues"]))
 
+    def test_unlistable_directory_does_not_abort_the_scan(self):
+        """
+        check_provenance enumerates the artifact's siblings to find a detached
+        signature. The artifact can sit somewhere the process may read but not
+        list, and the unhandled PermissionError aborted the entire scan - the
+        suite itself hit this whenever TEMP pointed at a restricted directory.
+
+        Not being able to look must be recorded as unverified, never dropped:
+        "no signature found" and "could not check" are different answers.
+        """
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifact.whl"
+            path.write_bytes(b"payload")
+
+            with patch("repository_checker.Path.iterdir",
+                       side_effect=PermissionError("access denied")):
+                checker = RepositoryChecker(now=FIXED_NOW)
+                prov = checker.check_provenance(local_file=str(path))
+
+        self.assertFalse(prov["signature"])
+        self.assertTrue(
+            any(i["type"] == "unverified" for i in prov["issues"]),
+            "an unlistable directory must be reported as unverified",
+        )
+
     def test_signature_present_unverified(self):
         import tempfile
         with tempfile.NamedTemporaryFile(delete=False, suffix=".whl") as tmp:

@@ -117,7 +117,9 @@ class TestCheckPackageOsvNone(unittest.TestCase):
         score_engine, never []. Verdict WARNING, osv_unverified true.
         """
         with patch.object(mcp_server, "query_vulnerabilities", return_value=None), \
-             patch.object(mcp_server, "get_license_for_package", return_value="MIT"):
+             patch.object(mcp_server, "resolve_license", return_value={
+                 "license": "MIT", "source": "pypi:license_expression",
+                 "version": "2.28.0", "unverified": False, "error": None}):
             result = check_package("requests", "2.28.0")
 
         self.assertTrue(result["success"])
@@ -129,7 +131,9 @@ class TestCheckPackageOsvNone(unittest.TestCase):
 
     def test_osv_empty_list_is_verified_clean(self):
         with patch.object(mcp_server, "query_vulnerabilities", return_value=[]), \
-             patch.object(mcp_server, "get_license_for_package", return_value="MIT"):
+             patch.object(mcp_server, "resolve_license", return_value={
+                 "license": "MIT", "source": "pypi:license_expression",
+                 "version": "2.28.0", "unverified": False, "error": None}):
             result = check_package("requests", "2.34.2")
 
         self.assertEqual(result["vulnerabilities"], [])
@@ -146,7 +150,9 @@ class TestCheckPackageOsvNone(unittest.TestCase):
             "aliases": ["CVE-1"],
         }]
         with patch.object(mcp_server, "query_vulnerabilities", return_value=vulns), \
-             patch.object(mcp_server, "get_license_for_package", return_value="MIT"):
+             patch.object(mcp_server, "resolve_license", return_value={
+                 "license": "MIT", "source": "pypi:license_expression",
+                 "version": "2.28.0", "unverified": False, "error": None}):
             result = check_package("requests", "2.28.0")
 
         self.assertEqual(result["vulnerabilities"], vulns)

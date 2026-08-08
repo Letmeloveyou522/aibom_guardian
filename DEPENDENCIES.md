@@ -36,6 +36,14 @@ list is `requirements.txt`.
 | OpenSSF Scorecard API (api.securityscorecards.dev) | Repository security posture score | Run by OpenSSF, free public API |
 | Hugging Face Hub API (huggingface.co/api) | Model metadata, file lists, model files | Free public API; gated repos need `HF_TOKEN` and license acceptance |
 | Ollama (localhost:11434) | Optional local LLM explanation | Runs on the user's own machine; no data leaves it |
+| SPDX License List (spdx.org/licenses/licenses.json) | License identification | Free public file; downloaded on first use and cached locally |
+| Blue Oak Council License List (blueoakcouncil.org/list.json) | Permissiveness ratings for licenses OSI never reviewed | Free public file; their terms permit automating access to it |
+
+> Neither list is vendored into this repository. Blue Oak's terms allow
+> automating *access* to the JSON files but say nothing about redistributing
+> them, and neither SPDX data repository declares a license for the list
+> itself. Both are fetched on first use and cached under
+> `~/.cache/aibom-guard/registries` (`%LOCALAPPDATA%` on Windows).
 
 > Whenever you add a new library, add its name / purpose / GitHub link /
 > license to the tables above and to `requirements.txt`.

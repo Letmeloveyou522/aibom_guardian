@@ -279,9 +279,19 @@ def query_vulnerabilities(
         if not isinstance(vuln, dict):
             continue
         severity, cvss_score, _vector = _extract_severity(vuln)
-        summary = vuln.get("summary") or vuln.get("details") or "No description"
-        # Keep detail short for JSON reports / AI prompts
-        detail = summary if len(summary) <= 240 else summary[:237] + "..."
+
+        # `summary` is a one-line title; `details` is the full write-up. Which
+        # one an entry has decides how it reads, and only some databases fill
+        # both: GHSA-gc5v-m9x4-r6x2 has the title "Requests has Insecure Temp
+        # File Reuse ...", while its PYSEC alias has no summary at all and
+        # falls back to a paragraph that opens "Requests is a HTTP library."
+        # Collapsing the two here loses that distinction, and the merge step
+        # below then prefers the longer text - so the conclusion gets replaced
+        # by background prose and truncated mid-sentence.
+        title = (vuln.get("summary") or "").strip()
+        body = (vuln.get("details") or "").strip()
+        text = title or body or "No description"
+        detail = text if len(text) <= 240 else text[:237] + "..."
 
         item = {
             "type": "cve",
@@ -289,6 +299,7 @@ def query_vulnerabilities(
             "severity": severity,
             "detail": detail,
             "summary": detail,  # backward compatible with existing callers
+            "is_title": bool(title),
             "aliases": sorted(str(a) for a in (vuln.get("aliases") or [])),
         }
         if cvss_score is not None:
@@ -319,18 +330,24 @@ def _id_rank(vuln_id: str) -> int:
     return len(_ID_PREFERENCE)
 
 
-def _summary_rank(text: str) -> tuple[int, int]:
+def _summary_rank(item: dict) -> tuple[int, int, int]:
     """
-    Rank summaries for merge: (is_real_text, length).
+    Rank an entry's description for the merge: (is_real_text, is_title, length).
 
-    "No description" is the OSV placeholder when a database has no summary;
-    any real text beats it. Among real texts, longer is treated as more
-    informative.
+    A title beats a body paragraph even when the paragraph is longer, because
+    the reader gets one line and it has to be the conclusion. Ranking by
+    length alone replaced "Requests has Insecure Temp File Reuse in its
+    extract_zipped_paths() utility function" with "Requests is a HTTP library.
+    Prior to version 2.33.0, ..." cut off at 240 characters - the finding
+    swapped for its own preamble.
+
+    "No description" is OSV's placeholder when a database has no text at all;
+    anything real beats it.
     """
-    cleaned = (text or "").strip()
-    if cleaned in ("", "No description"):
-        return (0, 0)
-    return (1, len(cleaned))
+    text = (item.get("summary") or "").strip()
+    if text in ("", "No description"):
+        return (0, 0, 0)
+    return (1, 1 if item.get("is_title") else 0, len(text))
 
 
 def merge_aliased_vulnerabilities(items: list[dict]) -> list[dict]:
@@ -399,13 +416,12 @@ def merge_aliased_vulnerabilities(items: list[dict]) -> list[dict]:
                 or member["cvss_score"] > best["cvss_score"]
             ):
                 best["cvss_score"] = member["cvss_score"]
-            # Prefer real text over the OSV placeholder, then the longer
-            # (more informative) summary when both members have content.
-            candidate = member.get("detail") or ""
-            current = best.get("detail") or ""
-            if _summary_rank(candidate) > _summary_rank(current):
-                best["detail"] = candidate
-                best["summary"] = candidate
+            # Prefer real text over the OSV placeholder, then a title over a
+            # body paragraph, then the longer of two like-for-like texts.
+            if _summary_rank(member) > _summary_rank(best):
+                best["detail"] = member.get("detail")
+                best["summary"] = member.get("summary")
+                best["is_title"] = member.get("is_title", False)
 
         # Record what was folded in, so a reader can still find the entry
         # under whichever identifier they know.

@@ -21,19 +21,21 @@ Usage:
     python3 scanner.py reqs.txt --no-explain --json out.json
 
 Exit codes (so this can gate CI):
-    0  every package is ALLOW
-    1  bad input / nothing to scan
-    2  at least one package is BLOCK
+    0  every package is ALLOW and every requirement line was scanned
+    1  bad input - unreadable file, bad arguments, nothing to scan
+    2  at least one package or model is BLOCK
+    3  no hard block, but a WARNING or an unscanned line - see --fail-on
 """
 
 import argparse
 import json
 import re
 import sys
+from typing import NamedTuple
 from importlib.metadata import version as installed_version, PackageNotFoundError, metadata
 
 from osv_client import query_vulnerabilities
-from license_checker import classify_license, classify_license_detailed
+from license_checker import classify_license_detailed, set_offline
 from sbom_generator import build_final_sbom
 from ai_explainer import explain_results
 from score_engine import calculate_trust_score
@@ -66,71 +68,435 @@ except ImportError:
     HAS_MODEL_CHECKER = False
 
 
-def parse_requirements(path: str) -> tuple[list[tuple[str, str]], list[str]]:
+class ScanReport(list):
     """
-    Parse requirements.txt lines.
+    The package rows, plus the requirement lines that could not be scanned.
 
-    Returns (pinned_packages, unscanned_lines). Pinned entries use
-    ``name==version``; anything else is recorded in ``unscanned_lines`` so
-    it appears in the final report instead of vanishing silently.
+    A plain list keeps every existing caller working; `unscanned` rides along
+    because the exit code has to see it. Coverage is part of the result: a
+    scan that skipped six of seven lines is not the same answer as one that
+    read them all.
     """
-    packages: list[tuple[str, str]] = []
+
+    def __init__(self, rows=()):
+        super().__init__(rows)
+        self.unscanned: list = []
+
+
+class Pinned(NamedTuple):
+    """
+    One requirement resolved to the single version that will be installed.
+
+    `resolved` is False when the file named the version outright and True when
+    a range was narrowed down here, because those are different claims: an
+    exact pin is what the project ships, a resolved range is what it would get
+    if installed today.
+    """
+
+    name: str
+    version: str
+    spec: str
+    resolved: bool
+
+
+# Lines that are directives rather than requirements. Following them would
+# mean fetching or building something, which a scanner has no business doing.
+_DIRECTIVE_PREFIXES = ("-r", "--requirement", "-c", "--constraint",
+                       "-e", "--editable", "-f", "--find-links", "-i",
+                       "--index-url", "--extra-index-url", "--no-binary",
+                       "--only-binary", "--hash", "--pre", "--trusted-host")
+
+
+def _pypi_versions(package_name: str) -> list:
+    """
+    Versions of a package this interpreter could actually install.
+
+    Releases whose `requires_python` excludes the running interpreter are left
+    out, because resolving a range to a version pip would refuse means
+    scanning something the project will never get. pytest 9 needs Python 3.10;
+    on 3.9 the honest answer to `pytest>=8.0` is pytest 8, not pytest 9.
+    """
+    global _PYPI_SESSION
+
+    key = ("__versions__", package_name.lower())
+    if key in _RELEASE_CACHE:
+        return _RELEASE_CACHE[key]
+
+    try:
+        import requests
+        from urllib.parse import quote
+    except ImportError:                              # pragma: no cover
+        return []
+
+    if _PYPI_SESSION is None:
+        _PYPI_SESSION = requests.Session()
+
+    url = f"https://pypi.org/pypi/{quote(package_name, safe='')}/json"
+    try:
+        response = _PYPI_SESSION.get(url, timeout=PYPI_TIMEOUT_SEC)
+        response.raise_for_status()
+        releases = response.json().get("releases") or {}
+    except Exception:                                # noqa: BLE001 - network
+        _RELEASE_CACHE[key] = []
+        return []
+
+    try:
+        from packaging.specifiers import SpecifierSet
+        python_version = ".".join(str(n) for n in sys.version_info[:3])
+    except ImportError:                              # pragma: no cover
+        SpecifierSet = None
+
+    usable = []
+    for version, files in releases.items():
+        # No files means the release was never actually published; a fully
+        # yanked one should not be what a range resolves to.
+        if not files or all(f.get("yanked") for f in files):
+            continue
+        if SpecifierSet is not None:
+            requires = next((f.get("requires_python") for f in files
+                             if f.get("requires_python")), None)
+            if requires:
+                try:
+                    if python_version not in SpecifierSet(requires):
+                        continue
+                except Exception:                    # noqa: BLE001 - bad spec
+                    pass
+        usable.append(version)
+
+    _RELEASE_CACHE[key] = usable
+    return usable
+
+
+def _resolve_specifier(name: str, spec: str) -> str | None:
+    """
+    Pick the version a range would install: the newest release that satisfies
+    it. Returns None when PyPI cannot be reached or nothing matches.
+    """
+    try:
+        from packaging.specifiers import SpecifierSet
+        from packaging.version import InvalidVersion, Version
+    except ImportError:                              # pragma: no cover
+        return None
+
+    candidates = _pypi_versions(name)
+    if not candidates:
+        return None
+
+    parsed = []
+    for raw in candidates:
+        try:
+            parsed.append(Version(raw))
+        except InvalidVersion:
+            continue
+
+    try:
+        allowed = list(SpecifierSet(spec or "").filter(parsed))
+    except Exception:                                # noqa: BLE001 - bad spec
+        return None
+    if not allowed:
+        # Every match was a pre-release; take those rather than give up.
+        try:
+            allowed = list(SpecifierSet(spec or "").filter(parsed, prereleases=True))
+        except Exception:                            # noqa: BLE001
+            return None
+    if not allowed:
+        return None
+    return str(max(allowed))
+
+
+def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
+    """
+    Parse a requirements file into the exact versions to scan.
+
+    Returns (packages, unscanned_lines).
+
+    Real requirements files are not all exact pins. Only accepting
+    ``name==version`` meant this project's own requirements.txt scanned one
+    line out of seven and still exited 0 - a gate that checks almost nothing
+    and reports success. So a range is resolved against PyPI to the version it
+    would actually install, and the report records that the version was chosen
+    here rather than pinned by the file.
+
+    Anything genuinely unscannable - a ``-r`` include, a VCS or URL
+    requirement, a range that could not be resolved offline - goes into
+    `unscanned_lines` and is reported, never dropped.
+    """
+    try:
+        from packaging.requirements import InvalidRequirement, Requirement
+        from packaging.markers import UndefinedEnvironmentName
+        has_packaging = True
+    except ImportError:                              # pragma: no cover
+        has_packaging = False
+
+    packages: list = []
     unscanned: list[str] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+    seen: dict = {}
+
+    def skip(line: str, reason: str) -> None:
+        unscanned.append(line)
+        print(f"[INFO] Not scanned ({reason}): {line}")
+
+    def add(name: str, version: str, spec: str, resolved: bool) -> None:
+        # PEP 503: names differing only in case or in -/_/. are one project.
+        # Reporting Django and django as two rows would double every finding.
+        key = (re.sub(r"[-_.]+", "-", name).lower(), version)
+        if key in seen:
+            return
+        seen[key] = True
+        packages.append(Pinned(name, version, spec, resolved))
+
+    # utf-8-sig, not utf-8: a requirements.txt saved by Notepad or exported
+    # from Windows tooling starts with a BOM, and it would otherwise glue
+    # itself to the first requirement and make that line unparseable.
+    with open(path, "r", encoding="utf-8-sig") as f:
+        for raw_line in f:
+            line = raw_line.split(" #")[0].split("\t#")[0].strip()
             if not line or line.startswith("#"):
                 continue
-            match = re.match(r"^([A-Za-z0-9_\-.]+)\s*==\s*([A-Za-z0-9_.\-]+)", line)
-            if match:
-                packages.append((match.group(1), match.group(2)))
-            else:
-                unscanned.append(line)
-                print(f"[INFO] Unscanned line (not in 'name==version' format): {line}")
+
+            if line.startswith(_DIRECTIVE_PREFIXES):
+                skip(line, "pip directive, not a requirement")
+                continue
+            if "://" in line:
+                skip(line, "URL or VCS requirement")
+                continue
+
+            if not has_packaging:
+                match = re.match(r"^([A-Za-z0-9_.\-]+)\s*==\s*([A-Za-z0-9_.\-]+)$",
+                                 line)
+                if match:
+                    add(match.group(1), match.group(2),
+                        "==" + match.group(2), False)
+                else:
+                    skip(line, "packaging not installed; only name==version parsed")
+                continue
+
+            try:
+                requirement = Requirement(line)
+            except InvalidRequirement as exc:
+                skip(line, f"not a valid requirement: {exc}")
+                continue
+
+            # An environment marker that is false here describes a dependency
+            # this platform never installs.
+            if requirement.marker is not None:
+                try:
+                    if not requirement.marker.evaluate():
+                        print(f"[INFO] Skipped (marker does not apply here): {line}")
+                        continue
+                except UndefinedEnvironmentName:
+                    pass          # extras-only markers; scan the package
+
+            spec = str(requirement.specifier)
+            exact = [s for s in requirement.specifier if s.operator in ("==", "===")]
+            if len(exact) == 1 and "*" not in exact[0].version:
+                add(requirement.name, exact[0].version, spec, False)
+                continue
+
+            if offline:
+                skip(line, "offline: a version range cannot be resolved")
+                continue
+
+            version = _resolve_specifier(requirement.name, spec)
+            if version is None:
+                skip(line, "no published version satisfies this range")
+                continue
+
+            print(f"[INFO] Resolved {line} -> {requirement.name}=={version}")
+            add(requirement.name, version, spec, True)
+
     return packages, unscanned
 
 
-def get_license_for_package(package_name: str) -> str:
-    """
-    Reads license metadata for the package as currently installed in this
-    Python environment.
+PYPI_RELEASE_URL = "https://pypi.org/pypi/{package}/{version}/json"
+PYPI_TIMEOUT_SEC = 8.0
 
-    Preference order (avoids numpy-style false positives from a 47 KB
-    License field that also embeds third-party terms):
-      1) License-Expression (SPDX id / expression)
-      2) Short License field (identifier, not full text)
-      3) License :: PyPI trove classifier
-      4) Full License text (classified by wording, not keyword scrape)
+# One session and one cache per process: a requirements file repeats packages
+# across transitive pins, and pypi.org should not be asked twice for the same
+# release.
+_PYPI_SESSION = None
+_RELEASE_CACHE: dict = {}
 
-    NOTE: this is the license of the *installed* version, which might not
-    match the version pinned in requirements.txt. For an exact check you'd
-    want to install that exact version in a clean venv first. Keeping it
-    simple for the MVP.
+
+def _license_candidates(fields: dict) -> list:
     """
+    License strings a distribution offers, best-structured first.
+
+    PEP 639's `License-Expression` is authoritative when present. Below it the
+    order matters less than it looks, because `_best_candidate` re-ranks by
+    what actually resolves - a short free-text `License` beats a classifier
+    only when it names a real identifier.
+    """
+    candidates = []
+
+    expression = (fields.get("license_expression") or "").strip()
+    if expression and expression.upper() != "UNKNOWN":
+        candidates.append((expression, "license_expression"))
+
+    lic = (fields.get("license") or "").strip()
+    # A short, single-line License field is almost always an identifier
+    # (MIT, BSD-3-Clause, Apache-2.0), not the full text.
+    if lic and lic.upper() != "UNKNOWN" and len(lic) < 300 and lic.count("\n") <= 3:
+        candidates.append((lic, "license"))
+
+    for classifier in fields.get("classifiers") or []:
+        if classifier.startswith("License ::"):
+            candidates.append((classifier, "classifier"))
+
+    # The full text last: it is the least ambiguous evidence but the most
+    # expensive to read, and numpy ships 47 KB of it with third-party terms
+    # appended.
+    if lic and lic.upper() != "UNKNOWN" and (lic, "license") not in candidates:
+        candidates.append((lic, "license_text"))
+
+    return candidates
+
+
+def _best_candidate(candidates: list) -> tuple:
+    """
+    Pick the license string that identifies the license most precisely.
+
+    psycopg2 publishes `License: "LGPL with exceptions"` alongside the trove
+    classifier "GNU Library or Lesser General Public License (LGPL)". Taking
+    the first field in a fixed order throws away whichever one happens to be
+    the resolvable one, so each candidate is graded and the one that resolves
+    to an SPDX identifier wins.
+    """
+    graded = [(raw, field, classify_license_detailed(raw))
+              for raw, field in candidates]
+
+    for raw, field, detail in graded:
+        if detail["spdx_id"]:
+            return raw, field
+    for raw, field, detail in graded:
+        if detail["status"] != "UNKNOWN":
+            return raw, field
+    if graded:
+        raw, field, _ = graded[0]
+        return raw, field
+    return "", ""
+
+
+def _installed_license(package_name: str) -> tuple:
+    """Read the license of the copy installed in this environment."""
     try:
         meta = metadata(package_name)
-
-        expression = (meta.get("License-Expression") or "").strip()
-        if expression and expression.upper() != "UNKNOWN":
-            return expression
-
-        lic = (meta.get("License") or "").strip()
-        # A short, single-line License field is almost always an identifier
-        # (MIT, BSD-3-Clause, Apache-2.0). Prefer it over classifiers.
-        if lic and lic.upper() != "UNKNOWN" and len(lic) < 300 and lic.count("\n") <= 3:
-            return lic
-
-        classifiers = meta.get_all("Classifier") or []
-        for classifier in classifiers:
-            if classifier.startswith("License ::"):
-                return classifier
-
-        if lic and lic.upper() != "UNKNOWN":
-            return lic
-
-        return "UNKNOWN"
     except PackageNotFoundError:
-        return "NOT_INSTALLED"
+        return "NOT_INSTALLED", "", None
+
+    fields = {
+        "license_expression": meta.get("License-Expression") or "",
+        "license": meta.get("License") or "",
+        "classifiers": meta.get_all("Classifier") or [],
+    }
+    raw, field = _best_candidate(_license_candidates(fields))
+    try:
+        found_version = installed_version(package_name)
+    except PackageNotFoundError:
+        found_version = None
+    return (raw or "UNKNOWN"), field, found_version
+
+
+def _pypi_release_license(package_name: str, version: str) -> tuple:
+    """
+    Read the license PyPI records for one exact release.
+
+    Returns (raw, field, error). `error` is a string when the release could
+    not be read, so the caller can record *why* it fell back rather than
+    silently reporting the wrong version's terms.
+    """
+    global _PYPI_SESSION
+
+    key = (package_name.lower(), version)
+    if key in _RELEASE_CACHE:
+        return _RELEASE_CACHE[key]
+
+    try:
+        import requests
+        from urllib.parse import quote
+    except ImportError as exc:                      # pragma: no cover
+        return "", "", f"requests unavailable: {exc}"
+
+    if _PYPI_SESSION is None:
+        _PYPI_SESSION = requests.Session()
+
+    url = PYPI_RELEASE_URL.format(package=quote(package_name, safe=""),
+                                  version=quote(version, safe=""))
+    try:
+        response = _PYPI_SESSION.get(url, timeout=PYPI_TIMEOUT_SEC)
+    except Exception as exc:                        # noqa: BLE001 - network
+        result = ("", "", f"network: {exc}")
+        _RELEASE_CACHE[key] = result
+        return result
+
+    if response.status_code == 404:
+        result = ("", "", f"release {package_name}=={version} not found on PyPI")
+        _RELEASE_CACHE[key] = result
+        return result
+    if response.status_code != 200:
+        result = ("", "", f"http {response.status_code}")
+        _RELEASE_CACHE[key] = result
+        return result
+
+    try:
+        info = response.json().get("info") or {}
+    except ValueError as exc:
+        result = ("", "", f"invalid json: {exc}")
+        _RELEASE_CACHE[key] = result
+        return result
+
+    raw, field = _best_candidate(_license_candidates(info))
+    result = (raw, field, None) if raw else (
+        "", "", f"{package_name}=={version} declares no license")
+    _RELEASE_CACHE[key] = result
+    return result
+
+
+def resolve_license(package_name: str, version: str = None,
+                    offline: bool = False) -> dict:
+    """
+    Resolve the license of the *requested* version of a package.
+
+    Reading the installed copy is not good enough, and the gap is not
+    theoretical: chardet 5.2.0 is LGPL-2.1 and chardet 7.5.1 is 0BSD. A
+    requirements file pinning 5.2.0 while the environment holds 7.5.1 would be
+    reported as permissive, and the copyleft obligation would be missed
+    entirely. Packages that are not installed at all reported NOT_INSTALLED
+    and were graded UNKNOWN.
+
+    So the pinned release on PyPI is the source of record, and the installed
+    copy is the fallback - marked as such, because it describes a different
+    version.
+
+    Returns:
+        license        the raw string to classify
+        source         pypi:<field> / installed:<field> / none
+        version        the version the license was read from, when known
+        unverified     True when the license does not come from the pinned
+                       release; score_engine lowers confidence on it rather
+                       than trusting a version that was never checked
+        error          why PyPI was not used, when it was not
+    """
+    if version and not offline:
+        raw, field, error = _pypi_release_license(package_name, version)
+        if raw:
+            return {"license": raw, "source": f"pypi:{field}",
+                    "version": version, "unverified": False, "error": None}
+    else:
+        error = "offline" if offline else "no version pinned"
+
+    raw, field, found_version = _installed_license(package_name)
+    source = f"installed:{field}" if field else "none"
+    # The installed copy only describes the pinned version when it *is* the
+    # pinned version.
+    matches_pin = bool(version) and found_version == version
+    return {
+        "license": raw,
+        "source": source if raw != "NOT_INSTALLED" else "none",
+        "version": found_version,
+        "unverified": not matches_pin,
+        "error": error,
+    }
 
 
 def _vulns_to_issues(vulns: list) -> list:
@@ -168,6 +534,16 @@ OSV_UNVERIFIED_ISSUE = {
         "OSV vulnerability lookup failed (network/API error). "
         "CVE status is unverified — not the same as 'no known vulnerabilities'."
     ),
+}
+
+# Same contract as above: a license read from something other than the pinned
+# release describes a version nobody asked about. severity "unknown" is what
+# score_engine._confidence keys on, so this lowers confidence rather than
+# passing off another version's terms as the answer.
+LICENSE_UNVERIFIED_ISSUE = {
+    "type": "unverified",
+    "severity": "unknown",
+    "detail": "License could not be read from the pinned release.",
 }
 
 
@@ -226,11 +602,14 @@ def analyze_package_risks(
     return result.get("issues") or [], result.get("alternatives") or []
 
 
-def _display_issues(issues: list | None, *, osv_unverified: bool) -> list:
-    """Issues shown in the report/terminal (may include the OSV failure marker)."""
+def _display_issues(issues: list | None, *, osv_unverified: bool,
+                    extra: list | None = None) -> list:
+    """Issues shown in the report/terminal (may include the unverified markers)."""
     shown: list = []
     if osv_unverified:
         shown.append(dict(OSV_UNVERIFIED_ISSUE))
+    if extra:
+        shown.extend(extra)
     if issues:
         shown.extend(issues)
     return shown
@@ -358,6 +737,7 @@ def run_scan(
     sbom_path: str = "sbom.json",
     models: list | None = None,
     model_pickle_size_mb: int = 0,
+    verbose: bool = False,
 ) -> list[dict]:
     """
     Scan every pinned package in `requirements_path`.
@@ -372,12 +752,17 @@ def run_scan(
     Returns the report list, so tests and other callers can assert on it
     without parsing stdout.
     """
-    packages, unscanned_lines = parse_requirements(requirements_path)
+    packages, unscanned_lines = parse_requirements(requirements_path,
+                                                   offline=offline)
     if not packages:
         print("No packages found to scan. Check your requirements.txt format.")
         if unscanned_lines:
             print(f"[INFO] {len(unscanned_lines)} line(s) were not in name==version format.")
         return []
+
+    # The license registries are downloaded and cached on first use; offline
+    # means "use whatever is already cached, never fetch".
+    set_offline(offline)
 
     engine = None
     if offline:
@@ -394,11 +779,36 @@ def run_scan(
 
     report = []
 
-    for name, version in packages:
-        print(f"[Scanning] {name}=={version} ...")
+    for entry in packages:
+        name, version = entry.name, entry.version
+        origin = f"  (resolved from {entry.spec})" if entry.resolved else ""
+        print(f"[Scanning] {name}=={version} ...{origin}")
 
-        lic_raw = get_license_for_package(name)
-        lic_status = classify_license(lic_raw)
+        lic = resolve_license(name, version, offline=offline)
+        lic_raw = lic["license"]
+        lic_detail = classify_license_detailed(lic_raw)
+        lic_status = lic_detail["status"]
+
+        license_issue = None
+        if lic["unverified"]:
+            if lic["source"] == "none":
+                # Nothing to read anywhere - a typo, a hallucinated name, or a
+                # private package. "The terms may differ" would be nonsense
+                # here; there are no terms.
+                detail = (f"No license could be read for {name}=={version}: "
+                          f"{lic['error']}, and it is not installed locally.")
+                warning = f"no license found — {lic['error']}"
+            else:
+                found = f" (version {lic['version']})" if lic["version"] else ""
+                detail = (f"License for {name}=={version} was read from "
+                          f"{lic['source']}{found} because {lic['error']}. A "
+                          f"package can change license between releases, so "
+                          f"these terms may not be the pinned release's.")
+                warning = (f"license read from {lic['source']}{found} — "
+                           f"{lic['error']}. Terms may differ from "
+                           f"{name}=={version}.")
+            license_issue = dict(LICENSE_UNVERIFIED_ISSUE, detail=detail)
+            print(f"  [WARNING] {warning}")
 
         if offline:
             # None, not [] - the distinction matters. An empty list means
@@ -421,17 +831,36 @@ def run_scan(
         if supply_chain and not offline:
             repository_info = check_supply_chain(name, version)
 
+        # `issues is None` means OSV never ran; keep it None so score_engine
+        # still sees "never looked" rather than a one-item list.
+        scored_issues = issues
+        if license_issue is not None and issues is not None:
+            scored_issues = issues + [license_issue]
+
         score_result = calculate_trust_score(
-            _build_check_result(lic_status, issues, repository_info)
+            _build_check_result(lic_status, scored_issues, repository_info)
         )
 
         entry = {
             "package": name,
             "version": version,
+            # The requirement as written, not as resolved. A bare "flask"
+            # must not read back as "==3.1.3" - that would claim the file
+            # pinned a version it never named.
+            "requirement": entry.spec or "(any)",
+            "version_resolved": entry.resolved,
             "license_raw": lic_raw,
             "license_status": lic_status,
+            "license_spdx_id": lic_detail["spdx_id"],
+            "license_family": lic_detail["family"],
+            "license_obligations": lic_detail["obligations"],
+            "license_source": lic["source"],
+            "license_version": lic["version"],
+            "license_unverified": lic["unverified"],
             "vulnerabilities": vulns,
-            "issues": _display_issues(issues, osv_unverified=osv_unverified),
+            "issues": _display_issues(
+                issues, osv_unverified=osv_unverified,
+                extra=[license_issue] if license_issue else None),
             "osv_unverified": osv_unverified,
             "scanned": issues is not None,
             "alternatives": alternatives,
@@ -470,7 +899,7 @@ def run_scan(
         if model_report:
             model_reports.append(model_report)
 
-    print_report(report)
+    print_report(report, verbose=verbose)
     if model_reports:
         print_model_report(model_reports)
     if unscanned_lines:
@@ -490,17 +919,72 @@ def run_scan(
 
     # Models participate in the exit code: a BLOCK model must fail CI just
     # like a BLOCK package.
-    report_with_models = list(report)
+    report_with_models = ScanReport(report)
     for model_report in model_reports:
         report_with_models.append({
             "package": model_report.get("model_id"),
             "verdict": model_report.get("verdict", "WARNING"),
             "_is_model": True,
         })
+    report_with_models.unscanned = unscanned_lines
     return report_with_models
 
 
-def print_report(report: list[dict]):
+# How many vulnerabilities to print per package before pointing at the JSON.
+# Django 4.2.11 alone reports 36 and Pillow 15; a ten-package scan printed
+# 17,805 characters, which is not a report anyone reads. The findings are all
+# in scan_report.json - the terminal's job is to say what to act on.
+_MAX_VULNS_SHOWN = 3
+_VULN_SUMMARY_CHARS = 100
+
+_SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3,
+                   "unknown": 4, None: 5}
+
+
+def _first_sentence(text: str, limit: int = _VULN_SUMMARY_CHARS) -> str:
+    """One readable line: first sentence, or a hard truncation."""
+    text = " ".join(str(text or "").split())
+    if not text:
+        return ""
+    head = text.split(". ")[0]
+    if len(head) > limit:
+        head = head[:limit - 1].rstrip() + "…"
+    return head
+
+
+def _print_vulnerabilities(item: dict, verbose: bool = False) -> None:
+    """
+    Print a package's vulnerabilities worst-first, capped unless --verbose.
+
+    Sorting by severity matters more than the cap: OSV returns them in
+    identifier order, so the critical one that decides the verdict could
+    previously be the thirtieth line.
+    """
+    vulns = [i for i in (item.get("issues") or []) if i.get("type") == "cve"]
+    if not vulns:
+        return
+
+    vulns.sort(key=lambda i: (_SEVERITY_ORDER.get(i.get("severity"), 5),
+                              -(i.get("cvss_score") or 0)))
+    shown = vulns if verbose else vulns[:_MAX_VULNS_SHOWN]
+
+    for issue in shown:
+        extra = ""
+        if issue.get("cvss_score") is not None:
+            extra = f", CVSS {issue['cvss_score']}"
+        if verbose and issue.get("aliases"):
+            extra += f", aka {', '.join(issue['aliases'])}"
+        summary = (issue.get("summary") or issue.get("detail")
+                   if verbose else
+                   _first_sentence(issue.get("summary") or issue.get("detail")))
+        print(f"    [{issue.get('severity')}{extra}] {issue.get('id')}: {summary}")
+
+    hidden = len(vulns) - len(shown)
+    if hidden:
+        print(f"    ... and {hidden} more (--verbose, or see the JSON report)")
+
+
+def print_report(report: list[dict], verbose: bool = False):
     print("\n===== AIBOM-Guard Scan Results =====\n")
 
     # Only widen the table when supply-chain data was actually collected;
@@ -574,17 +1058,7 @@ def print_report(report: list[dict]):
                     continue
                 print(f"    [{issue.get('type')}] {issue.get('detail') or issue.get('summary')}")
 
-            for issue in item.get("issues") or []:
-                if issue.get("type") != "cve":
-                    continue
-                extra = ""
-                if issue.get("cvss_score") is not None:
-                    extra = f", CVSS {issue['cvss_score']}"
-                if issue.get("aliases"):
-                    extra += f", aka {', '.join(issue['aliases'])}"
-                print(f"    Vuln {issue.get('id')} "
-                      f"(severity {issue.get('severity')}{extra}): "
-                      f"{issue.get('summary') or issue.get('detail')}")
+            _print_vulnerabilities(item, verbose=verbose)
 
             supply = item.get("supply_chain")
             if supply:
@@ -667,8 +1141,22 @@ def save_report(report_document: dict, out_path: str):
     print(f"\n[Saved] {out_path}")
 
 
+class _Parser(argparse.ArgumentParser):
+    """
+    argparse exits 2 on a usage error, and 2 is our "a package is BLOCKED".
+    A CI job cannot tell a typo in the command line from a blocked dependency,
+    and the two call for opposite reactions. Usage errors are input errors, so
+    they exit 1 like every other unusable input.
+    """
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        raise SystemExit(EXIT_INPUT_ERROR)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="scanner",
         description="Scan a requirements.txt for vulnerability, license and "
                     "supply-chain risk, and emit a CycloneDX SBOM.",
@@ -696,7 +1184,48 @@ def build_parser() -> argparse.ArgumentParser:
                         metavar="MB",
                         help="download and picklescan model weight files up "
                              "to this size in MB (default: 0 = metadata only)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="print every vulnerability instead of the worst "
+                             "few per package")
+    parser.add_argument("--fail-on", choices=("block", "warning", "never"),
+                        default="warning",
+                        help="what makes the exit code non-zero. "
+                             "'warning' (default) also fails on WARNING and "
+                             "on requirements lines that could not be "
+                             "scanned; 'block' fails only on BLOCK; 'never' "
+                             "always exits 0 unless the input is unusable.")
     return parser
+
+
+# Exit codes. 1 is reserved for "the input could not be scanned at all", so a
+# broken invocation is never mistaken for a clean result.
+EXIT_CLEAN = 0
+EXIT_INPUT_ERROR = 1
+EXIT_BLOCK = 2
+EXIT_NOT_CLEAN = 3
+
+
+def decide_exit_code(report: list, unscanned: list, fail_on: str = "warning") -> int:
+    """
+    Turn a scan into a CI verdict.
+
+    The old rule was `2 if any BLOCK else 0`, which quietly disagreed with the
+    documented contract ("0 means everything is ALLOW"). Everything short of a
+    hard block passed: a failed OSV lookup, a package that does not exist, a
+    license nobody could read, six requirements lines that were never parsed.
+    That is the opposite of this project's rule that unexamined things do not
+    get a pass, and it is the failure mode that matters most, because a gate
+    that reports success while checking nothing is worse than no gate.
+    """
+    if any(item.get("verdict") == "BLOCK" for item in report):
+        return EXIT_BLOCK
+    if fail_on in ("block", "never"):
+        return EXIT_CLEAN
+    if unscanned:
+        return EXIT_NOT_CLEAN
+    if any(item.get("verdict") != "ALLOW" for item in report):
+        return EXIT_NOT_CLEAN
+    return EXIT_CLEAN
 
 
 def main(argv=None) -> int:
@@ -712,14 +1241,22 @@ def main(argv=None) -> int:
             sbom_path=args.sbom_path,
             models=args.models,
             model_pickle_size_mb=args.model_pickle_scan,
+            verbose=args.verbose,
         )
     except FileNotFoundError:
         print(f"[ERROR] No such file: {args.requirements}", file=sys.stderr)
-        return 1
+        return EXIT_INPUT_ERROR
 
     if not report:
-        return 1
-    return 2 if any(item["verdict"] == "BLOCK" for item in report) else 0
+        return EXIT_INPUT_ERROR
+
+    code = decide_exit_code(report, getattr(report, "unscanned", []),
+                            fail_on=args.fail_on)
+    if code == EXIT_NOT_CLEAN:
+        print("\n[EXIT 3] Nothing is hard-blocked, but this scan is not clean "
+              "- see the WARNING rows and any unscanned lines above. "
+              "Use --fail-on block to gate only on BLOCK.")
+    return code
 
 
 if __name__ == "__main__":

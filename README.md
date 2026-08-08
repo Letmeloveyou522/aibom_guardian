@@ -65,9 +65,42 @@ python scanner.py examples/sample-requirements.txt \
 | `--offline` | 네트워크 미사용. 라이선스만 검사합니다 |
 | `--no-explain` | Ollama 설명 생략 |
 | `--json PATH` / `--sbom PATH` | 출력 경로 지정 |
+| `--verbose` | 취약점을 전부 출력. 기본은 패키지당 심각도 상위 3건 |
+| `--fail-on` | 종료 코드 기준. `warning`(기본) / `block` / `never` |
 
-종료 코드는 `0` 전부 ALLOW, `1` 입력 오류, `2` BLOCK 존재입니다. CI에서
-`python scanner.py requirements.txt` 한 줄로 게이트를 걸 수 있습니다.
+### 입력 형식
+
+`==` 고정뿐 아니라 `>=`, `~=`, `<`, extras, 환경 마커를 읽습니다. 범위는
+PyPI에서 **실제로 설치될 버전**으로 좁혀 검사하고, 리포트에 그 버전을 파일이
+정했는지(`version_resolved: false`) 여기서 골랐는지(`true`) 기록합니다.
+
+```
+[INFO] Resolved requests>=2.32 -> requests==2.34.2
+[Scanning] requests==2.34.2 ...  (resolved from >=2.32)
+```
+
+`-r`·`-c` 포함, URL/VCS 요구사항처럼 검사할 수 없는 줄은 `unscanned`에
+남기고 보고합니다. 조용히 넘어가지 않습니다. `--offline`이면 범위를 좁힐 수
+없으므로 그 줄도 `unscanned`가 됩니다.
+
+### 종료 코드
+
+| 코드 | 의미 |
+|---|---|
+| `0` | 전부 ALLOW이고 모든 줄을 검사함 |
+| `1` | 입력 오류 (파일 없음, 인자 오류, 검사할 것 없음) |
+| `2` | BLOCK 존재 |
+| `3` | BLOCK은 없지만 WARNING이 있거나 검사 못 한 줄이 있음 |
+
+인자 오류도 `1`입니다. argparse 기본값은 `2`인데 그러면 CI가 오타와 차단된
+의존성을 구분할 수 없습니다.
+
+`3`이 있는 이유가 있습니다. 이전에는 BLOCK만 실패로 봐서, OSV 조회 실패·
+존재하지 않는 패키지·읽을 수 없는 라이선스·파싱 못 한 여섯 줄이 전부 `0`으로
+통과했습니다. 아무것도 검사하지 않고 성공을 보고하는 게이트가 게이트 없는
+것보다 나쁩니다.
+
+BLOCK만으로 게이트를 걸려면 `--fail-on block`을 쓰면 됩니다.
 
 ---
 
@@ -87,7 +120,7 @@ python scanner.py examples/sample-requirements.txt \
 
 | 열 | 의미 |
 |---|---|
-| License Status | `ALLOWED` OSI 승인 / `REVIEW` 카피레프트·조건부 / `BLOCKED` 사용 제한 / `UNKNOWN` 식별 실패 |
+| License Status | `ALLOWED` 관대 / `REVIEW` 의무가 따름 / `BLOCKED` 사용 제한 / `UNKNOWN` 식별 실패 |
 | Vulns | OSV 취약점 수. GHSA·PYSEC·CVE 별칭은 하나로 합산 |
 | Trust Score | 0~100. 100에서 항목별 가중 감점 |
 | Verdict | `ALLOW` / `WARNING` / `BLOCK` |
@@ -164,7 +197,15 @@ python scanner.py examples/sample-requirements.txt \
 | 파일 | 내용 |
 |---|---|
 | `scan_report.json` | 전체 결과. 점수 내역(`score_breakdown`)과 confidence 포함 |
-| `sbom.json` | CycloneDX SBOM. `--model` 사용 시 ML-BOM |
+| `sbom.json` | CycloneDX 1.6 SBOM. `--model` 사용 시 ML-BOM |
+
+SBOM에는 해석한 SPDX 식별자가 표준 `licenses` 필드로 들어가고, 의무사항·
+판정 근거는 `aibom-guard:` 프로퍼티로 붙습니다. 모델 컴포넌트는 가중치 파일의
+SHA-256(`hashes`), 파생 관계(`pedigree.ancestors`), 최종 수정일을 함께 싣습니다.
+
+G7 「SBOM for AI — Minimum Elements」 50개 항목 기준 커버리지는 **28개**이며,
+Models 클러스터는 13/13입니다. 나머지는 Datasets·KPI·System Level처럼
+모델 제작자만 알 수 있는 값이라 스캐너가 원리상 채울 수 없습니다.
 
 둘 다 실행할 때마다 새로 생성되므로 git에 추적하지 않습니다. 고정 사본이
 [examples/scan_report.sample.json](examples/scan_report.sample.json)과
@@ -179,7 +220,7 @@ python scanner.py examples/sample-requirements.txt \
 | 항목 | 내용 |
 |---|---|
 | 취약점 | OSV 조회, CVSS 벡터 파싱, 별칭 중복 제거 |
-| 라이선스 | OSI 승인 여부 분류. 라이선스 전문과 PyPI 분류자 문자열 모두 지원 |
+| 라이선스 | SPDX 식별 + 의무사항 안내. 아래 [라이선스 판정](#라이선스-판정) 참고 |
 | 타이포스쿼팅 | 유명 패키지와의 편집 거리 비교 |
 | 환각 패키지 | PyPI에 없는 이름. 미등록 이름은 제3자가 선점 가능 |
 | 폐기 | yanked 릴리스, 장기 미관리 |
@@ -198,6 +239,115 @@ python scanner.py examples/sample-requirements.txt \
 
 모든 모델 파일은 commit SHA로 고정해 받습니다. 브랜치는 검사 도중에도 움직일
 수 있으므로, 보고서가 기술하는 파일과 실제 검사한 파일이 같아야 합니다.
+
+---
+
+## 라이선스 판정
+
+키워드로 추측하지 않고 두 공인 목록으로 식별합니다. 결과에 어느 목록이
+근거였는지 함께 나옵니다.
+
+| 목록 | 쓰임 |
+|---|---|
+| SPDX License List | 식별자 727개, `isOsiApproved` |
+| Blue Oak Council License List | 관대함 등급 225개 |
+
+`isOsiApproved` 하나로는 부족합니다. 이건 "제한적인가"가 아니라 "OSI에
+신청해서 승인받았는가"라는 절차적 사실입니다. `CC0-1.0`, `BSD-Source-Code`,
+`MIT-Festival`은 `false`이면서 관대합니다 — 아무도 신청하지 않았을 뿐입니다.
+이 플래그만으로 차단하면 그런 161개가 통째로 막힙니다. Blue Oak이 그 부분을
+채웁니다.
+
+판정 순서:
+
+| 조건 | 결과 |
+|---|---|
+| 문서화된 용도 제한 (비상업, Commons Clause, BUSL, SSPL) | `BLOCKED` |
+| OpenRAIL 계열 / Llama·Gemma 계열 | `BLOCKED` / `REVIEW` |
+| 카피레프트 | `REVIEW` |
+| Blue Oak 등재 또는 OSI 승인 | `ALLOWED` |
+| SPDX에 있으나 둘 다 아님 | `REVIEW` |
+| 어디에도 없음 | `UNKNOWN` |
+
+마지막 두 줄이 중요합니다. 증거가 없다는 이유로 차단하지 않습니다.
+
+### 목록은 받아서 캐시합니다
+
+첫 실행에 내려받아 `~/.cache/aibom-guard/registries`(Windows는
+`%LOCALAPPDATA%\aibom-guard\registries`)에 둡니다. 이후에는 캐시를 쓰고,
+30일이 지나면 갱신을 시도하되 실패하면 오래된 캐시를 그대로 씁니다.
+`AIBOM_GUARD_CACHE`로 위치를 바꿀 수 있습니다.
+
+저장소에 넣지 않았습니다. Blue Oak 약관은 JSON 파일에 자동으로 접근하는
+것만 허용하고 재배포는 언급하지 않으며, SPDX 데이터 저장소도 목록 자체의
+라이선스를 선언하지 않습니다. 남의 라이선스를 판정하는 도구가 조건을 말할
+수 없는 파일을 담고 있을 수는 없습니다.
+
+캐시가 없는 상태로 `--offline`이면 내장 규칙만 남습니다. 용도 제한과
+카피레프트 계열은 그대로 잡히고 나머지는 `UNKNOWN`이 됩니다. 이 방향으로만
+무너지며 `ALLOWED`가 되는 일은 없습니다.
+
+### 의무를 함께 안내합니다
+
+`REVIEW` 한 단어로는 할 일을 알 수 없고, AGPL과 MPL의 의무는 다릅니다.
+
+```
+mysqlclient==2.2.4   REVIEW   GPL-2.0-only
+  why : GNU General Public License v2.0 only (GPL-2.0-only) is a copyleft license.
+  todo: Strong copyleft. Distributing a work that links or embeds this requires
+        releasing the complete corresponding source of the whole work under the
+        GPL. Internal use without distribution triggers nothing.
+  ref : https://spdx.org/licenses/GPL-2.0-only.html
+```
+
+### 버전은 지어내지 않습니다
+
+`paramiko`는 `"LGPL"`이라고만 선언하지만 실제로는 LGPL-2.1입니다. 이걸
+`LGPL-3.0-only`로 단정하면 틀린 의무를 안내하게 됩니다. 버전 없는 표기는
+계열만 보고하고 버전은 미해결로 남깁니다.
+
+```
+LGPL   -> REVIEW  spdx=(unresolved)  "LGPL 계열이나 정확한 버전을 확정하지 못함"
+LGPL-2.1 -> REVIEW  spdx=LGPL-2.1-only
+```
+
+### SPDX 표현식
+
+`AND`가 `OR`보다 강하게 결합하고 괄호가 우선한다는 SPDX 규칙을 따릅니다.
+`WITH`는 나누지 않습니다 — 예외를 왼쪽 라이선스와 함께 판정해야
+`Apache-2.0 WITH Commons Clause`가 Apache로 통과하지 않습니다.
+
+### 어느 버전의 라이선스를 읽는가
+
+라이선스는 버전마다 바뀝니다. `chardet` 5.2.0은 LGPL-2.1, 7.5.1은 0BSD입니다.
+설치된 사본을 읽으면 고정한 버전과 다른 조건을 보고하게 되고, 카피레프트
+의무를 통째로 놓칩니다.
+
+그래서 PyPI의 고정 버전 릴리스(`/pypi/<pkg>/<version>/json`)가 기준입니다.
+설치 사본은 폴백이고, 폴백을 쓰면 표시합니다.
+
+| `license_source` | 의미 |
+|---|---|
+| `pypi:license_expression` | PEP 639 SPDX 표현식 |
+| `pypi:license` / `pypi:classifier` | 고정 버전의 메타데이터 |
+| `installed:*` | 설치 사본. 버전이 다르면 `license_unverified: true` |
+| `none` | 어디서도 못 읽음 |
+
+`license_unverified`가 `true`면 `unverified` 이슈가 기록되고 confidence가
+낮아집니다 — OSV 실패와 같은 계약입니다. 설치 사본은 버전이 고정 버전과
+일치할 때만 검증된 것으로 봅니다.
+
+필드가 여러 개면 순서대로 고르지 않고 SPDX id로 해석되는 쪽을 씁니다.
+`psycopg2`는 `license`에 `"LGPL with exceptions"`, 분류자에 `"...v3 (LGPLv3)"`를
+넣는데, 고정된 순서로 읽으면 해석 가능한 쪽을 버리게 됩니다.
+
+`--offline`이면 PyPI를 조회하지 않고 설치 사본만 씁니다.
+
+### 한계
+
+Commons Clause는 SPDX 목록에도 예외 84개에도 없고, OpenRAIL·Llama 등 모델
+라이선스도 SPDX id가 없습니다. 이 영역은 규칙 목록으로 처리하며 항목마다
+제한 내용을 적었습니다.
 
 ---
 
@@ -318,11 +468,11 @@ Ollama 설명.
 
 미완 및 제약:
 
-- **`LICENSE` 파일 없음.** 제출 전 추가 필요. 팀 합의 대기.
-- 라이선스 판정은 설치된 버전의 메타데이터 기준이므로 `requirements.txt`에
-  고정한 버전과 다를 수 있음.
-- `requirements.txt`는 `package==version` 형식만 지원. 그 외 줄은
-  `unscanned`에 기록됩니다.
+- 라이선스는 PyPI의 고정 버전 릴리스에서 읽습니다. 조회 실패·오프라인 시
+  설치 사본으로 폴백하며 `license_unverified`로 표시됩니다.
+- 버전 범위는 오늘 PyPI에 있는 최신 버전으로 좁혀 검사합니다. 실제 설치
+  시점이 다르면 다른 버전이 될 수 있고, 리포트의 `version_resolved`가 그
+  구분을 남깁니다.
 - 모델 pickle 내부 검사는 기본 비활성. 미검사 파일은 `unverified`로 보고.
 - picklescan은 알려진 위험 패턴만 탐지. 탐지 없음이 안전을 보장하지 않음.
 - gated 모델은 `HF_TOKEN`과 Hub 라이선스 동의 필요.
@@ -339,3 +489,12 @@ Ollama 설명.
 
 `mcp`는 `==1.28.1` 고정입니다. 2.x에서 `mcp.server.fastmcp`가 제거되어 최신
 버전 설치 시 서버가 기동하지 않습니다.
+
+라이선스 판정에 쓰는 SPDX·Blue Oak 목록은 저장소에 넣지 않고 첫 실행에
+받아서 캐시합니다. [라이선스 판정](#목록은-받아서-캐시합니다) 참고.
+
+---
+
+## 라이선스
+
+Apache License 2.0. 전문은 [LICENSE](LICENSE).
