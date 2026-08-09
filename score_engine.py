@@ -53,6 +53,34 @@ what the team already agreed on elsewhere in the codebase:
     document as this engine's output. repository_checker keeps CONDITIONAL
     for its own module-2 verdict; scanner normalises it when reporting.
 
+Producer coverage (P2-14)
+-------------------------
+Weights reflect *severity when a finding fires*, not how often a detector
+exists today. Two categories need explicit honesty:
+
+  * ``malicious`` — filled by model picklescan (module 1). There is no PyPI
+    package malware scanner yet; a confirmed hit also hard-blocks. Weight
+    stays high so a model finding cannot be diluted by other categories.
+  * ``pii`` — reserved protocol slot. No module currently emits ``type=pii``;
+    the weight is a placeholder so a future producer plugs in without a
+    schema change. Until then it never moves the score in practice.
+
+Verified vs unverified findings (P0-4)
+--------------------------------------
+An issue with ``verified: False`` (e.g. PyPI network failure reported as
+hallucination by recommendation.detect_hallucination) is **not** deducted.
+It still lowers confidence so a transient outage cannot look like a clean
+ALLOW, and cannot masquerade as a confirmed hallucinated dependency.
+
+Double counting with module 2
+-----------------------------
+When ``repository_info.trust_score`` is blended into the final number,
+``repository_info.issues`` are **not** category-deducted again — those
+findings are already baked into module 2's score. They still appear in
+``breakdown[category].issues`` (visibility for callers like scanner) and
+still affect confidence / hard-block / ALLOW gates. Without a usable
+``trust_score``, repository issues deduct normally.
+
 Any tuning should be done in CATEGORY_WEIGHTS / SEVERITY_FACTORS below rather
 than scattered through the logic, and test_score_engine.py pins the current
 behaviour so a change is visible in review.
@@ -79,14 +107,24 @@ __all__ = [
 # The seven categories of the team Data Protocol, and how many points each may
 # subtract from a perfect 100. Ordered worst-first; the weights sum to 100 so a
 # single maximally bad finding in every category lands exactly at 0.
+#
+# Rebalance notes (P2-14): bumped typosquatting / hallucination / provenance
+# (package-path detectors that actually fire) slightly; trimmed pii (no
+# producer yet) and malicious display weight (hard-block dominates; producer
+# is model-path only). Ranking malicious > cve > license > typosquat > pii
+# is preserved.
 CATEGORY_WEIGHTS: dict[str, int] = {
-    "malicious": 30,        # confirmed malicious code - nothing outranks this
-    "cve": 25,              # known, published vulnerabilities
+    # Producer: model_checker picklescan. No PyPI package malware detector yet.
+    # Confirmed hits also hard-block regardless of this weight.
+    "malicious": 28,
+    "cve": 25,              # known, published vulnerabilities (OSV)
     "license": 15,          # legal blocker (competition Article 8)
-    "typosquatting": 10,    # name-confusion supply-chain attack
-    "hallucination": 8,     # package/model does not exist -> name is hijackable
-    "provenance": 7,        # origin cannot be verified
-    "pii": 5,               # sensitive data exposure
+    "typosquatting": 12,    # name-confusion; recommendation.detect_typosquatting
+    "hallucination": 10,    # confirmed non-existent package (verified: True only)
+    "provenance": 8,        # origin / yank / stale; repository findings
+    # Reserved — no module emits type=pii today. Keep a non-zero slot so a
+    # future producer does not need a protocol change.
+    "pii": 2,
 }
 
 # How much of a category's weight one issue consumes, by severity.
@@ -228,23 +266,101 @@ def _issue_type(issue: dict) -> str:
     return CATEGORY_ALIASES.get(text, text)
 
 
-def _collect_issues(check_result: dict) -> list[dict]:
+def _is_scoreable(issue: dict) -> bool:
+    """
+    Whether an issue may subtract from the Trust Score.
+
+    ``verified: False`` means the check did not complete (network / API
+    failure). Treating that like a confirmed finding is how a PyPI outage
+    used to cost a full hallucination deduction — so unverified issues are
+    excluded from deductions (they still affect confidence).
+    """
+    if not isinstance(issue, dict):
+        return False
+    # Explicit False only; missing / True / other → score as usual.
+    return issue.get("verified") is not False
+
+
+def _repository_trust_usable(repository_info: Optional[dict]) -> bool:
+    """True when module 2's trust_score can be blended into the final number."""
+    if not isinstance(repository_info, dict):
+        return False
+    try:
+        float(repository_info.get("trust_score"))
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _collect_issues(
+    check_result: dict,
+    *,
+    include_repository_issues: bool = True,
+) -> list[dict]:
     """
     Gather issues from the top level and from both context slots.
 
     Modules 1 and 2 report their own findings in the same `issues` shape, so
     a model's dangerous pickle and a repository's missing signature flow
     through exactly the same weighting as a CVE.
+
+    When ``include_repository_issues`` is False (trust_score is being blended),
+    module 2's issues are omitted from *deduction* input; callers may still
+    surface them separately for breakdown counts.
     """
-    issues: list[dict] = []
-    for source in (
+    sources: list[Any] = [
         check_result.get("issues"),
         (check_result.get("model_info") or {}).get("issues"),
-        (check_result.get("repository_info") or {}).get("issues"),
-    ):
+    ]
+    if include_repository_issues:
+        sources.append((check_result.get("repository_info") or {}).get("issues"))
+
+    issues: list[dict] = []
+    for source in sources:
         if isinstance(source, Iterable) and not isinstance(source, (str, bytes)):
             issues.extend(item for item in source if isinstance(item, dict))
     return issues
+
+
+def _repository_issues_only(repository_info: Optional[dict]) -> list[dict]:
+    if not isinstance(repository_info, dict):
+        return []
+    source = repository_info.get("issues")
+    if not isinstance(source, Iterable) or isinstance(source, (str, bytes)):
+        return []
+    return [item for item in source if isinstance(item, dict)]
+
+
+def _surface_issue_counts(breakdown: dict, issues: list[dict]) -> list[str]:
+    """
+    Record issue counts in the breakdown without changing deductions.
+
+    Used when repository trust is blended: module 2 findings must remain
+    visible (scanner asserts provenance.issues) but must not deduct again.
+    """
+    surfaced_unrecognised: list[str] = []
+    for issue in issues:
+        if not _is_scoreable(issue):
+            continue
+        category = _issue_type(issue)
+        if category in CATEGORY_WEIGHTS:
+            breakdown[category]["issues"] += 1
+            continue
+        block = breakdown.setdefault(
+            "unrecognised",
+            {
+                "weight": UNRECOGNISED_WEIGHT,
+                "issues": 0,
+                "deduction": 0.0,
+                "types": [],
+            },
+        )
+        block["issues"] += 1
+        types = set(block.get("types") or [])
+        types.add(category)
+        block["types"] = sorted(types)
+        surfaced_unrecognised.append(category)
+    return sorted(set(surfaced_unrecognised))
 
 
 # ---------------------------------------------------------------------------
@@ -260,12 +376,16 @@ def _score_categories(issues: list[dict], license_status: str) -> tuple[dict, li
     findings of the same kind cannot push the total below zero. Every category
     is reported even when it scored nothing, so a reader can tell "checked and
     clean" apart from "never looked".
+
+    Issues with ``verified: False`` are skipped here (P0-4).
     """
     load: dict[str, float] = {name: 0.0 for name in CATEGORY_WEIGHTS}
     counts: dict[str, int] = {name: 0 for name in CATEGORY_WEIGHTS}
     unrecognised: dict[str, int] = {}
 
     for issue in issues:
+        if not _is_scoreable(issue):
+            continue
         category = _issue_type(issue)
         factor = SEVERITY_FACTORS[_severity_of(issue)]
         if category in load:
@@ -314,6 +434,9 @@ def _hard_blocks(issues: list[dict], license_status: str,
     A hard block exists because some findings are not a matter of degree.
     Following repository_checker, a critical-severity finding blocks outright;
     so does confirmed malicious code and a license that forbids the use.
+
+    Unverified findings (``verified: False``) never hard-block — an incomplete
+    check is not evidence of malice.
     """
     reasons: list[str] = []
 
@@ -324,11 +447,16 @@ def _hard_blocks(issues: list[dict], license_status: str,
         )
 
     for issue in issues:
+        if not _is_scoreable(issue):
+            continue
         if _issue_type(issue) == "malicious":
             identifier = issue.get("id") or issue.get("detail") or issue.get("summary") or "?"
             reasons.append(f"Malicious code reported: {identifier}")
 
-    critical = [i for i in issues if _severity_of(i) == "critical"]
+    critical = [
+        i for i in issues
+        if _is_scoreable(i) and _severity_of(i) == "critical"
+    ]
     for issue in critical:
         identifier = issue.get("id") or issue.get("summary") or issue.get("detail") or "?"
         reasons.append(
@@ -385,9 +513,13 @@ def _confidence(check_result: dict, issues: list[dict]) -> float:
         if isinstance(context, dict) and context.get("partial_data"):
             confidence *= 0.75
 
-    if any(_severity_of(i) == "unknown" for i in issues):
+    if any(_severity_of(i) == "unknown" for i in issues if _is_scoreable(i)):
         # We found things we could not grade. Reporting them at full
         # confidence would overstate how well we understand this artifact.
+        confidence *= 0.85
+
+    # Incomplete checks (verified: False) — evidence gap, not a clean pass.
+    if any(isinstance(i, dict) and i.get("verified") is False for i in issues):
         confidence *= 0.85
 
     return round(max(0.0, min(1.0, confidence)), 2)
@@ -421,7 +553,11 @@ def _decide_verdict(score: int, confidence: float, hard_block: bool,
         return "WARNING"
     if score < BLOCK_THRESHOLD:
         return "BLOCK"
-    has_high = any(_severity_of(i) == "high" for i in issues)
+    # Only confirmed (scoreable) high findings block ALLOW — an unverified
+    # network failure must not permanently deny ALLOW via a phantom "high".
+    has_high = any(
+        _is_scoreable(i) and _severity_of(i) == "high" for i in issues
+    )
     if score >= ALLOW_THRESHOLD and confidence >= MIN_CONFIDENCE_FOR_ALLOW and not has_high:
         return "ALLOW"
     return "WARNING"
@@ -451,8 +587,22 @@ def calculate_trust_score(check_result: dict) -> dict:
     model_info = check_result.get("model_info")
     repository_info = check_result.get("repository_info")
 
-    issues = _collect_issues(check_result)
-    breakdown, unrecognised_types = _score_categories(issues, license_status)
+    # Blend path: do not category-deduct repository_info.issues (already in
+    # trust_score). Still collect them for confidence / hard-block / visibility.
+    blend_repo = _repository_trust_usable(repository_info)
+    scoring_issues = _collect_issues(
+        check_result, include_repository_issues=not blend_repo
+    )
+    all_issues = _collect_issues(check_result, include_repository_issues=True)
+
+    breakdown, unrecognised_types = _score_categories(scoring_issues, license_status)
+
+    if blend_repo:
+        surfaced = _surface_issue_counts(
+            breakdown, _repository_issues_only(repository_info)
+        )
+        if surfaced:
+            unrecognised_types = sorted(set(unrecognised_types) | set(surfaced))
 
     total_deduction = sum(
         entry["deduction"] for entry in breakdown.values() if isinstance(entry, dict)
@@ -461,8 +611,8 @@ def calculate_trust_score(check_result: dict) -> dict:
 
     score, repo_trust = _blend_repository_trust(score, repository_info)
 
-    confidence = _confidence(check_result, issues)
-    reasons = _hard_blocks(issues, license_status, model_info)
+    confidence = _confidence(check_result, all_issues)
+    reasons = _hard_blocks(all_issues, license_status, model_info)
     hard_block = bool(reasons)
 
     trust_score = int(round(max(0.0, min(100.0, score))))
@@ -471,14 +621,16 @@ def calculate_trust_score(check_result: dict) -> dict:
         # BLOCK verdict; the two would contradict each other in the report.
         trust_score = min(trust_score, BLOCK_THRESHOLD - 1)
 
-    verdict = _decide_verdict(trust_score, confidence, hard_block, issues)
+    verdict = _decide_verdict(trust_score, confidence, hard_block, all_issues)
 
     breakdown["_summary"] = {
         "base": 100,
         "total_deduction": round(total_deduction, 2),
         "repository_trust": repo_trust,
         "repository_blend": REPOSITORY_BLEND if repo_trust is not None else None,
-        "issue_count": len(issues),
+        "repository_issues_deducted": not blend_repo,
+        "issue_count": len(all_issues),
+        "scored_issue_count": sum(1 for i in scoring_issues if _is_scoreable(i)),
         "confidence": confidence,
         "thresholds": {"allow": ALLOW_THRESHOLD, "block": BLOCK_THRESHOLD},
     }

@@ -49,10 +49,25 @@ def test_nonexistent_package_is_a_hallucination():
     issues = detect_hallucination(info("nonexistent-ai-pkg", exists=False))
     assert types_of(issues) == ["hallucination"]
     assert "nonexistent-ai-pkg" in issues[0]["detail"]
+    assert issues[0].get("verified") is True
 
 
 def test_existing_package_is_not_a_hallucination():
     assert detect_hallucination(info("requests", exists=True)) == []
+
+
+def test_pypi_network_error_is_unverified_not_confirmed_hallucination():
+    """
+    P0-4: a transient PyPI failure must carry verified=False so score_engine
+    excludes it from Trust Score deductions.
+    """
+    broken = PyPIPackageInfo(
+        name="maybe-real", exists=False, error="network: timed out")
+    issues = detect_hallucination(broken)
+    assert len(issues) == 1
+    assert issues[0]["type"] == "hallucination"
+    assert issues[0]["verified"] is False
+    assert "timed out" in issues[0]["detail"] or "network" in issues[0]["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +96,21 @@ def test_an_unrelated_name_is_not_flagged():
 def test_typosquat_detection_does_not_need_pypi():
     """It runs on the name alone, so it still works when PyPI is unreachable."""
     assert detect_typosquatting("reqeusts", package_exists=None)
+
+
+def test_package_exists_does_not_suppress_near_miss():
+    """
+    package_exists is kept for API compatibility but must not gate detection:
+    real typosquat packages often exist on PyPI.
+    """
+    # exists=True near-miss of a popular name → still flagged
+    flagged = detect_typosquatting("reqeusts", package_exists=True)
+    assert types_of(flagged) == ["typosquatting"]
+    # exists=False → same result (existence is irrelevant)
+    assert detect_typosquatting("reqeusts", package_exists=False) == flagged
+    # Official popular name cleared regardless of the flag
+    assert detect_typosquatting("requests", package_exists=False) == []
+    assert detect_typosquatting("requests", package_exists=True) == []
 
 
 # ---------------------------------------------------------------------------

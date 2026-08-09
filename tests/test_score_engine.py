@@ -146,6 +146,25 @@ def test_categories_are_ordered_by_seriousness():
     weights = CATEGORY_WEIGHTS
     assert weights["malicious"] > weights["cve"] > weights["license"]
     assert weights["license"] > weights["typosquatting"] > weights["pii"]
+    # Detectable package-path categories outrank the unused pii placeholder.
+    assert weights["typosquatting"] > weights["hallucination"] > weights["provenance"]
+    assert weights["provenance"] > weights["pii"]
+
+
+def test_malicious_and_pii_producer_coverage_is_documented():
+    """
+    P2-14: malicious is model-path only; pii has no producer yet.
+    Weights stay in CATEGORY_WEIGHTS so a future emitter needs no schema change,
+    but the module docstring must spell that out (README is owned elsewhere).
+    """
+    import score_engine
+    doc = score_engine.__doc__ or ""
+    assert "picklescan" in doc.lower() or "model" in doc.lower()
+    assert "pii" in doc.lower()
+    assert "no module currently emits" in doc.lower() or "reserved" in doc.lower()
+    assert CATEGORY_WEIGHTS["malicious"] >= CATEGORY_WEIGHTS["cve"]
+    assert CATEGORY_WEIGHTS["pii"] > 0
+    assert sum(CATEGORY_WEIGHTS.values()) == 100
 
 
 def test_breakdown_reports_every_category_even_when_clean():
@@ -284,11 +303,44 @@ def test_issues_from_model_info_are_scored():
     assert result["trust_score"] < 100
 
 
-def test_issues_from_repository_info_are_scored():
+def test_issues_from_repository_info_are_scored_without_blend():
+    """No trust_score → repository issues deduct like any other finding."""
     result = calculate_trust_score(check(repository_info={
-        "issues": [{"type": "provenance", "severity": "medium"}],
-        "trust_score": 90}))
+        "issues": [{"type": "provenance", "severity": "medium"}]}))
     assert result["breakdown"]["provenance"]["issues"] == 1
+    assert result["breakdown"]["provenance"]["deduction"] > 0
+    assert result["breakdown"]["_summary"]["repository_issues_deducted"] is True
+
+
+def test_repository_issues_visible_but_not_double_deducted_when_blending():
+    """
+    이중 감점 방지: trust_score blend 시 repository issues는 breakdown에만
+    남기고 category deduction에는 넣지 않는다. scanner는 provenance.issues
+    카운트로 전달 여부를 확인한다.
+    """
+    blend_only = calculate_trust_score(check(repository_info={"trust_score": 20}))
+    both = calculate_trust_score(check(repository_info={
+        "trust_score": 20,
+        "issues": [{"type": "provenance", "severity": "medium",
+                    "detail": "unsigned release"}],
+    }))
+    assert both["trust_score"] == blend_only["trust_score"]
+    assert both["breakdown"]["provenance"]["issues"] == 1
+    assert both["breakdown"]["provenance"]["deduction"] == 0
+    assert both["breakdown"]["_summary"]["repository_issues_deducted"] is False
+    assert both["breakdown"]["_summary"]["repository_trust"] == 20
+
+
+def test_blended_repository_alias_still_maps_to_provenance():
+    """signature/repository/dataset aliases stay visible under provenance."""
+    result = calculate_trust_score(check(repository_info={
+        "trust_score": 90,
+        "issues": [{"type": "signature", "severity": "medium",
+                    "detail": "no signature found"}],
+    }))
+    assert result["breakdown"]["provenance"]["issues"] == 1
+    assert "unrecognised" not in result["breakdown"]
+    assert result["breakdown"]["provenance"]["deduction"] == 0
 
 
 def test_repository_trust_pulls_the_final_score():
@@ -312,6 +364,69 @@ def test_malformed_repository_trust_is_ignored_not_fatal():
     result = calculate_trust_score(check(repository_info={"trust_score": "n/a"}))
     assert result["trust_score"] == 100
     assert result["breakdown"]["_summary"]["repository_trust"] is None
+    # Unusable trust_score → fall back to deducting repository issues.
+    with_issue = calculate_trust_score(check(repository_info={
+        "trust_score": "n/a",
+        "issues": [{"type": "provenance", "severity": "medium"}],
+    }))
+    assert with_issue["breakdown"]["provenance"]["deduction"] > 0
+    assert with_issue["breakdown"]["_summary"]["repository_issues_deducted"] is True
+
+
+# ---------------------------------------------------------------------------
+# verified: False must not deduct (P0-4)
+# ---------------------------------------------------------------------------
+
+def test_unverified_hallucination_does_not_deduct_score():
+    """
+    PyPI network failure reports type=hallucination with verified=False.
+    That must not cost hallucination points the way a confirmed 404 does.
+    """
+    unverified = calculate_trust_score(check(issues=[{
+        "type": "hallucination",
+        "detail": "Could not verify package (network: timeout)",
+        "verified": False,
+    }]))
+    confirmed = calculate_trust_score(check(issues=[{
+        "type": "hallucination",
+        "detail": "Package does not exist on PyPI",
+        "verified": True,
+    }]))
+    assert unverified["breakdown"]["hallucination"]["deduction"] == 0
+    assert unverified["breakdown"]["hallucination"]["issues"] == 0
+    assert confirmed["breakdown"]["hallucination"]["deduction"] > 0
+    assert unverified["trust_score"] == 100
+    assert confirmed["trust_score"] < 100
+
+
+def test_unverified_hallucination_lowers_confidence():
+    """An incomplete check is a confidence gap, not a clean pass."""
+    clean = calculate_trust_score(check())
+    unverified = calculate_trust_score(check(issues=[{
+        "type": "hallucination",
+        "detail": "Could not verify",
+        "verified": False,
+    }]))
+    assert unverified["confidence"] < clean["confidence"]
+    assert unverified["verdict"] != "ALLOW" or unverified["confidence"] < 0.7
+
+
+def test_unverified_finding_does_not_hard_block():
+    result = calculate_trust_score(check(issues=[{
+        "type": "malicious", "id": "maybe", "severity": "critical",
+        "verified": False,
+    }]))
+    assert result["hard_block"] is False
+    assert result["trust_score"] == 100
+
+
+def test_missing_verified_flag_still_scores():
+    """Backward compatible: omit verified → treat as confirmed."""
+    result = calculate_trust_score(check(issues=[{
+        "type": "hallucination",
+        "detail": "Package does not exist on PyPI",
+    }]))
+    assert result["breakdown"]["hallucination"]["deduction"] > 0
 
 
 # ---------------------------------------------------------------------------
