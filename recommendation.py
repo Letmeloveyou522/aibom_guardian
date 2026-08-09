@@ -315,11 +315,15 @@ def detect_typosquatting(
     Flag names that are edit-distance 1~2 from a popular package,
     but are NOT themselves that popular package.
 
-    If `package_exists` is False (hallucination), still report typo matches
-    so the caller can recommend the official name.
-    If `package_exists` is True and the name normalizes to a popular package,
-    it is treated as the real package → no typo issue.
+    ``package_exists`` is accepted for call-site compatibility (scanner /
+    RecommendationEngine pass PyPI lookup results) but intentionally does
+    **not** gate detection: typosquat packages often *do* exist on PyPI, so
+    an exists=True result must not suppress a near-miss against a popular
+    name. Exact matches against the popular allowlist are still cleared.
     """
+    # Quiet unused-arg lint: kept in the signature on purpose (see docstring).
+    _ = package_exists
+
     issues: list[dict[str, Any]] = []
     needle = normalize_package_name(package_name)
     popular_norm = {normalize_package_name(p): p for p in popular}
@@ -327,10 +331,6 @@ def detect_typosquatting(
     # Exact match against the allowlist → legitimate popular package
     if needle in popular_norm:
         return issues
-
-    # Optional early-exit: if caller already confirmed this is the real
-    # PyPI project for that spelling, we still check near-matches
-    # (typosquat packages often *do* exist on PyPI).
 
     matches: list[tuple[int, str]] = []
     for norm, original in popular_norm.items():
@@ -365,10 +365,17 @@ def detect_typosquatting(
 
 
 def detect_hallucination(package_info: PyPIPackageInfo) -> list[dict[str, Any]]:
-    """HTTP 404 / non-existent package → AI-hallucinated dependency."""
+    """
+    HTTP 404 / non-existent package → AI-hallucinated dependency.
+
+    Network / 5xx failures still emit a hallucination-shaped issue so callers
+    see the gap, but with ``verified: False``. score_engine excludes those
+    from Trust Score deductions (P0-4) and lowers confidence instead — a
+    temporary PyPI outage must not be scored like a confirmed fake package.
+    """
     if package_info.exists:
         return []
-    # Network / 5xx: do not claim hallucination — leave to caller logs
+    # Network / 5xx: do not claim a confirmed hallucination
     if package_info.error:
         return [
             {
