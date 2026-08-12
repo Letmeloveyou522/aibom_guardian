@@ -21,3 +21,8 @@ picklescan>=0.0.21           # dangerous opcodes inside pickle weight files
 
 # Development / tests
 pytest>=8.0
+
+# 의도적인 위협 요소 추가
+numpy==1.24.0
+requets==2.28.0
+fakelib==0.1.0
