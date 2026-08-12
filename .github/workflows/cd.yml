@@ -1,0 +1,37 @@
+name: AIBOM-Guard CD Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # 예: v1.0.0, v0.1.0 태그를 달아서 push할 때만 자동 배포 실행
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: '3.11'
+
+      - name: Install Build Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build Package (Wheel & Source)
+        run: |
+          # setup.py나 pyproject.toml을 바탕으로 설치 가능한 패키지 파일(.whl) 생성
+          python -m build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

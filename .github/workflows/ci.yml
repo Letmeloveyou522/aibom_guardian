@@ -1,0 +1,32 @@
+name: AIBOM-Guard CI Pipeline
+
+on:
+  push:
+    branches: [ "dev" ]
+  pull_request:
+    branches: [ "dev" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # @v4.2.2 이상으로 지정하면 Node.js 관련 경고가 사라집니다.
+      - name: Checkout Code
+        uses: actions/checkout@v4.2.2
+
+      # @v5.3.0 이상으로 지정하여 최신 런타임 호환성을 맞춥니다.
+      - name: Set up Python
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Basic Pipeline Test
+        run: |
+          echo "✅ GitHub Actions 파이프라인이 정상적으로 동작합니다!"
+          echo "💡 추후 API 키나 로컬 오픈웨이트 모델이 준비되면 여기에 스캔 명령어를 연동합니다."
