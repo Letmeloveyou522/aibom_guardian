@@ -1,7 +1,17 @@
 # AIBOM-Guard
 
+[![CI](https://github.com/Letmeloveyou522/aibom_guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Letmeloveyou522/aibom_guard/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
+
 Python 패키지와 Hugging Face 모델의 보안·라이선스·공급망 위험을 검사하고
 결과를 CycloneDX SBOM으로 출력합니다.
+
+English: [README.en.md](README.en.md) ·
+기여: [CONTRIBUTING.md](CONTRIBUTING.md) ·
+보안 제보: [SECURITY.md](SECURITY.md) ·
+변경 이력: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
@@ -12,14 +22,16 @@ Python 3.10 이상이 필요합니다.
 ```bash
 git clone https://github.com/Letmeloveyou522/aibom_guard.git
 cd aibom_guard
-git checkout dev
 
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 source .venv/bin/activate       # macOS / Linux
 
-pip install -r requirements.txt
+pip install -e .
 ```
+
+`pip install -e .`가 의존성 설치와 `aibom-guard` 명령 등록을 함께 합니다.
+소스를 수정할 생각이 없으면 `pip install .`이면 됩니다.
 
 설치 확인:
 
@@ -27,7 +39,9 @@ pip install -r requirements.txt
 pytest
 ```
 
-`pytest`가 전부 통과하면 정상입니다. 이 테스트는 네트워크를 쓰지 않습니다.
+`pytest`가 전부 통과하면 정상입니다. 이 테스트는 네트워크를 쓰지 않고
+3초 안에 끝나며, 설치하지 않은 상태에서도 동작합니다
+(`pyproject.toml`이 `src/`를 경로에 넣습니다).
 
 ### 선택 사항
 
@@ -43,8 +57,10 @@ pytest
 ## 실행
 
 ```bash
-python scanner.py examples/sample-requirements.txt
+aibom-guard examples/sample-requirements.txt
 ```
+
+설치하지 않고 클론에서 바로 쓰려면 `python -m aibom_guard`도 같습니다.
 
 `examples/sample-requirements.txt`는 검사 대상 예시이며 취약한 버전이
 고정되어 있습니다. `pip install -r` 대상이 아닙니다. 자기 프로젝트를
@@ -53,7 +69,7 @@ python scanner.py examples/sample-requirements.txt
 AI 모델까지 함께 검사:
 
 ```bash
-python scanner.py examples/sample-requirements.txt \
+aibom-guard examples/sample-requirements.txt \
     --model CompVis/stable-diffusion-v1-4
 ```
 
@@ -354,42 +370,62 @@ Commons Clause는 SPDX 목록에도 예외 84개에도 없고, OpenRAIL·Llama �
 ## 구조
 
 ```
-① model_checker ──┐
-② repository_checker ┼──> ④ score_engine ──> ⑤ sbom_generator / mcp_server
-③ recommendation ──┘
+model_checker ──────┐
+repository_checker ─┼──> score_engine ──> sbom_generator / mcp_server
+recommendation ─────┘
 ```
 
-①②③은 증거만 수집하고 점수를 매기지 않습니다. 판정은 ④가 전담하므로
-CLI와 MCP의 결과가 일치합니다.
+수집 모듈은 증거만 모으고 점수를 매기지 않습니다. 판정은 `score_engine`이
+전담하며, 두 진입점 모두 `_adapters.py` 한 곳을 거쳐 입력을 만들기 때문에
+CLI와 MCP의 결과가 일치합니다. 그 동일성은 테스트가 고정합니다.
 
 ```
-scanner.py              CLI 진입점
-mcp_server.py           MCP 진입점
-model_checker.py        HF 모델 정보 수집                    ①
-repository_checker.py   GitHub / HF / PyPI 공급망 신뢰도      ②
-osv_client.py           OSV CVE 조회 + CVSS 파싱             ③
-recommendation.py       위험 탐지 + 대안 추천                 ③
-score_engine.py         Trust Score / 최종 판정              ④
-sbom_generator.py       CycloneDX SBOM / ML-BOM              ⑤
-license_checker.py      라이선스 분류
-ai_explainer.py         Ollama 로컬 모델 설명
-examples/               예시 입력, 데모, 출력 샘플
-tests/                  단위 테스트
+src/aibom_guard/
+    scanner.py              CLI 진입점 (aibom-guard)
+    mcp_server.py           MCP 진입점 (aibom-guard-mcp)
+    _adapters.py            두 진입점 → score_engine 입력 (단일 사본)
+    score_engine.py         Trust Score / 최종 판정   ← 유일한 채점자
+    model_checker.py        HF 모델 정보 수집
+    osv_client.py           OSV CVE 조회 + CVSS 파싱
+    recommendation.py       위험 탐지 + 대안 추천
+    license_checker.py      라이선스 분류
+    sbom_generator.py       CycloneDX SBOM / ML-BOM
+    ai_explainer.py         Ollama 로컬 모델 설명
+    repository_checker/     공급망 신뢰도 — 대상별로 분할
+        _constants.py         허용 호스트, API 루트, 임계값
+        _http.py              SSRF 방어 + 이를 강제하는 클라이언트
+        _targets.py           입력이 무엇을 가리키는지 판별
+        _evidence.py          해시·서명·CODEOWNERS·GitHub URL 추출
+        _datasets.py          데이터셋 카드 항목 충족도
+        _scoring.py           저장소 신뢰 점수
+        _github.py            GitHub 검사
+        _huggingface.py       Hugging Face 검사
+        _pypi.py              PyPI 검사
+        _provenance.py        로컬 파일·서명·cosign
+        _checker.py           RepositoryChecker (위 검사들을 조합)
+        _api.py               check_repository()
+examples/                   예시 입력, 데모, 출력 샘플
+tests/                      단위 테스트
 ```
+
+`repository_checker`는 원래 2,828줄짜리 단일 파일이었습니다. **계층이 아니라
+검사 대상별로** 나눴는데, 실제로 일이 그렇게 갈리기 때문입니다 — GitHub
+관리자 수를 세는 방식을 바꾸는 일은 Hugging Face나 PyPI 경로와 아무 상관이
+없습니다. 바깥에서 보는 import 경로는 이전과 완전히 동일합니다.
 
 개별 모듈만 실행할 수도 있습니다.
 
 ```bash
-python model_checker.py https://huggingface.co/google-bert/bert-base-uncased
-python repository_checker.py https://github.com/pallets/flask --json
-python license_checker.py
-python score_engine.py
-python examples/demo_module3.py reqeusts==1.0.0
+python -m aibom_guard.model_checker https://huggingface.co/google-bert/bert-base-uncased
+python -m aibom_guard.repository_checker https://github.com/pallets/flask --json
+python -m aibom_guard.license_checker
+python -m aibom_guard.score_engine
+python examples/demo_recommendation.py reqeusts==1.0.0
 ```
 
-`model_checker.py`를 단독 실행하면 512MB 이하의 pickle 파일을 **내려받아
+`model_checker`를 단독 실행하면 512MB 이하의 pickle 파일을 **내려받아
 검사합니다**. 모델 크기에 따라 수 분이 걸립니다. 메타데이터만 보려면
-`--max-pickle-size-mb 0`을 붙입니다. `scanner.py --model`은 반대로 기본이
+`--max-pickle-size-mb 0`을 붙입니다. `aibom-guard --model`은 반대로 기본이
 0이며, `--model-pickle-scan MB`로 켭니다.
 
 ---
@@ -433,13 +469,25 @@ Claude Desktop 설정:
 {
   "mcpServers": {
     "aibom-guard": {
-      "command": "python",
-      "args": ["C:/path/to/aibom_guard/mcp_server.py"],
+      "command": "aibom-guard-mcp",
       "env": { "GITHUB_TOKEN": "...", "HF_TOKEN": "..." }
     }
   }
 }
 ```
+
+`aibom-guard-mcp`가 PATH에 없으면(가상환경 안에만 설치한 경우 등) 인터프리터를
+직접 지정합니다.
+
+```json
+{
+  "command": "C:/path/to/.venv/Scripts/python.exe",
+  "args": ["-m", "aibom_guard.mcp_server"]
+}
+```
+
+`mcp_server.py` 파일 경로를 직접 넘기는 방식은 더 이상 동작하지 않습니다.
+패키지 내부 모듈이라 상대 import를 쓰기 때문에 `-m`으로 실행해야 합니다.
 
 토큰은 선택 사항입니다. 실제 값은 커밋하지 마십시오. 서버를 직접 실행하면
 입력 대기 상태로 유지되는데, stdio MCP의 정상 동작입니다.
