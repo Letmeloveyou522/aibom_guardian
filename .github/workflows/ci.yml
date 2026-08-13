@@ -1,32 +1,154 @@
-name: AIBOM-Guard CI Pipeline
+name: CI
 
 on:
   push:
-    branches: [ "dev" ]
+    branches: [ "main", "dev", "ryun**" ]
   pull_request:
-    branches: [ "dev" ]
+    branches: [ "main", "dev" ]
+  workflow_dispatch:
+
+# A new push to the same branch makes the previous run's result irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject declares requires-python = ">=3.10", so every one of those
+        # has to actually pass - not just the version the authors happen to run.
+        python-version: [ "3.10", "3.11", "3.12", "3.13" ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run test suite
+        # The suite is offline by design: tests/conftest.py points
+        # AIBOM_GUARD_CACHE at tests/fixtures so the SPDX / Blue Oak lists are
+        # never fetched. If a test ever starts needing the network it fails
+        # here, rather than passing silently against a developer's warm cache.
+        run: pytest -q
+
+  lint:
+    name: pyflakes
     runs-on: ubuntu-latest
 
     steps:
-      # @v4.2.2 이상으로 지정하면 Node.js 관련 경고가 사라집니다.
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4.2.2
 
-      # @v5.3.0 이상으로 지정하여 최신 런타임 호환성을 맞춥니다.
       - name: Set up Python
         uses: actions/setup-python@v5.3.0
         with:
-          python-version: '3.11'
+          python-version: "3.12"
 
-      - name: Install Dependencies
+      - name: Check for undefined names and unused imports
+        # pyflakes rather than a full linter: this is about names that do not
+        # resolve, not style. Coverage is 80%, so a missed import on an
+        # untested path would otherwise wait for a user to find it.
+        run: |
+          python -m pip install --upgrade pip pyflakes
+          python -m pyflakes src/aibom_guard tests examples
+
+  build:
+    name: Build wheel + sdist
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        # cd.yml only builds on a version tag, so a packaging mistake would
+        # surface during a release. Building on every push moves that failure
+        # days earlier.
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Check the distributions are well-formed
+        run: |
+          python -m twine check dist/*
+          ls -l dist/
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  smoke:
+    name: CLI smoke test
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install the package
+        # From pyproject, not requirements.txt: this exercises what a user
+        # gets. The `aibom-guard` command below only exists if
+        # [project.scripts] is right.
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install .
 
-      - name: Run Basic Pipeline Test
+      - name: Scan the sample requirements offline
+        # --offline keeps this hermetic - no third-party API can turn the job
+        # red. Exit 3 is expected: the sample pins are deliberately vulnerable
+        # and offline cannot verify their licenses. Asserting on 3 means a
+        # regression that silently returns 0 breaks the build.
         run: |
-          echo "✅ GitHub Actions 파이프라인이 정상적으로 동작합니다!"
-          echo "💡 추후 API 키나 로컬 오픈웨이트 모델이 준비되면 여기에 스캔 명령어를 연동합니다."
+          set +e
+          aibom-guard examples/sample-requirements.txt --offline --no-explain
+          code=$?
+          set -e
+          echo "scanner exited with $code"
+          if [ "$code" -ne 3 ]; then
+            echo "::error::expected exit code 3 (warnings present), got $code"
+            exit 1
+          fi
+
+      - name: Check the generated artifacts are well-formed
+        run: |
+          python - <<'PY'
+          import json
+
+          report = json.load(open("scan_report.json"))
+          assert report["packages"], "scan_report.json has no packages"
+          print("scan_report.json OK:", len(report["packages"]), "packages")
+
+          sbom = json.load(open("sbom.json"))
+          assert sbom["bomFormat"] == "CycloneDX", sbom.get("bomFormat")
+          print("sbom.json OK:", sbom["bomFormat"], sbom["specVersion"])
+          PY

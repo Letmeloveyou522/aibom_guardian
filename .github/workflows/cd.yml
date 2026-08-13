@@ -1,37 +1,83 @@
-name: AIBOM-Guard CD Pipeline
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*' # 예: v1.0.0, v0.1.0 태그를 달아서 push할 때만 자동 배포 실행
+      - 'v*.*.*'   # v1.0.0, v0.1.0 - pushing one of these publishes a release
+  workflow_dispatch:
 
 jobs:
-  publish-release:
+  # A tag is usually pushed from a branch someone believes is green. A
+  # released artifact is a bad place to find out otherwise.
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.10", "3.11", "3.12", "3.13" ]
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run test suite
+        run: pytest -q
+
+  publish:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    needs: test
+
+    # Creating a release is a write, and GITHUB_TOKEN defaults to read-only in
+    # many repositories - without this the last step 403s.
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4.2.2
 
       - name: Set up Python
         uses: actions/setup-python@v5.3.0
         with:
-          python-version: '3.11'
+          python-version: "3.12"
 
-      - name: Install Build Tools
+      - name: Build wheel and sdist
         run: |
-          python -m pip install --upgrade pip
-          pip install build
-
-      - name: Build Package (Wheel & Source)
-        run: |
-          # setup.py나 pyproject.toml을 바탕으로 설치 가능한 패키지 파일(.whl) 생성
+          python -m pip install --upgrade pip build twine
           python -m build
+
+      - name: Check the distributions are well-formed
+        run: python -m twine check dist/*
+
+      - name: Verify the tag matches the packaged version
+        # Nothing stops someone tagging v0.2.0 while __version__ still says
+        # 0.1.0; the mismatch would otherwise only be found by whoever
+        # downloaded the wrong file.
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          built=$(ls dist/*.whl | sed -E 's/.*aibom_guard-([^-]+)-.*/\1/')
+          echo "tag=$tag built=$built"
+          if [ "$tag" != "$built" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match packaged version $built (see src/aibom_guard/__init__.py)"
+            exit 1
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
