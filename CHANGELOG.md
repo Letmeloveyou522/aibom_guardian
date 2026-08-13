@@ -29,16 +29,6 @@
   인라인 주석으로 붙습니다. 발견을 requirements 파일의 해당 줄에 연결하며,
   fingerprint에 버전이 들어가 업그레이드 후 같은 알림이 남지 않습니다.
 - **GitHub Action** (`action.yml`). `uses:` 한 줄로 남의 CI에 넣을 수 있습니다.
-
-### Changed
-
-- `requests.Session`을 스레드-로컬로 분리하고 워커마다 자체
-  `RecommendationEngine`을 만듭니다. 병렬 조회에서 세션을 공유하면 안 됩니다.
-- README 가중치표가 코드와 달랐습니다(`30/25/15/10/8/7/5` → 실제
-  `28/25/15/12/10/8/2`). 문서를 코드에 맞췄습니다.
-
-### Added
-
 - **패키징**: `pip install`로 설치되는 배포물이 됩니다. 콘솔 명령
   `aibom-guard`(스캐너)와 `aibom-guard-mcp`(MCP 서버)가 등록되고,
   `python -m aibom_guard`로도 실행됩니다.
@@ -53,6 +43,10 @@
 
 ### Changed
 
+- `requests.Session`을 스레드-로컬로 분리하고 워커마다 자체
+  `RecommendationEngine`을 만듭니다. 병렬 조회에서 세션을 공유하면 안 됩니다.
+- README 가중치표가 코드와 달랐습니다(`30/25/15/10/8/7/5` → 실제
+  `28/25/15/12/10/8/2`). 문서를 코드에 맞췄습니다.
 - **구조**: 최상위에 흩어져 있던 모듈 10개를 `src/aibom_guard/` 패키지로
   옮겼습니다. 최상위 모듈이 여러 개인 flat 레이아웃은 setuptools가 배포물로
   만들 수 없어, 이전 릴리스 워크플로는 실행되면 반드시 실패하는 상태였습니다.

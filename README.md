@@ -5,9 +5,16 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
 
-**`requirements.txt`에 적힌 패키지와 AI 모델이 써도 되는 것인지 검사합니다.**
-취약점이 있는지, 라이선스에 문제가 없는지, 출처가 믿을 만한지를 보고
-결과를 사람이 읽는 표와 표준 형식 문서로 내놓습니다.
+## AI 프로젝트의 SBOM을 만들고, 그 안의 의존성을 판정합니다
+
+파이썬 패키지와 Hugging Face 모델을 한 번에 훑어서 두 가지를 내놓습니다.
+
+- **무엇이 들어 있는가** → CycloneDX ML-BOM (`sbom.json`)
+- **그것을 써도 되는가** → `ALLOW` / `WARNING` / `BLOCK` (`scan_report.json`)
+
+기존 SBOM 도구는 pip 패키지만 봅니다. AI 프로젝트에서 모델도 의존성인데
+SBOM에 들어가지 않고, OpenRAIL 같은 모델 라이선스는 SPDX 식별자가 없어
+라이선스 검사기도 지나칩니다. 그 빈자리를 메우는 도구입니다.
 
 English: [README.en.md](README.en.md) ·
 기여: [CONTRIBUTING.md](CONTRIBUTING.md) ·
@@ -16,7 +23,7 @@ English: [README.en.md](README.en.md) ·
 
 ---
 
-## 이런 걸 잡습니다
+## 실행 결과
 
 ```
 $ aibom-guard requirements.txt

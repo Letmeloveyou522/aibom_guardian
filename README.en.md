@@ -5,10 +5,18 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
 
-**Tells you whether the packages and AI models in your `requirements.txt` are
-safe to use.** It checks for known vulnerabilities, licence problems and
-questionable provenance, then reports both as a table you read and a standard
-document your tools read.
+## Builds the bill of materials for an AI project, and judges what is in it
+
+One pass over your Python packages and Hugging Face models produces two
+things:
+
+- **What is in there** → a CycloneDX ML-BOM (`sbom.json`)
+- **Whether you may use it** → `ALLOW` / `WARNING` / `BLOCK` (`scan_report.json`)
+
+Existing SBOM tools see pip packages only. In an AI project the model is a
+dependency too, yet it never reaches the bill of materials — and licences like
+OpenRAIL have no SPDX identifier, so licence scanners walk straight past them.
+That is the gap this fills.
 
 한국어: [README.md](README.md) ·
 Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) ·
@@ -17,7 +25,7 @@ Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## What it catches
+## What it produces
 
 ```
 $ aibom-guard requirements.txt
