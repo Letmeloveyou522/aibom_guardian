@@ -34,6 +34,8 @@ import json
 import logging
 import re
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import NamedTuple
 from importlib.metadata import version as installed_version, PackageNotFoundError, metadata
 
@@ -41,6 +43,7 @@ from . import __version__
 from ._adapters import _build_check_result, _vulns_to_issues
 from .osv_client import query_vulnerabilities
 from .license_checker import classify_license_detailed, set_offline
+from .sarif import write_sarif
 from .sbom_generator import build_final_sbom
 from .ai_explainer import explain_results
 from .score_engine import calculate_trust_score
@@ -104,6 +107,9 @@ class Pinned(NamedTuple):
     version: str
     spec: str
     resolved: bool
+    direct: bool = True   # False when pulled in by another package
+    depth: int = 0        # 0 = named in the file
+    line: int = 0         # line in the requirements file, 0 when transitive
 
 
 # Lines that are directives rather than requirements. Following them would
@@ -123,24 +129,18 @@ def _pypi_versions(package_name: str) -> list:
     scanning something the project will never get. pytest 9 needs Python 3.10;
     on 3.9 the honest answer to `pytest>=8.0` is pytest 8, not pytest 9.
     """
-    global _PYPI_SESSION
-
     key = ("__versions__", package_name.lower())
     if key in _RELEASE_CACHE:
         return _RELEASE_CACHE[key]
 
     try:
-        import requests
         from urllib.parse import quote
     except ImportError:                              # pragma: no cover
         return []
 
-    if _PYPI_SESSION is None:
-        _PYPI_SESSION = requests.Session()
-
     url = f"https://pypi.org/pypi/{quote(package_name, safe='')}/json"
     try:
-        response = _PYPI_SESSION.get(url, timeout=PYPI_TIMEOUT_SEC)
+        response = _pypi_session().get(url, timeout=PYPI_TIMEOUT_SEC)
         response.raise_for_status()
         releases = response.json().get("releases") or {}
     except Exception:                                # noqa: BLE001 - network
@@ -211,6 +211,111 @@ def _resolve_specifier(name: str, spec: str) -> str | None:
     return str(max(allowed))
 
 
+TRANSITIVE_MAX_DEPTH = 12
+
+
+def _normalize_name(name: str) -> str:
+    """PEP 503 normalization, so Jinja2 and jinja-2 are one package."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _requires_dist(name: str, version: str) -> list:
+    """
+    Dependencies PyPI records for one exact release.
+
+    Per-version, not per-project: a package's dependency list changes between
+    releases.
+    """
+    key = ("__deps__", _normalize_name(name), version)
+    if key in _RELEASE_CACHE:
+        return _RELEASE_CACHE[key]
+
+    try:
+        from urllib.parse import quote
+    except ImportError:                              # pragma: no cover
+        return []
+
+    url = (f"https://pypi.org/pypi/{quote(name, safe='')}"
+           f"/{quote(version, safe='')}/json")
+    try:
+        response = _pypi_session().get(url, timeout=PYPI_TIMEOUT_SEC)
+        response.raise_for_status()
+        requires = response.json().get("info", {}).get("requires_dist") or []
+    except Exception:                                # noqa: BLE001 - network
+        _RELEASE_CACHE[key] = []
+        return []
+
+    _RELEASE_CACHE[key] = list(requires)
+    return list(requires)
+
+
+def expand_transitive(
+    pinned: list,
+    *,
+    offline: bool = False,
+    max_depth: int = TRANSITIVE_MAX_DEPTH,
+) -> tuple[list, list]:
+    """
+    Walk the dependency tree and return every package that will be installed.
+
+    Returns (packages, unresolved). Resolved from PyPI ``requires_dist``, so
+    nothing needs to be installed.
+
+    Markers are evaluated against this interpreter with an empty ``extra``,
+    matching an install that requested no extras. First occurrence of a name
+    wins, so a direct pin is not replaced by a dependency's range.
+    """
+    if offline:
+        return list(pinned), []
+
+    try:
+        from packaging.requirements import InvalidRequirement, Requirement
+    except ImportError:                              # pragma: no cover
+        return list(pinned), []
+
+    packages = list(pinned)
+    unresolved: list = []
+    seen = {_normalize_name(p.name) for p in pinned}
+    frontier = list(pinned)
+
+    for depth in range(1, max_depth + 1):
+        discovered = []
+        for parent in frontier:
+            for raw in _requires_dist(parent.name, parent.version):
+                try:
+                    req = Requirement(raw)
+                except InvalidRequirement:
+                    continue
+
+                if req.marker is not None:
+                    try:
+                        if not req.marker.evaluate({"extra": ""}):
+                            continue
+                    except Exception:                # noqa: BLE001 - odd marker
+                        continue
+
+                key = _normalize_name(req.name)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                version = _resolve_specifier(req.name, str(req.specifier))
+                if version is None:
+                    unresolved.append(f"{raw}  (required by {parent.name})")
+                    continue
+
+                child = Pinned(req.name, version, raw, True,
+                               direct=False, depth=depth)
+                packages.append(child)
+                discovered.append(child)
+
+        if not discovered:
+            break
+        frontier = discovered
+
+    return packages, unresolved
+
+
 def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
     """
     Parse a requirements file into the exact versions to scan.
@@ -250,13 +355,16 @@ def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
         if key in seen:
             return
         seen[key] = True
-        packages.append(Pinned(name, version, spec, resolved))
+        packages.append(Pinned(name, version, spec, resolved, line=lineno[0]))
+
+    lineno = [0]
 
     # utf-8-sig, not utf-8: a requirements.txt saved by Notepad or exported
     # from Windows tooling starts with a BOM, and it would otherwise glue
     # itself to the first requirement and make that line unparseable.
     with open(path, "r", encoding="utf-8-sig") as f:
-        for raw_line in f:
+        for number, raw_line in enumerate(f, start=1):
+            lineno[0] = number
             line = raw_line.split(" #")[0].split("\t#")[0].strip()
             if not line or line.startswith("#"):
                 continue
@@ -318,11 +426,25 @@ def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
 PYPI_RELEASE_URL = "https://pypi.org/pypi/{package}/{version}/json"
 PYPI_TIMEOUT_SEC = 8.0
 
-# One session and one cache per process: a requirements file repeats packages
-# across transitive pins, and pypi.org should not be asked twice for the same
-# release.
-_PYPI_SESSION = None
+# One cache per process: a requirements file repeats packages across
+# transitive pins, and pypi.org should not be asked twice for the same release.
 _RELEASE_CACHE: dict = {}
+
+# Set only by tests, to inject a fake. Production uses a session per thread,
+# because requests.Session is not safe to share across the scan workers.
+_PYPI_SESSION = None
+_THREAD_LOCAL = threading.local()
+
+
+def _pypi_session():
+    if _PYPI_SESSION is not None:
+        return _PYPI_SESSION
+    session = getattr(_THREAD_LOCAL, "pypi", None)
+    if session is None:
+        import requests
+        session = requests.Session()
+        _THREAD_LOCAL.pypi = session
+    return session
 
 
 def _license_candidates(fields: dict) -> list:
@@ -412,25 +534,19 @@ def _pypi_release_license(package_name: str, version: str) -> tuple:
     not be read, so the caller can record *why* it fell back rather than
     silently reporting the wrong version's terms.
     """
-    global _PYPI_SESSION
-
     key = (package_name.lower(), version)
     if key in _RELEASE_CACHE:
         return _RELEASE_CACHE[key]
 
     try:
-        import requests
         from urllib.parse import quote
     except ImportError as exc:                      # pragma: no cover
         return "", "", f"requests unavailable: {exc}"
 
-    if _PYPI_SESSION is None:
-        _PYPI_SESSION = requests.Session()
-
     url = PYPI_RELEASE_URL.format(package=quote(package_name, safe=""),
                                   version=quote(version, safe=""))
     try:
-        response = _PYPI_SESSION.get(url, timeout=PYPI_TIMEOUT_SEC)
+        response = _pypi_session().get(url, timeout=PYPI_TIMEOUT_SEC)
     except Exception as exc:                        # noqa: BLE001 - network
         result = ("", "", f"network: {exc}")
         _RELEASE_CACHE[key] = result
@@ -531,6 +647,7 @@ def analyze_package_risks(
     name: str,
     version: str,
     vulns: list | None,
+    min_release_age: int = 0,
 ) -> tuple[list | None, list]:
     """
     Run recommendation over one package and return (issues, alternatives).
@@ -551,9 +668,11 @@ def analyze_package_risks(
     if engine is None:
         return _vulns_to_issues(vulns), []
     try:
-        result = engine.analyze_package(name, version, cve_issues=_vulns_to_issues(vulns))
+        result = engine.analyze_package(name, version,
+                                        cve_issues=_vulns_to_issues(vulns),
+                                        min_release_age=min_release_age)
     except Exception as exc:  # noqa: BLE001 - network/parse errors must not stop a scan
-        print(f"  [WARNING] recommendation engine failed for {name}: {exc}")
+        logger.warning("recommendation engine failed for %s: %s", name, exc)
         return _vulns_to_issues(vulns), []
     return result.get("issues") or [], result.get("alternatives") or []
 
@@ -683,8 +802,69 @@ def check_supply_chain(name: str, version: str) -> dict | None:
     try:
         return check_repository(f"{name}=={version}", target_type="pypi")
     except Exception as exc:  # noqa: BLE001
-        print(f"  [WARNING] supply-chain check failed for {name}: {exc}")
+        logger.warning("supply-chain check failed for %s: %s", name, exc)
         return None
+
+
+DEFAULT_JOBS = 8
+
+
+def _gather(entry, *, engine_for_thread, offline, supply_chain, min_release_age):
+    """Every network lookup for one package. Runs on a worker thread."""
+    name, version = entry.name, entry.version
+    lic = resolve_license(name, version, offline=offline)
+
+    if offline:
+        vulns, issues, alternatives = [], None, []
+    else:
+        vulns = query_vulnerabilities(name, version)
+        if vulns is None:
+            issues, alternatives = None, []
+        else:
+            issues, alternatives = analyze_package_risks(
+                engine_for_thread(), name, version, vulns, min_release_age)
+
+    repository_info = None
+    if supply_chain and not offline:
+        repository_info = check_supply_chain(name, version)
+
+    return {
+        "license": lic,
+        "vulns": vulns,
+        "issues": issues,
+        "alternatives": alternatives,
+        "repository_info": repository_info,
+    }
+
+
+def _prefetch(packages, *, engine_factory, offline, supply_chain, jobs,
+              min_release_age=0):
+    """
+    Look everything up concurrently, keyed by package.
+
+    These are network waits, not CPU work, so threads are the right tool and
+    the GIL is not in the way. The reporting loop still walks `packages` in
+    order, so output does not depend on which lookup finished first.
+    """
+    local = threading.local()
+
+    def engine_for_thread():
+        engine = getattr(local, "engine", None)
+        if engine is None:
+            engine = engine_factory()
+            local.engine = engine
+        return engine
+
+    def work(entry):
+        return _gather(entry, engine_for_thread=engine_for_thread,
+                       offline=offline, supply_chain=supply_chain,
+                       min_release_age=min_release_age)
+
+    if jobs <= 1 or len(packages) <= 1:
+        return {id(e): work(e) for e in packages}
+
+    with ThreadPoolExecutor(max_workers=min(jobs, len(packages))) as pool:
+        return dict(zip((id(e) for e in packages), pool.map(work, packages)))
 
 
 def run_scan(
@@ -697,9 +877,13 @@ def run_scan(
     models: list | None = None,
     model_pickle_size_mb: int = 0,
     verbose: bool = False,
+    transitive: bool = True,
+    jobs: int = DEFAULT_JOBS,
+    min_release_age: int = 0,
+    sarif_path: str | None = None,
 ) -> list[dict]:
     """
-    Scan every pinned package in `requirements_path`.
+    Scan every package `requirements_path` will install.
 
     Args:
         supply_chain: also run repository_checker per package (slow; needs
@@ -707,6 +891,10 @@ def run_scan(
         offline: skip every network lookup - OSV, PyPI and supply chain.
             The license check still runs against installed metadata.
         explain: run the local Ollama explanation at the end.
+        transitive: also scan what the listed packages pull in. Off means
+            scanning the file rather than the install.
+        jobs: concurrent lookups. 1 disables threading.
+        min_release_age: days a release must have been public. 0 disables.
 
     Returns the report list, so tests and other callers can assert on it
     without parsing stdout.
@@ -718,6 +906,18 @@ def run_scan(
         if unscanned_lines:
             print(f"[INFO] {len(unscanned_lines)} line(s) were not in name==version format.")
         return []
+
+    if transitive and not offline:
+        direct_count = len(packages)
+        packages, unresolved_deps = expand_transitive(packages)
+        unscanned_lines = list(unscanned_lines) + unresolved_deps
+        pulled_in = len(packages) - direct_count
+        if pulled_in:
+            print(f"[INFO] {direct_count} direct + {pulled_in} transitive "
+                  f"= {len(packages)} packages to scan.")
+        if unresolved_deps:
+            print(f"[WARNING] {len(unresolved_deps)} dependency requirement(s) "
+                  f"could not be resolved; reported as unscanned.")
 
     # The license registries are downloaded and cached on first use; offline
     # means "use whatever is already cached, never fetch".
@@ -737,13 +937,22 @@ def run_scan(
               "checks will NOT run.")
 
     report = []
+    fetched = _prefetch(
+        packages,
+        engine_factory=lambda: engine,
+        offline=offline,
+        supply_chain=supply_chain,
+        jobs=jobs,
+        min_release_age=min_release_age,
+    )
 
     for entry in packages:
         name, version = entry.name, entry.version
         origin = f"  (resolved from {entry.spec})" if entry.resolved else ""
         print(f"[Scanning] {name}=={version} ...{origin}")
 
-        lic = resolve_license(name, version, offline=offline)
+        found = fetched[id(entry)]
+        lic = found["license"]
         lic_raw = lic["license"]
         lic_detail = classify_license_detailed(lic_raw)
         lic_status = lic_detail["status"]
@@ -758,37 +967,38 @@ def run_scan(
                           f"{lic['error']}, and it is not installed locally.")
                 warning = f"no license found — {lic['error']}"
             else:
-                found = f" (version {lic['version']})" if lic["version"] else ""
+                seen = f" (version {lic['version']})" if lic["version"] else ""
                 detail = (f"License for {name}=={version} was read from "
-                          f"{lic['source']}{found} because {lic['error']}. A "
+                          f"{lic['source']}{seen} because {lic['error']}. A "
                           f"package can change license between releases, so "
                           f"these terms may not be the pinned release's.")
-                warning = (f"license read from {lic['source']}{found} — "
+                warning = (f"license read from {lic['source']}{seen} — "
                            f"{lic['error']}. Terms may differ from "
                            f"{name}=={version}.")
             license_issue = dict(LICENSE_UNVERIFIED_ISSUE, detail=detail)
             print(f"  [WARNING] {warning}")
 
-        if offline:
-            # None, not [] - the distinction matters. An empty list means
-            # "we looked and found nothing"; None means "we never looked",
-            # which score_engine turns into low confidence and a
-            # WARNING verdict instead of a clean ALLOW.
-            vulns, issues, alternatives = [], None, []
-            osv_unverified = False
-        else:
-            vulns = query_vulnerabilities(name, version)
-            osv_unverified = vulns is None
-            if osv_unverified:
-                print(f"  [WARNING] OSV lookup failed for {name}=={version} — "
-                      f"CVE status unverified (not treated as clean).")
-                issues, alternatives = None, []
-            else:
-                issues, alternatives = analyze_package_risks(engine, name, version, vulns)
+        # Surfaced here because a cooldown hit rarely moves a package out of
+        # ALLOW, and the detail list only shows packages needing attention -
+        # so a check the user switched on would otherwise be invisible.
+        for issue in found["issues"] or []:
+            if "release_age_days" in issue:
+                print(f"  [COOLDOWN] {name}=={version} published "
+                      f"{issue['release_age_days']} day(s) ago "
+                      f"(threshold {issue['min_release_age_days']}).")
 
-        repository_info = None
-        if supply_chain and not offline:
-            repository_info = check_supply_chain(name, version)
+        # None, not [] - an empty list means "we looked and found nothing";
+        # None means "we never looked", which score_engine turns into low
+        # confidence and a WARNING instead of a clean ALLOW.
+        vulns = found["vulns"]
+        issues = found["issues"]
+        alternatives = found["alternatives"]
+        osv_unverified = not offline and vulns is None
+        if osv_unverified:
+            print(f"  [WARNING] OSV lookup failed for {name}=={version} — "
+                  f"CVE status unverified (not treated as clean).")
+
+        repository_info = found["repository_info"]
 
         # `issues is None` means OSV never ran; keep it None so score_engine
         # still sees "never looked" rather than a one-item list.
@@ -808,6 +1018,9 @@ def run_scan(
             # pinned a version it never named.
             "requirement": entry.spec or "(any)",
             "version_resolved": entry.resolved,
+            "direct": entry.direct,
+            "depth": entry.depth,
+            "line": entry.line,
             "license_raw": lic_raw,
             "license_status": lic_status,
             "license_spdx_id": lic_detail["spdx_id"],
@@ -871,6 +1084,10 @@ def run_scan(
     }
     save_report(report_document, report_path)
     build_final_sbom(requirements_path, report, sbom_path, model_reports)
+
+    if sarif_path:
+        write_sarif(report, requirements_path, sarif_path)
+        print(f"[Saved] SARIF -> {sarif_path}")
 
     if explain:
         print("\n===== AI Explanation (local model via Ollama) =====\n")
@@ -1128,6 +1345,21 @@ def build_parser() -> argparse.ArgumentParser:
                         help="also run repository/supply-chain trust checks. "
                              "Slow: several network calls per package; set "
                              "GITHUB_TOKEN to avoid rate limits.")
+    parser.add_argument("--sarif", dest="sarif_path", metavar="PATH",
+                        help="also write SARIF 2.1.0, for GitHub code "
+                             "scanning (upload-sarif).")
+    parser.add_argument("--min-release-age", type=int, default=0, metavar="DAYS",
+                        help="warn about versions published fewer than DAYS "
+                             "ago. Compromised releases are usually pulled "
+                             "within hours. Default 0 (off).")
+    parser.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS,
+                        metavar="N",
+                        help=f"concurrent lookups (default {DEFAULT_JOBS}). "
+                             f"1 scans one package at a time.")
+    parser.add_argument("--direct-only", action="store_true",
+                        help="scan only the packages the file lists, not what "
+                             "they pull in. Faster, but a dependency's CVE is "
+                             "still your CVE.")
     parser.add_argument("--offline", action="store_true",
                         help="skip all network lookups (OSV, PyPI, GitHub)")
     parser.add_argument("--no-explain", action="store_true",
@@ -1220,6 +1452,10 @@ def main(argv=None) -> int:
             models=args.models,
             model_pickle_size_mb=args.model_pickle_scan,
             verbose=args.verbose,
+            transitive=not args.direct_only,
+            jobs=args.jobs,
+            min_release_age=args.min_release_age,
+            sarif_path=args.sarif_path,
         )
     except FileNotFoundError:
         print(f"[ERROR] No such file: {args.requirements}", file=sys.stderr)

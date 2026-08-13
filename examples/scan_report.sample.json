@@ -5,6 +5,9 @@
       "version": "2.28.0",
       "requirement": "==2.28.0",
       "version_resolved": false,
+      "direct": true,
+      "depth": 0,
+      "line": 9,
       "license_raw": "Apache 2.0",
       "license_status": "ALLOWED",
       "license_spdx_id": "Apache-2.0",
@@ -22,6 +25,7 @@
           "severity": "medium",
           "detail": "Requests vulnerable to .netrc credentials leak via malicious URLs",
           "summary": "Requests vulnerable to .netrc credentials leak via malicious URLs",
+          "is_title": true,
           "aliases": [
             "PYSEC-2026-1872"
           ],
@@ -34,6 +38,7 @@
           "severity": "medium",
           "detail": "Requests `Session` object does not verify requests after making first request with verify=False",
           "summary": "Requests `Session` object does not verify requests after making first request with verify=False",
+          "is_title": true,
           "aliases": [
             "PYSEC-2026-1873"
           ],
@@ -44,8 +49,9 @@
           "type": "cve",
           "id": "GHSA-gc5v-m9x4-r6x2",
           "severity": "medium",
-          "detail": "Requests is a HTTP library. Prior to version 2.33.0, the `requests.utils.extract_zipped_paths()` utility function uses a predictable filename when extracting files from zip archives into the system temporary directory. If the target file...",
-          "summary": "Requests is a HTTP library. Prior to version 2.33.0, the `requests.utils.extract_zipped_paths()` utility function uses a predictable filename when extracting files from zip archives into the system temporary directory. If the target file...",
+          "detail": "Requests has Insecure Temp File Reuse in its extract_zipped_paths() utility function",
+          "summary": "Requests has Insecure Temp File Reuse in its extract_zipped_paths() utility function",
+          "is_title": true,
           "aliases": [
             "PYSEC-2026-2275"
           ],
@@ -56,8 +62,9 @@
           "type": "cve",
           "id": "GHSA-j8r2-6x86-q33q",
           "severity": "medium",
-          "detail": "Requests is a HTTP library. Since Requests 2.3.0, Requests has been leaking Proxy-Authorization headers to destination servers when redirected to an HTTPS endpoint. This is a product of how we use `rebuild_proxies` to reattach the `Proxy...",
-          "summary": "Requests is a HTTP library. Since Requests 2.3.0, Requests has been leaking Proxy-Authorization headers to destination servers when redirected to an HTTPS endpoint. This is a product of how we use `rebuild_proxies` to reattach the `Proxy...",
+          "detail": "Unintended leak of Proxy-Authorization header in requests",
+          "summary": "Unintended leak of Proxy-Authorization header in requests",
+          "is_title": true,
           "aliases": [
             "PYSEC-2023-74"
           ],
@@ -92,8 +99,8 @@
           "type": "cve",
           "id": "GHSA-gc5v-m9x4-r6x2",
           "severity": "medium",
-          "summary": "Requests is a HTTP library. Prior to version 2.33.0, the `requests.utils.extract_zipped_paths()` utility function uses a predictable filename when extracting files from zip archives into the system temporary directory. If the target file...",
-          "detail": "Requests is a HTTP library. Prior to version 2.33.0, the `requests.utils.extract_zipped_paths()` utility function uses a predictable filename when extracting files from zip archives into the system temporary directory. If the target file...",
+          "summary": "Requests has Insecure Temp File Reuse in its extract_zipped_paths() utility function",
+          "detail": "Requests has Insecure Temp File Reuse in its extract_zipped_paths() utility function",
           "cvss_score": 5.5,
           "aliases": [
             "PYSEC-2026-2275"
@@ -103,8 +110,8 @@
           "type": "cve",
           "id": "GHSA-j8r2-6x86-q33q",
           "severity": "medium",
-          "summary": "Requests is a HTTP library. Since Requests 2.3.0, Requests has been leaking Proxy-Authorization headers to destination servers when redirected to an HTTPS endpoint. This is a product of how we use `rebuild_proxies` to reattach the `Proxy...",
-          "detail": "Requests is a HTTP library. Since Requests 2.3.0, Requests has been leaking Proxy-Authorization headers to destination servers when redirected to an HTTPS endpoint. This is a product of how we use `rebuild_proxies` to reattach the `Proxy...",
+          "summary": "Unintended leak of Proxy-Authorization header in requests",
+          "detail": "Unintended leak of Proxy-Authorization header in requests",
           "cvss_score": 6.1,
           "aliases": [
             "PYSEC-2023-74"
@@ -126,7 +133,7 @@
       "hard_block_reasons": [],
       "score_breakdown": {
         "malicious": {
-          "weight": 30,
+          "weight": 28,
           "issues": 0,
           "deduction": 0.0
         },
@@ -141,22 +148,22 @@
           "deduction": 0.0
         },
         "typosquatting": {
-          "weight": 10,
+          "weight": 12,
           "issues": 0,
           "deduction": 0.0
         },
         "hallucination": {
-          "weight": 8,
+          "weight": 10,
           "issues": 0,
           "deduction": 0.0
         },
         "provenance": {
-          "weight": 7,
+          "weight": 8,
           "issues": 0,
           "deduction": 0.0
         },
         "pii": {
-          "weight": 5,
+          "weight": 2,
           "issues": 0,
           "deduction": 0.0
         },
@@ -165,7 +172,9 @@
           "total_deduction": 25.0,
           "repository_trust": null,
           "repository_blend": null,
+          "repository_issues_deducted": true,
           "issue_count": 4,
+          "scored_issue_count": 4,
           "confidence": 0.8,
           "thresholds": {
             "allow": 80,
@@ -180,6 +189,9 @@
       "version": "1.24.0",
       "requirement": "==1.24.0",
       "version_resolved": false,
+      "direct": true,
+      "depth": 0,
+      "line": 10,
       "license_raw": "BSD-3-Clause",
       "license_status": "ALLOWED",
       "license_spdx_id": "BSD-3-Clause",
@@ -201,7 +213,7 @@
       "hard_block_reasons": [],
       "score_breakdown": {
         "malicious": {
-          "weight": 30,
+          "weight": 28,
           "issues": 0,
           "deduction": 0.0
         },
@@ -216,22 +228,22 @@
           "deduction": 0.0
         },
         "typosquatting": {
-          "weight": 10,
+          "weight": 12,
           "issues": 0,
           "deduction": 0.0
         },
         "hallucination": {
-          "weight": 8,
+          "weight": 10,
           "issues": 0,
           "deduction": 0.0
         },
         "provenance": {
-          "weight": 7,
+          "weight": 8,
           "issues": 0,
           "deduction": 0.0
         },
         "pii": {
-          "weight": 5,
+          "weight": 2,
           "issues": 0,
           "deduction": 0.0
         },
@@ -240,7 +252,9 @@
           "total_deduction": 0.0,
           "repository_trust": null,
           "repository_blend": null,
+          "repository_issues_deducted": true,
           "issue_count": 0,
+          "scored_issue_count": 0,
           "confidence": 0.8,
           "thresholds": {
             "allow": 80,
@@ -255,6 +269,9 @@
       "version": "5.3.1",
       "requirement": "==5.3.1",
       "version_resolved": false,
+      "direct": true,
+      "depth": 0,
+      "line": 11,
       "license_raw": "MIT",
       "license_status": "ALLOWED",
       "license_spdx_id": "MIT",
@@ -270,8 +287,9 @@
           "type": "cve",
           "id": "GHSA-8q59-q68h-6hv4",
           "severity": "critical",
-          "detail": "A vulnerability was discovered in the PyYAML library in versions before 5.4, where it is susceptible to arbitrary code execution when it processes untrusted YAML files through the full_load method or with the FullLoader loader. Applicati...",
-          "summary": "A vulnerability was discovered in the PyYAML library in versions before 5.4, where it is susceptible to arbitrary code execution when it processes untrusted YAML files through the full_load method or with the FullLoader loader. Applicati...",
+          "detail": "Improper Input Validation in PyYAML",
+          "summary": "Improper Input Validation in PyYAML",
+          "is_title": true,
           "aliases": [
             "PYSEC-2021-142"
           ],
@@ -284,8 +302,8 @@
           "type": "cve",
           "id": "GHSA-8q59-q68h-6hv4",
           "severity": "critical",
-          "summary": "A vulnerability was discovered in the PyYAML library in versions before 5.4, where it is susceptible to arbitrary code execution when it processes untrusted YAML files through the full_load method or with the FullLoader loader. Applicati...",
-          "detail": "A vulnerability was discovered in the PyYAML library in versions before 5.4, where it is susceptible to arbitrary code execution when it processes untrusted YAML files through the full_load method or with the FullLoader loader. Applicati...",
+          "summary": "Improper Input Validation in PyYAML",
+          "detail": "Improper Input Validation in PyYAML",
           "cvss_score": 9.8,
           "aliases": [
             "PYSEC-2021-142"
@@ -309,7 +327,7 @@
       ],
       "score_breakdown": {
         "malicious": {
-          "weight": 30,
+          "weight": 28,
           "issues": 0,
           "deduction": 0.0
         },
@@ -324,22 +342,22 @@
           "deduction": 0.0
         },
         "typosquatting": {
-          "weight": 10,
+          "weight": 12,
           "issues": 0,
           "deduction": 0.0
         },
         "hallucination": {
-          "weight": 8,
+          "weight": 10,
           "issues": 0,
           "deduction": 0.0
         },
         "provenance": {
-          "weight": 7,
+          "weight": 8,
           "issues": 0,
           "deduction": 0.0
         },
         "pii": {
-          "weight": 5,
+          "weight": 2,
           "issues": 0,
           "deduction": 0.0
         },
@@ -348,7 +366,453 @@
           "total_deduction": 25.0,
           "repository_trust": null,
           "repository_blend": null,
+          "repository_issues_deducted": true,
           "issue_count": 1,
+          "scored_issue_count": 1,
+          "confidence": 0.8,
+          "thresholds": {
+            "allow": 80,
+            "block": 50
+          }
+        }
+      },
+      "confidence": 0.8
+    },
+    {
+      "package": "charset-normalizer",
+      "version": "2.0.12",
+      "requirement": "charset-normalizer (~=2.0.0)",
+      "version_resolved": true,
+      "direct": false,
+      "depth": 1,
+      "line": 0,
+      "license_raw": "MIT",
+      "license_status": "ALLOWED",
+      "license_spdx_id": "MIT",
+      "license_family": "permissive",
+      "license_obligations": [
+        "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+      ],
+      "license_source": "pypi:license",
+      "license_version": "2.0.12",
+      "license_unverified": false,
+      "vulnerabilities": [],
+      "issues": [],
+      "osv_unverified": false,
+      "scanned": true,
+      "alternatives": [],
+      "trust_score": 100,
+      "verdict": "ALLOW",
+      "hard_block": false,
+      "hard_block_reasons": [],
+      "score_breakdown": {
+        "malicious": {
+          "weight": 28,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "cve": {
+          "weight": 25,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "license": {
+          "weight": 15,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "typosquatting": {
+          "weight": 12,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "hallucination": {
+          "weight": 10,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "provenance": {
+          "weight": 8,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "pii": {
+          "weight": 2,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "_summary": {
+          "base": 100,
+          "total_deduction": 0.0,
+          "repository_trust": null,
+          "repository_blend": null,
+          "repository_issues_deducted": true,
+          "issue_count": 0,
+          "scored_issue_count": 0,
+          "confidence": 0.8,
+          "thresholds": {
+            "allow": 80,
+            "block": 50
+          }
+        }
+      },
+      "confidence": 0.8
+    },
+    {
+      "package": "idna",
+      "version": "3.18",
+      "requirement": "idna (<4,>=2.5)",
+      "version_resolved": true,
+      "direct": false,
+      "depth": 1,
+      "line": 0,
+      "license_raw": "BSD-3-Clause",
+      "license_status": "ALLOWED",
+      "license_spdx_id": "BSD-3-Clause",
+      "license_family": "permissive",
+      "license_obligations": [
+        "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+      ],
+      "license_source": "pypi:license_expression",
+      "license_version": "3.18",
+      "license_unverified": false,
+      "vulnerabilities": [],
+      "issues": [],
+      "osv_unverified": false,
+      "scanned": true,
+      "alternatives": [],
+      "trust_score": 100,
+      "verdict": "ALLOW",
+      "hard_block": false,
+      "hard_block_reasons": [],
+      "score_breakdown": {
+        "malicious": {
+          "weight": 28,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "cve": {
+          "weight": 25,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "license": {
+          "weight": 15,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "typosquatting": {
+          "weight": 12,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "hallucination": {
+          "weight": 10,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "provenance": {
+          "weight": 8,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "pii": {
+          "weight": 2,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "_summary": {
+          "base": 100,
+          "total_deduction": 0.0,
+          "repository_trust": null,
+          "repository_blend": null,
+          "repository_issues_deducted": true,
+          "issue_count": 0,
+          "scored_issue_count": 0,
+          "confidence": 0.8,
+          "thresholds": {
+            "allow": 80,
+            "block": 50
+          }
+        }
+      },
+      "confidence": 0.8
+    },
+    {
+      "package": "urllib3",
+      "version": "1.26.20",
+      "requirement": "urllib3 (<1.27,>=1.21.1)",
+      "version_resolved": true,
+      "direct": false,
+      "depth": 1,
+      "line": 0,
+      "license_raw": "MIT",
+      "license_status": "ALLOWED",
+      "license_spdx_id": "MIT",
+      "license_family": "permissive",
+      "license_obligations": [
+        "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+      ],
+      "license_source": "pypi:license",
+      "license_version": "1.26.20",
+      "license_unverified": false,
+      "vulnerabilities": [
+        {
+          "type": "cve",
+          "id": "GHSA-2xpw-w6gg-jr37",
+          "severity": "high",
+          "detail": "urllib3 streaming API improperly handles highly compressed data",
+          "summary": "urllib3 streaming API improperly handles highly compressed data",
+          "is_title": true,
+          "aliases": [
+            "PYSEC-2026-1994"
+          ],
+          "merged_count": 2
+        },
+        {
+          "type": "cve",
+          "id": "GHSA-38jv-5279-wg99",
+          "severity": "high",
+          "detail": "Decompression-bomb safeguards bypassed when following HTTP redirects (streaming API)",
+          "summary": "Decompression-bomb safeguards bypassed when following HTTP redirects (streaming API)",
+          "is_title": true,
+          "aliases": [
+            "PYSEC-2026-1996"
+          ],
+          "cvss_score": 7.5,
+          "merged_count": 2
+        },
+        {
+          "type": "cve",
+          "id": "GHSA-gm62-xv2j-4w53",
+          "severity": "high",
+          "detail": "urllib3 allows an unbounded number of links in the decompression chain",
+          "summary": "urllib3 allows an unbounded number of links in the decompression chain",
+          "is_title": true,
+          "aliases": [
+            "PYSEC-2026-1998"
+          ],
+          "merged_count": 2
+        },
+        {
+          "type": "cve",
+          "id": "GHSA-pq67-6m6q-mj2v",
+          "severity": "medium",
+          "detail": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation",
+          "summary": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation",
+          "is_title": true,
+          "aliases": [
+            "PYSEC-2026-1999"
+          ],
+          "cvss_score": 5.3,
+          "merged_count": 2
+        },
+        {
+          "type": "cve",
+          "id": "GHSA-qccp-gfcp-xxvc",
+          "severity": "medium",
+          "detail": "urllib3: Sensitive headers forwarded across origins in proxied low-level redirects",
+          "summary": "urllib3: Sensitive headers forwarded across origins in proxied low-level redirects",
+          "is_title": true,
+          "aliases": [
+            "PYSEC-2026-141"
+          ],
+          "cvss_score": 5.3,
+          "merged_count": 2
+        }
+      ],
+      "issues": [
+        {
+          "type": "cve",
+          "id": "GHSA-2xpw-w6gg-jr37",
+          "severity": "high",
+          "summary": "urllib3 streaming API improperly handles highly compressed data",
+          "detail": "urllib3 streaming API improperly handles highly compressed data",
+          "aliases": [
+            "PYSEC-2026-1994"
+          ]
+        },
+        {
+          "type": "cve",
+          "id": "GHSA-38jv-5279-wg99",
+          "severity": "high",
+          "summary": "Decompression-bomb safeguards bypassed when following HTTP redirects (streaming API)",
+          "detail": "Decompression-bomb safeguards bypassed when following HTTP redirects (streaming API)",
+          "cvss_score": 7.5,
+          "aliases": [
+            "PYSEC-2026-1996"
+          ]
+        },
+        {
+          "type": "cve",
+          "id": "GHSA-gm62-xv2j-4w53",
+          "severity": "high",
+          "summary": "urllib3 allows an unbounded number of links in the decompression chain",
+          "detail": "urllib3 allows an unbounded number of links in the decompression chain",
+          "aliases": [
+            "PYSEC-2026-1998"
+          ]
+        },
+        {
+          "type": "cve",
+          "id": "GHSA-pq67-6m6q-mj2v",
+          "severity": "medium",
+          "summary": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation",
+          "detail": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation",
+          "cvss_score": 5.3,
+          "aliases": [
+            "PYSEC-2026-1999"
+          ]
+        },
+        {
+          "type": "cve",
+          "id": "GHSA-qccp-gfcp-xxvc",
+          "severity": "medium",
+          "summary": "urllib3: Sensitive headers forwarded across origins in proxied low-level redirects",
+          "detail": "urllib3: Sensitive headers forwarded across origins in proxied low-level redirects",
+          "cvss_score": 5.3,
+          "aliases": [
+            "PYSEC-2026-141"
+          ]
+        }
+      ],
+      "osv_unverified": false,
+      "scanned": true,
+      "alternatives": [
+        {
+          "target": "urllib3==2.7.0",
+          "confidence": "confirmed",
+          "reason": "Upgrade to latest safe release"
+        }
+      ],
+      "trust_score": 75,
+      "verdict": "WARNING",
+      "hard_block": false,
+      "hard_block_reasons": [],
+      "score_breakdown": {
+        "malicious": {
+          "weight": 28,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "cve": {
+          "weight": 25,
+          "issues": 5,
+          "deduction": 25.0
+        },
+        "license": {
+          "weight": 15,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "typosquatting": {
+          "weight": 12,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "hallucination": {
+          "weight": 10,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "provenance": {
+          "weight": 8,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "pii": {
+          "weight": 2,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "_summary": {
+          "base": 100,
+          "total_deduction": 25.0,
+          "repository_trust": null,
+          "repository_blend": null,
+          "repository_issues_deducted": true,
+          "issue_count": 5,
+          "scored_issue_count": 5,
+          "confidence": 0.8,
+          "thresholds": {
+            "allow": 80,
+            "block": 50
+          }
+        }
+      },
+      "confidence": 0.8
+    },
+    {
+      "package": "certifi",
+      "version": "2026.7.22",
+      "requirement": "certifi (>=2017.4.17)",
+      "version_resolved": true,
+      "direct": false,
+      "depth": 1,
+      "line": 0,
+      "license_raw": "MPL-2.0",
+      "license_status": "REVIEW",
+      "license_spdx_id": "MPL-2.0",
+      "license_family": "copyleft",
+      "license_obligations": [
+        "File-level copyleft. Source files you take from the project stay under its license and their modifications must be published; files you write yourself do not become subject to it."
+      ],
+      "license_source": "pypi:license",
+      "license_version": "2026.7.22",
+      "license_unverified": false,
+      "vulnerabilities": [],
+      "issues": [],
+      "osv_unverified": false,
+      "scanned": true,
+      "alternatives": [],
+      "trust_score": 96,
+      "verdict": "ALLOW",
+      "hard_block": false,
+      "hard_block_reasons": [],
+      "score_breakdown": {
+        "malicious": {
+          "weight": 28,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "cve": {
+          "weight": 25,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "license": {
+          "weight": 15,
+          "issues": 0,
+          "deduction": 4.5
+        },
+        "typosquatting": {
+          "weight": 12,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "hallucination": {
+          "weight": 10,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "provenance": {
+          "weight": 8,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "pii": {
+          "weight": 2,
+          "issues": 0,
+          "deduction": 0.0
+        },
+        "_summary": {
+          "base": 100,
+          "total_deduction": 4.5,
+          "repository_trust": null,
+          "repository_blend": null,
+          "repository_issues_deducted": true,
+          "issue_count": 0,
+          "scored_issue_count": 0,
           "confidence": 0.8,
           "thresholds": {
             "allow": 80,

@@ -130,7 +130,8 @@ jobs:
         # regression that silently returns 0 breaks the build.
         run: |
           set +e
-          aibom-guard examples/sample-requirements.txt --offline --no-explain
+          aibom-guard examples/sample-requirements.txt --offline --no-explain \
+            --sarif aibom-guard.sarif
           code=$?
           set -e
           echo "scanner exited with $code"
@@ -151,4 +152,9 @@ jobs:
           sbom = json.load(open("sbom.json"))
           assert sbom["bomFormat"] == "CycloneDX", sbom.get("bomFormat")
           print("sbom.json OK:", sbom["bomFormat"], sbom["specVersion"])
+
+          sarif = json.load(open("aibom-guard.sarif"))
+          assert sarif["version"] == "2.1.0", sarif.get("version")
+          assert sarif["runs"], "SARIF has no runs"
+          print("sarif OK:", len(sarif["runs"][0]["results"]), "results")
           PY

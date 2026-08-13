@@ -157,6 +157,7 @@ class PyPIPackageInfo:
     latest_version: Optional[str] = None
     yanked_versions: dict[str, str] = field(default_factory=dict)  # ver -> reason
     last_upload: Optional[datetime] = None
+    release_dates: dict[str, datetime] = field(default_factory=dict)
     raw: Optional[dict[str, Any]] = None
     error: Optional[str] = None
 
@@ -263,6 +264,7 @@ class PyPIClient:
         latest = info.get("version")
         yanked: dict[str, str] = {}
         last_upload: Optional[datetime] = None
+        release_dates: dict[str, datetime] = {}
 
         for ver, files in releases.items():
             if not isinstance(files, list):
@@ -276,8 +278,13 @@ class PyPIClient:
                 upload_raw = f.get("upload_time_iso_8601") or f.get("upload_time")
                 if upload_raw:
                     dt = _parse_pypi_time(upload_raw)
-                    if dt and (last_upload is None or dt > last_upload):
+                    if dt is None:
+                        continue
+                    if last_upload is None or dt > last_upload:
                         last_upload = dt
+                    # Earliest file of a release is when that version landed.
+                    if ver not in release_dates or dt < release_dates[ver]:
+                        release_dates[ver] = dt
 
         return PyPIPackageInfo(
             name=info.get("name") or package_name,
@@ -285,6 +292,7 @@ class PyPIClient:
             latest_version=latest,
             yanked_versions=yanked,
             last_upload=last_upload,
+            release_dates=release_dates,
             raw=data,
         )
 
@@ -402,6 +410,50 @@ def detect_hallucination(package_info: PyPIPackageInfo) -> list[dict[str, Any]]:
                 f"(possible AI-hallucinated dependency)."
             ),
             "verified": True,
+        }
+    ]
+
+
+def detect_fresh_release(
+    package_info: PyPIPackageInfo,
+    version: Optional[str],
+    min_age_days: int,
+) -> list[dict[str, Any]]:
+    """
+    Flag a version published too recently to have been vetted.
+
+    Compromised releases are usually pulled within hours: the September 2025
+    npm attack on chalk and debug was gone in about 2.5 hours, Shai-Hulud 2.0
+    in about 12. Waiting a day before installing avoids most of that window,
+    which is why pnpm 11 ships a 24-hour cooldown by default and pip 26.0
+    added --uploaded-prior-to.
+
+    Off unless the caller asks for it: a fresh release is not itself a defect,
+    and flagging every one of them would be noise for anyone tracking latest.
+    """
+    if min_age_days <= 0 or not version or not package_info.exists:
+        return []
+
+    published = package_info.release_dates.get(version)
+    if published is None:
+        return []
+
+    age_days = (datetime.now(timezone.utc) - published).days
+    if age_days >= min_age_days:
+        return []
+
+    return [
+        {
+            "type": "provenance",
+            "severity": "medium" if age_days < 1 else "low",
+            "detail": (
+                f"'{package_info.name}=={version}' was published {age_days} "
+                f"day(s) ago, under the {min_age_days}-day cooldown. A "
+                f"compromised release is usually withdrawn within hours, so "
+                f"it may not have been caught yet."
+            ),
+            "release_age_days": age_days,
+            "min_release_age_days": min_age_days,
         }
     ]
 
@@ -662,6 +714,7 @@ class RecommendationEngine:
         *,
         cve_issues: Optional[list[dict[str, Any]]] = None,
         skip_pypi: bool = False,
+        min_release_age: int = 0,
     ) -> dict[str, Any]:
         """
         Full package risk scan → {issues, alternatives}.
@@ -669,6 +722,8 @@ class RecommendationEngine:
         `cve_issues`: optional pre-fetched OSV findings from osv_client
         (type=cve). Passed through into issues and used to trigger
         confirmed version-upgrade alternatives.
+
+        `min_release_age`: days a release must have been public. 0 disables.
         """
         issues: list[dict[str, Any]] = []
         cve_issues = list(cve_issues or [])
@@ -678,6 +733,8 @@ class RecommendationEngine:
             package_info = self.pypi.get_package(package_name)
             issues.extend(detect_hallucination(package_info))
             issues.extend(detect_deprecated(package_info, version=version))
+            issues.extend(detect_fresh_release(package_info, version,
+                                               min_release_age))
 
         exists_flag = None if package_info is None else package_info.exists
         issues.extend(

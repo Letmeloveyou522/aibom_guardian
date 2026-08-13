@@ -38,6 +38,7 @@ def no_network(monkeypatch):
     """
     monkeypatch.setattr(scanner, "_pypi_versions",
                         lambda name: ["1.0.0", "2.0.0", "2.5.0"])
+    monkeypatch.setattr(scanner, "_requires_dist", lambda name, version: [])
     return monkeypatch
 
 
@@ -237,17 +238,18 @@ def test_cve_issues_are_not_double_counted(reqs, no_side_effects, monkeypatch):
 
 
 def test_recommendation_failure_degrades_to_cve_only(reqs, no_side_effects,
-                                                     monkeypatch, capsys):
+                                                     monkeypatch, caplog):
     """A PyPI outage must not abort the scan."""
     monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [CVE])
     monkeypatch.setattr(scanner, "RecommendationEngine",
                         lambda *a, **k: FakeEngine(boom=True))
 
-    report = scanner.run_scan(reqs, explain=False)
+    with caplog.at_level(logging.WARNING, logger="aibom_guard.scanner"):
+        report = scanner.run_scan(reqs, explain=False)
 
     assert len(report) == 1
     assert [i["type"] for i in report[0]["issues"]] == ["cve"]
-    assert "WARNING" in capsys.readouterr().out
+    assert "recommendation engine failed" in caplog.text
 
 
 def test_missing_recommendation_module_warns(reqs, no_side_effects, monkeypatch,

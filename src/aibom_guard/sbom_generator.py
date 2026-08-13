@@ -229,6 +229,33 @@ def _apply_license(component: dict, item: dict) -> None:
         })
 
 
+def _add_missing_components(sbom: dict, scan_report: list[dict]) -> None:
+    """
+    Add components for scanned packages the base SBOM does not list.
+
+    ``cyclonedx-py requirements`` reads the file, so it only ever emits the
+    direct requirements. Anything the scan resolved transitively would
+    otherwise be findings attached to nothing - and an SBOM that omits what
+    gets installed is the thing an SBOM exists to prevent.
+    """
+    components = sbom.setdefault("components", [])
+    present = {c.get("name", "").lower() for c in components}
+
+    for item in scan_report:
+        name = item.get("package", "")
+        if not name or name.lower() in present:
+            continue
+        present.add(name.lower())
+        version = item.get("version") or ""
+        components.append({
+            "type": "library",
+            "bom-ref": f"pkg:pypi/{name.lower()}@{version}",
+            "name": name,
+            "version": version,
+            "purl": f"pkg:pypi/{name.lower()}@{version}",
+        })
+
+
 def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
     """
     Adds our scan findings (license status + vulnerabilities) into the
@@ -246,6 +273,7 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
     # Build a lookup: package name (lowercase) -> bom-ref, so we can
     # link vulnerabilities back to the right component.
     by_name = {item["package"].lower(): item for item in scan_report}
+    _add_missing_components(sbom, scan_report)
     name_to_ref = {}
     for component in sbom.get("components", []):
         name_to_ref[component["name"].lower()] = component["bom-ref"]
@@ -255,6 +283,11 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
         _apply_license(component, item)
 
         component["properties"] = component.get("properties", [])
+        if "direct" in item:
+            component["properties"].append({
+                "name": "aibom-guard:dependency",
+                "value": "direct" if item["direct"] else "transitive",
+            })
         component["properties"].append({
             "name": "aibom-guard:license_status",
             "value": item["license_status"],
