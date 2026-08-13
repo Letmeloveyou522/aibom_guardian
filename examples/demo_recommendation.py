@@ -1,23 +1,19 @@
 """
-examples/demo_module3.py
+examples/demo_recommendation.py
 -----------------------------------
-③ 모듈 데모 CLI: osv_client + recommendation
+Demo CLI for the risk-detection path: osv_client + recommendation.
+No assertions here - the unit tests are in tests/test_recommendation.py.
 
-이전 이름은 test_module3.py 였습니다. assert 가 없어 pytest 가 여기서
-테스트를 0개 수집하는데도 이름 때문에 테스트로 오해되었으므로,
-데모임이 드러나도록 examples/ 로 옮겼습니다.
-③ 모듈의 실제 단위 테스트는 tests/test_recommendation.py 에 있습니다.
-
-파이프라인:
-  1) 패키지명/버전 파싱
-  2) osv_client.query_vulnerabilities() 로 CVE 조회
-  3) RecommendationEngine.analyze_package(..., cve_issues=...) 로 병합
-  4) 팀 표준 JSON {issues, alternatives} 를 예쁘게 출력
+Pipeline:
+  1) parse the package name and version
+  2) look up CVEs with osv_client.query_vulnerabilities()
+  3) merge them via RecommendationEngine.analyze_package(cve_issues=...)
+  4) pretty-print the resulting {issues, alternatives} JSON
 
 Usage:
-    python examples/demo_module3.py
-    python examples/demo_module3.py requests==2.28.0 reqeusts==1.0.0
-    python examples/demo_module3.py nonexistent-ai-pkg==0.1.0
+    python examples/demo_recommendation.py
+    python examples/demo_recommendation.py requests==2.28.0 reqeusts==1.0.0
+    python examples/demo_recommendation.py nonexistent-ai-pkg==0.1.0
 """
 
 from __future__ import annotations
@@ -30,12 +26,11 @@ from pathlib import Path
 from typing import Optional
 
 
-# This demo lives in examples/ but the modules it drives are at the
-# repository root, so make them importable no matter where it is run from.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Runnable straight from a clone, without installing the package first.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from osv_client import query_vulnerabilities  # noqa: E402
-from recommendation import RecommendationEngine  # noqa: E402
+from aibom_guard.osv_client import query_vulnerabilities  # noqa: E402
+from aibom_guard.recommendation import RecommendationEngine  # noqa: E402
 
 DEFAULT_CASES = (
     "requests==2.28.0",
@@ -66,9 +61,9 @@ def run_case(
     ecosystem: str = "PyPI",
 ) -> dict:
     """
-    osv_client → recommendation 연동 한 건 실행.
+    Run one package through osv_client, then recommendation.
 
-    Returns team-standard dict:
+    Returns:
       {"package", "version", "issues", "alternatives"}
     """
     print(f"  [1/2] OSV CVE lookup: {package_name}=={version} ({ecosystem})")
@@ -105,7 +100,7 @@ def summarize(report: dict) -> str:
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Module ③ integration test (osv_client + recommendation)"
+        description="Demo: osv_client + recommendation on one package"
     )
     parser.add_argument(
         "packages",
@@ -127,7 +122,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     specs = args.packages or list(DEFAULT_CASES)
 
     print("=" * 72)
-    print("AIBOM-Guard Module ③ Integration Test")
+    print("AIBOM-Guard - osv_client + recommendation demo")
     print("  osv_client.query_vulnerabilities → RecommendationEngine.analyze_package")
     print("=" * 72)
 

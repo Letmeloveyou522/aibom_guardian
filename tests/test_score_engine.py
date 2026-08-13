@@ -1,19 +1,16 @@
 """
 test_score_engine.py
 -----------------------------------
-Unit tests for score_engine.py (module 4).
+Unit tests for score_engine.py.
 
-    python3 -m pytest test_score_engine.py -q
-
-These pin the current weights and thresholds. If someone re-tunes
-CATEGORY_WEIGHTS or the verdict gates, the failures here show exactly which
-behaviour changed - which is the point, since the numbers are a team decision
-rather than a fact about the world.
+These pin the current weights and thresholds. Re-tuning CATEGORY_WEIGHTS or
+the verdict gates should fail here, showing exactly what changed - the
+numbers are an agreed decision, not a fact about the world.
 """
 
 import pytest
 
-from score_engine import (
+from aibom_guard.score_engine import (
     ALLOW_THRESHOLD,
     BLOCK_THRESHOLD,
     CATEGORY_WEIGHTS,
@@ -55,7 +52,7 @@ def test_returns_every_key_the_callers_use():
 
 
 def test_verdict_vocabulary_matches_the_rest_of_the_project():
-    """repository_checker.py and the module 3 README use these three."""
+    """repository_checker and recommendation both emit these three."""
     for payload in (check(), check("BLOCKED"), check(issues=[cve("critical")])):
         assert calculate_trust_score(payload)["verdict"] in (
             "ALLOW", "WARNING", "BLOCK")
@@ -116,7 +113,7 @@ def test_raw_cvss_vector_is_not_silently_treated_as_harmless():
 
 
 def test_cvss_score_resolves_an_unrated_severity():
-    """When module 3 supplies cvss_score, use the NVD qualitative scale."""
+    """When recommendation supplies cvss_score, use the NVD qualitative scale."""
     graded = calculate_trust_score(check(issues=[cve("", cvss_score=9.8)]))
     assert graded["hard_block"] is True          # 9.8 -> critical
     medium = calculate_trust_score(check(issues=[cve("", cvss_score=5.0)]))
@@ -135,7 +132,7 @@ def test_unknown_severity_lowers_confidence():
 # ---------------------------------------------------------------------------
 
 def test_all_seven_protocol_categories_are_scored():
-    """The team Data Protocol defines exactly these issue types."""
+    """Producers emit exactly these issue types - the list is a contract."""
     assert set(CATEGORY_WEIGHTS) == {
         "cve", "hallucination", "typosquatting", "malicious",
         "pii", "license", "provenance"}
@@ -153,11 +150,11 @@ def test_categories_are_ordered_by_seriousness():
 
 def test_malicious_and_pii_producer_coverage_is_documented():
     """
-    P2-14: malicious is model-path only; pii has no producer yet.
+    malicious is model-path only; pii has no producer yet.
     Weights stay in CATEGORY_WEIGHTS so a future emitter needs no schema change,
     but the module docstring must spell that out (README is owned elsewhere).
     """
-    import score_engine
+    from aibom_guard import score_engine
     doc = score_engine.__doc__ or ""
     assert "picklescan" in doc.lower() or "model" in doc.lower()
     assert "pii" in doc.lower()
@@ -239,7 +236,7 @@ def test_critical_severity_hard_blocks():
 
 
 def test_model_checker_flags_hard_block():
-    """Module 1 reports these as flags rather than as issues."""
+    """model_checker reports these as flags rather than as issues."""
     for flag in ("is_malicious", "license_blocked"):
         result = calculate_trust_score(check(kind="model", model_info={flag: True}))
         assert result["hard_block"] is True, flag
@@ -291,11 +288,11 @@ def test_optional_repository_context_does_not_block_allow():
 
 
 # ---------------------------------------------------------------------------
-# Module 1 and 2 integration
+# model_checker and repository_checker integration
 # ---------------------------------------------------------------------------
 
 def test_issues_from_model_info_are_scored():
-    """Module 1's findings flow through the same categories as a CVE."""
+    """model_checker findings flow through the same categories as a CVE."""
     result = calculate_trust_score(check(kind="model", model_info={
         "issues": [{"type": "provenance", "severity": "high",
                     "detail": "no model card"}]}))
@@ -314,9 +311,9 @@ def test_issues_from_repository_info_are_scored_without_blend():
 
 def test_repository_issues_visible_but_not_double_deducted_when_blending():
     """
-    이중 감점 방지: trust_score blend 시 repository issues는 breakdown에만
-    남기고 category deduction에는 넣지 않는다. scanner는 provenance.issues
-    카운트로 전달 여부를 확인한다.
+    No double deduction: when a trust_score is blended in, repository issues
+    stay visible in the breakdown but do not deduct again on top of it.
+    scanner reads provenance.issues to confirm they were still passed through.
     """
     blend_only = calculate_trust_score(check(repository_info={"trust_score": 20}))
     both = calculate_trust_score(check(repository_info={
@@ -374,7 +371,7 @@ def test_malformed_repository_trust_is_ignored_not_fatal():
 
 
 # ---------------------------------------------------------------------------
-# verified: False must not deduct (P0-4)
+# verified: False must not deduct
 # ---------------------------------------------------------------------------
 
 def test_unverified_hallucination_does_not_deduct_score():
@@ -439,7 +436,7 @@ def test_ungraded_typosquat_is_not_treated_as_half_strength():
     package name or it did not. Falling back to "unknown" (factor 0.5) meant
     a confirmed typosquat cost 5 of its 10 points.
     """
-    from score_engine import CATEGORY_DEFAULT_SEVERITY, CATEGORY_WEIGHTS
+    from aibom_guard.score_engine import CATEGORY_DEFAULT_SEVERITY, CATEGORY_WEIGHTS
 
     result = calculate_trust_score(check(issues=[
         {"type": "typosquatting", "detail": "'reqeusts' resembles 'requests'"}]))
@@ -453,7 +450,7 @@ def test_ungraded_cve_stays_unknown():
     CVSS severity is a real published rating. Inventing one for an unrated
     CVE would be a guess, so cve has no default.
     """
-    from score_engine import CATEGORY_DEFAULT_SEVERITY
+    from aibom_guard.score_engine import CATEGORY_DEFAULT_SEVERITY
 
     assert "cve" not in CATEGORY_DEFAULT_SEVERITY
     result = calculate_trust_score(check(issues=[{"type": "cve", "id": "X"}]))

@@ -1,0 +1,16 @@
+# Normalise line endings so a Windows and a Linux contributor do not produce
+# whole-file diffs against each other. Text is stored LF in the repository and
+# checked out however the platform prefers.
+* text=auto eol=lf
+
+# Shell scripts and CI workflows run on Linux runners; CRLF would break them.
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Reference outputs are compared byte for byte in places; keep them stable.
+*.json  text eol=lf
+
+*.png   binary
+*.jpg   binary
+*.ico    binary

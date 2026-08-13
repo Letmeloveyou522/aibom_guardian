@@ -3,16 +3,16 @@ test_license_checker.py
 -----------------------------------
 Unit tests for license_checker.classify_license().
 
-    python3 -m pytest test_license_checker.py -q
-
 The regression tests near the bottom pin the two failures that motivated the
 rewrite: numpy being BLOCKED, and PyPI's real GPL classifier string grading
 as UNKNOWN.
 """
 
+import logging
+
 import pytest
 
-from license_checker import ALLOWED, BLOCKED, REVIEW, UNKNOWN, classify_license
+from aibom_guard.license_checker import ALLOWED, BLOCKED, REVIEW, UNKNOWN, classify_license
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ def test_classifiers_normalise_to_spdx():
     Classifier strings must map onto SPDX ids before grading, so
     GPLv3 is recognised as GPL-3.0-only rather than UNKNOWN.
     """
-    from license_checker import normalize_to_spdx
+    from aibom_guard.license_checker import normalize_to_spdx
 
     assert normalize_to_spdx(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
@@ -117,7 +117,7 @@ def test_lgpl_is_not_swallowed_by_the_gpl_pattern():
 # Registries decide, and the answer says which one
 # ---------------------------------------------------------------------------
 
-from license_checker import classify_license_detailed, registry_versions
+from aibom_guard.license_checker import classify_license_detailed, registry_versions
 
 
 def test_registry_versions_are_reported():
@@ -383,9 +383,6 @@ def test_regression_numpy_is_not_blocked():
 # ---------------------------------------------------------------------------
 # AI model licenses - the point of an AIBOM
 # ---------------------------------------------------------------------------
-
-from license_checker import classify_license_detailed
-
 
 @pytest.mark.parametrize("text", [
     "openrail", "OpenRAIL-M", "CreativeML OpenRAIL-M",
@@ -658,7 +655,7 @@ def test_malformed_expressions_do_not_raise():
 # Registry loading: downloaded once, cached, and degrades safely
 # ---------------------------------------------------------------------------
 
-import license_checker
+from aibom_guard import license_checker
 
 
 @pytest.fixture
@@ -671,22 +668,27 @@ def isolated_registry(tmp_path, monkeypatch):
     license_checker._registry.cache_clear()
 
 
-def test_offline_without_a_cache_never_invents_a_verdict(isolated_registry, capsys):
+def test_offline_without_a_cache_never_invents_a_verdict(isolated_registry, caplog):
     """
     With no registry loaded the tool must not guess. It says so, and the
     verdicts it can still reach come from rules that live in code.
+
+    "It says so" is checked on the log, not on stderr: mcp_server calls
+    classify_license, so this module has to stay quiet on both std streams and
+    report through logging instead.
     """
     license_checker.set_offline(True)
 
-    versions = license_checker.registry_versions()
-    assert versions["available"] is False
-    assert versions["spdx_source"] == "unavailable"
+    with caplog.at_level(logging.WARNING, logger="aibom_guard.license_checker"):
+        versions = license_checker.registry_versions()
+        assert versions["available"] is False
+        assert versions["spdx_source"] == "unavailable"
 
-    detail = classify_license_detailed("MIT")
-    assert detail["status"] == UNKNOWN
-    assert detail["source"] == "registry-unavailable"
+        detail = classify_license_detailed("MIT")
+        assert detail["status"] == UNKNOWN
+        assert detail["source"] == "registry-unavailable"
 
-    assert "unavailable" in capsys.readouterr().err
+    assert "unavailable" in caplog.text
 
 
 def test_degrading_never_turns_a_restriction_into_a_pass(isolated_registry):
@@ -708,7 +710,6 @@ def test_degrading_never_turns_a_restriction_into_a_pass(isolated_registry):
 
 def test_a_cached_registry_is_used_without_the_network(isolated_registry, monkeypatch):
     """Offline is only "do not fetch"; an existing cache still answers."""
-    import json
     import shutil
     from pathlib import Path
 

@@ -9,6 +9,7 @@ Network is mocked; no Hub/OSV calls leave the process.
 
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 import types
@@ -17,8 +18,11 @@ from unittest.mock import patch
 
 
 def _install_mcp_stub_if_needed() -> bool:
+    # import_module rather than a plain import: this is a probe, and an
+    # unused-import warning on a deliberate availability check is noise that
+    # trains people to ignore the linter.
     try:
-        import mcp.server.fastmcp  # noqa: F401
+        importlib.import_module("mcp.server.fastmcp")
         return False
     except ImportError:
         pass
@@ -71,8 +75,8 @@ def _install_mcp_stub_if_needed() -> bool:
 
 _install_mcp_stub_if_needed()
 
-import mcp_server  # noqa: E402
-from mcp_server import (  # noqa: E402
+from aibom_guard import mcp_server  # noqa: E402
+from aibom_guard.mcp_server import (  # noqa: E402
     _vulns_to_issues,
     check_model,
     check_package,
@@ -109,11 +113,24 @@ class TestVulnsToIssuesContract(unittest.TestCase):
         self.assertEqual(issues[0]["aliases"], ["PYSEC-1"])
         self.assertEqual(issues[0]["detail"], "proxy leak")
 
+    def test_cli_and_mcp_share_one_adapter(self):
+        """
+        Identity, not equality. Two adapters that merely behave the same today
+        are what this guards against - the CLI and MCP verdicts only match if
+        both feed score_engine input built by the same code.
+        """
+        from aibom_guard import _adapters, scanner
+
+        self.assertIs(scanner._vulns_to_issues, _adapters._vulns_to_issues)
+        self.assertIs(mcp_server._vulns_to_issues, _adapters._vulns_to_issues)
+        self.assertIs(scanner._build_check_result, _adapters._build_check_result)
+        self.assertIs(mcp_server._build_check_result, _adapters._build_check_result)
+
 
 class TestCheckPackageOsvNone(unittest.TestCase):
     def test_osv_none_yields_warning_and_low_confidence(self):
         """
-        P1-6: query_vulnerabilities → None must become issues=None for
+        query_vulnerabilities returning None must become issues=None for
         score_engine, never []. Verdict WARNING, osv_unverified true.
         """
         with patch.object(mcp_server, "query_vulnerabilities", return_value=None), \

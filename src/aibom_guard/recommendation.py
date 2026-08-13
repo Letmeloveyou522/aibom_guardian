@@ -1,21 +1,24 @@
 """
 recommendation.py
 -----------------------------------
-③ 위험 탐지 및 대안 추천 모듈
+Detects risk in a package or model and suggests what to use instead.
 
-역할 (팀 Data Protocol):
-  - 위험 요소 탐지 + 현황 보고(JSON)만 수행
-  - Trust Score / ALLOW|WARNING|BLOCK 최종 판정은 score_engine.py 전담
-  - Hugging Face API 호출·라이선스 검사는 각각 ①·④ 모듈 전유물
-    → 이 모듈은 그 결과를 *입력*으로만 받아 활용
+Reports findings; does not judge them. Trust Score and the ALLOW / WARNING /
+BLOCK verdict belong to score_engine.
 
-출력 스키마:
+It never calls Hugging Face or classifies licenses either - model_checker and
+license_checker own those, and their results arrive here as input.
+
+Output:
   {
     "issues": [ { "type": "...", "detail": "...", ... } ],
     "alternatives": [
       { "target": "...", "confidence": "confirmed"|"suggested", "reason": "..." }
     ]
   }
+
+``confirmed`` is a definite fix (version bump, typo correction);
+``suggested`` needs a human to look at it.
 """
 
 from __future__ import annotations
@@ -36,19 +39,23 @@ import requests
 PYPI_JSON_URL = "https://pypi.org/pypi/{package}/json"
 PYPI_TIMEOUT_SEC = 10
 
-# Typosquatting: 편집거리 허용 범위 (1~2)
+# Typosquatting: edit distance that counts as "confusingly close". Distance 0
+# is the package itself, and 3 or more starts matching unrelated names.
 TYPO_DISTANCE_MIN = 1
 TYPO_DISTANCE_MAX = 2
 
-# Deprecated: 마지막 업로드 기준 (일)
-STALE_DAYS_THRESHOLD = 365 * 3  # 3년
+# Deprecated: days since the last upload before a project is called stale.
+STALE_DAYS_THRESHOLD = 365 * 3
 
-# 모델 가중치 파일 중 pickle 계열로 간주하는 확장자
+# Weight file extensions treated as pickle-family. ".bin" is included because
+# that is what PyTorch checkpoints are usually named - the extension says
+# nothing, but the format is still pickle and still executes on load.
 UNSAFE_WEIGHT_SUFFIXES = (".pt", ".pth", ".pkl", ".pickle", ".bin")
 SAFE_WEIGHT_SUFFIX = ".safetensors"
 
-# PyPI Top popular 패키지 (하드코딩 상수 — Top ~200 급 대표 목록)
-# 정식 등록명만 소문자로 보관. typosquatting 비교 시 normalize 후 사용.
+# Popular PyPI packages, hardcoded (roughly the top 200). Typosquatting is
+# detected by distance from these, so only canonical registered names belong
+# here, lowercased; comparison normalizes both sides first.
 POPULAR_PYPI_PACKAGES: tuple[str, ...] = (
     # web / http
     "requests", "urllib3", "httpx", "aiohttp", "beautifulsoup4", "flask",
@@ -370,7 +377,7 @@ def detect_hallucination(package_info: PyPIPackageInfo) -> list[dict[str, Any]]:
 
     Network / 5xx failures still emit a hallucination-shaped issue so callers
     see the gap, but with ``verified: False``. score_engine excludes those
-    from Trust Score deductions (P0-4) and lowers confidence instead — a
+    from Trust Score deductions and lowers confidence instead - a
     temporary PyPI outage must not be scored like a confirmed fake package.
     """
     if package_info.exists:
@@ -510,7 +517,7 @@ def recommend_model_alternatives(
     model_check_result: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """
-    confidence=\"suggested\" recommendations from ① model_checker output.
+    confidence=\"suggested\" recommendations from model_checker output.
 
     Expected input keys (flexible / best-effort):
       - model_id / id: Hugging Face repo id
@@ -596,7 +603,7 @@ def recommend_model_alternatives(
                     "reason": reason,
                 }
             )
-        # Generic fallback if ① didn't supply candidates
+        # Generic fallback if model_checker did not supply candidates
         if not model_check_result.get("suggested_models"):
             task = model_check_result.get("task") or model_check_result.get("pipeline_tag")
             task_hint = f" for task '{task}'" if task else ""
@@ -732,7 +739,7 @@ class RecommendationEngine:
 
     def analyze_model(self, model_check_result: dict[str, Any]) -> dict[str, Any]:
         """
-        Consume ① model_checker.py output. Does NOT call Hugging Face.
+        Consume model_checker output. Does NOT call Hugging Face itself.
         Passes through any issues already found, appends suggested alts.
         """
         issues = list(model_check_result.get("issues") or [])

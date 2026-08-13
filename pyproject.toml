@@ -1,20 +1,88 @@
+[build-system]
+# PEP 639 license expressions (`license = "Apache-2.0"` rather than a
+# License :: classifier) need setuptools 77 or newer.
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "aibom-guard"
-version = "0.1.0"
 description = "Security, license and supply-chain scanner for Python and AI dependencies, with CycloneDX SBOM / ML-BOM output"
-requires-python = ">=3.10"
 readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "AIBOM-Guard contributors" }]
+keywords = [
+    "sbom",
+    "ml-bom",
+    "aibom",
+    "cyclonedx",
+    "supply-chain",
+    "security",
+    "license-compliance",
+    "vulnerability",
+    "osv",
+    "huggingface",
+    "mcp",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Software Distribution",
+]
 
-# Runtime dependencies are declared in requirements.txt so the file stays
-# usable with a plain `pip install -r`. Keep the two in step.
+# Single source of truth: src/aibom_guard/__init__.py.
+dynamic = ["version"]
+
+# These are the abstract runtime requirements - what an installed
+# `aibom-guard` needs. requirements.txt is the concrete dev environment and
+# carries the same list with per-line rationale; tests/test_packaging.py
+# asserts the two never drift apart.
+dependencies = [
+    "requests>=2.32",
+    "prettytable>=3.0",
+    "cyclonedx-bom>=4.0",
+    "mcp==1.28.1",
+    "huggingface_hub>=0.24,<2.0",
+    "picklescan>=0.0.21",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pyflakes>=3.0"]
+
+[project.urls]
+Homepage = "https://github.com/Letmeloveyou522/aibom_guard"
+Repository = "https://github.com/Letmeloveyou522/aibom_guard"
+Issues = "https://github.com/Letmeloveyou522/aibom_guard/issues"
+Changelog = "https://github.com/Letmeloveyou522/aibom_guard/blob/main/CHANGELOG.md"
+
+[project.scripts]
+aibom-guard = "aibom_guard.scanner:main"
+aibom-guard-mcp = "aibom_guard.mcp_server:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "aibom_guard.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-# Modules live at the repository root (scanner.py, score_engine.py, ...) while
-# tests live in tests/. Without this, `pytest` fails to import them and only
-# `python -m pytest` works - the latter happens to put the current directory
-# on sys.path, which made the suite look fine while `pytest` alone was broken.
-pythonpath = ["."]
+# src layout: the package is not importable from the repository root, so
+# pytest needs src/ on sys.path. This is what lets `pytest` work straight out
+# of a clone with no `pip install -e .` step - which is how anyone evaluating
+# the project will run it.
+pythonpath = ["src"]
 
 addopts = "-q"

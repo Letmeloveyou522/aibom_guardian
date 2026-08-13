@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from repository_checker import (
+from aibom_guard.repository_checker import (
     RepositoryChecker,
     SSRFError,
     calculate_sha256,
@@ -67,7 +67,7 @@ class TestTargetParsing(unittest.TestCase):
 
     def test_branch_not_pinned(self):
         _type, pinned = __import__(
-            "repository_checker", fromlist=["_classify_revision"]
+            "aibom_guard.repository_checker", fromlist=["_classify_revision"]
         )._classify_revision("main")
         self.assertEqual(_type, "branch")
         self.assertFalse(pinned)
@@ -109,7 +109,7 @@ class TestSSRF(unittest.TestCase):
 
     def test_allowlisted_host_ok(self):
         # May fail DNS in offline envs — mock getaddrinfo
-        with patch("repository_checker.socket.getaddrinfo") as gai:
+        with patch("aibom_guard.repository_checker.socket.getaddrinfo") as gai:
             gai.return_value = [(None, None, None, None, ("1.1.1.1", 443))]
             url = validate_public_url("https://api.github.com/repos/o/r")
             self.assertTrue(url.startswith("https://"))
@@ -129,7 +129,7 @@ class TestSSRF(unittest.TestCase):
             return _response(200, {"ok": True})
 
         with patch.object(checker.http.session, "get", side_effect=fake_get):
-            with patch("repository_checker.socket.getaddrinfo") as gai:
+            with patch("aibom_guard.repository_checker.socket.getaddrinfo") as gai:
                 gai.return_value = [(None, None, None, None, ("140.82.112.3", 443))]
                 data, resp, err = checker.http.get_json("https://api.github.com/repos/o/r")
         self.assertIsNone(data)
@@ -216,7 +216,7 @@ class TestHashAndSignature(unittest.TestCase):
             path = Path(directory) / "artifact.whl"
             path.write_bytes(b"payload")
 
-            with patch("repository_checker.Path.iterdir",
+            with patch("aibom_guard.repository_checker.Path.iterdir",
                        side_effect=PermissionError("access denied")):
                 checker = RepositoryChecker(now=FIXED_NOW)
                 prov = checker.check_provenance(local_file=str(path))
@@ -235,7 +235,7 @@ class TestHashAndSignature(unittest.TestCase):
         sig = path + ".sig"
         Path(sig).write_text("sig", encoding="utf-8")
         try:
-            with patch("repository_checker.shutil.which", return_value=None):
+            with patch("aibom_guard.repository_checker.shutil.which", return_value=None):
                 checker = RepositoryChecker(now=FIXED_NOW)
                 prov = checker.check_provenance(
                     local_file=path,
@@ -258,8 +258,8 @@ class TestHashAndSignature(unittest.TestCase):
             fake.returncode = 1
             fake.stdout = ""
             fake.stderr = "error verifying"
-            with patch("repository_checker.shutil.which", return_value="/usr/bin/cosign"):
-                with patch("repository_checker.subprocess.run", return_value=fake):
+            with patch("aibom_guard.repository_checker.shutil.which", return_value="/usr/bin/cosign"):
+                with patch("aibom_guard.repository_checker.subprocess.run", return_value=fake):
                     checker = RepositoryChecker(now=FIXED_NOW)
                     prov = checker.check_provenance(
                         local_file=path,
@@ -570,7 +570,7 @@ class TestGitPlusAndClassify(unittest.TestCase):
         d = detect_target_type(f"git+https://github.com/owner/repo.git@{sha}")
         self.assertEqual(d["type"], "github")
         self.assertEqual(d["revision"], sha)
-        from repository_checker import _classify_revision
+        from aibom_guard.repository_checker import _classify_revision
         rtype, pinned = _classify_revision(sha)
         self.assertTrue(pinned)
         self.assertEqual(rtype, "commit")

@@ -4,7 +4,7 @@ tests/test_ai_explainer.py
 Unit tests for ai_explainer.build_prompt() and explain_results().
 """
 
-import ai_explainer
+from aibom_guard import ai_explainer
 
 
 PACKAGE_WARNING = {

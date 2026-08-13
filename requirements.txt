@@ -3,11 +3,16 @@
 # This file is what the project itself needs to run:
 #     pip install -r requirements.txt
 #
+# pyproject.toml's [project].dependencies is the canonical list - that is what
+# `pip install aibom-guard` resolves. This file mirrors it with the reasoning
+# attached, for people installing from a clone. tests/test_packaging.py fails
+# if the two ever drift apart.
+#
 # It is NOT the scan input. The example packages that used to live here
 # (requests==2.28.0, numpy==1.24.0, pyyaml==5.3.1) are pinned to deliberately
 # vulnerable versions so the scanner has something to find - installing them
 # was never the intent. They now live in examples/sample-requirements.txt:
-#     python3 scanner.py examples/sample-requirements.txt
+#     aibom-guard examples/sample-requirements.txt
 
 requests>=2.32            # HTTP for the OSV, PyPI and GitHub APIs
 prettytable>=3.0          # result table in the terminal
@@ -21,3 +26,5 @@ picklescan>=0.0.21           # dangerous opcodes inside pickle weight files
 
 # Development / tests
 pytest>=8.0
+pyflakes>=3.0            # CI lint. Undefined names only, not style - see
+                         # CONTRIBUTING.md for why this one and not a full linter.

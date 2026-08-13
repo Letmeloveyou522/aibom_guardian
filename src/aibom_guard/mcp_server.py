@@ -6,16 +6,11 @@ server, so AI agents/clients (e.g. Claude Desktop, Cursor) can call it
 directly - for example, asking "is package X version Y safe to use?"
 and getting back a real answer backed by OSV + license checks.
 
-This file doesn't reimplement scanning logic - it wraps the functions
-in license_checker.py, osv_client.py, repository_checker.py, and
-scanner.scan_model as MCP tools.
+No scanning logic lives here; it wraps license_checker, osv_client,
+repository_checker and scanner.scan_model as MCP tools.
 
-Scope (vs CLI scanner.py)
--------------------------
-MCP tools inspect *one* target at a time and return a JSON object.
-They do not parse requirements.txt, write scan_report.json / sbom.json,
-or run Ollama explanations. For batch CI gates and SBOM/ML-BOM output,
-use ``python scanner.py requirements.txt`` instead.
+Scope: one target per call, JSON back. No requirements.txt parsing, no
+scan_report.json / sbom.json, no Ollama. Use ``aibom-guard`` for those.
 
 OSV None contract (shared with scanner / score_engine)
 ------------------------------------------------------
@@ -29,8 +24,8 @@ Tools:
     check_repo_trust — supply-chain trust for GitHub / HF / PyPI / local
     check_model     — Hugging Face model scan (scan_report ``models[]`` shape)
 
-Run it directly to start the server:
-    python mcp_server.py
+Start the server with ``aibom-guard-mcp`` or
+``python -m aibom_guard.mcp_server``.
 """
 
 from __future__ import annotations
@@ -40,67 +35,14 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from license_checker import classify_license, classify_license_detailed
-from osv_client import query_vulnerabilities
-from repository_checker import check_repository
-from scanner import resolve_license, scan_model
-from score_engine import calculate_trust_score
+from ._adapters import _build_check_result, _vulns_to_issues
+from .license_checker import classify_license, classify_license_detailed
+from .osv_client import query_vulnerabilities
+from .repository_checker import check_repository
+from .scanner import resolve_license, scan_model
+from .score_engine import calculate_trust_score
 
 logger = logging.getLogger(__name__)
-
-
-def _vulns_to_issues(vulns: list | None) -> list | None:
-    """
-    OSV 취약점 목록을 score_engine이 기대하는 issues 형식으로 변환.
-
-    Matches ``scanner._vulns_to_issues`` (D-part contract): cvss_score and
-    aliases are preserved so score_engine's CVSS fallback keeps working.
-
-    ``None`` means OSV lookup failed — return ``None`` unchanged. Never
-    substitute ``[]`` (empty list = verified clean).
-    """
-    if vulns is None:
-        return None
-
-    issues = []
-    for v in vulns:
-        sev = str(v.get("severity", "unknown")).lower()
-        if sev not in ("critical", "high", "medium", "low"):
-            sev = "unknown"
-        issue = {
-            "type": "cve",
-            "id": v.get("id"),
-            "severity": sev,
-            "summary": v.get("summary") or v.get("detail"),
-            "detail": v.get("detail") or v.get("summary"),
-        }
-        if v.get("cvss_score") is not None:
-            issue["cvss_score"] = v["cvss_score"]
-        if v.get("aliases"):
-            issue["aliases"] = v["aliases"]
-        issues.append(issue)
-    return issues
-
-
-def _build_check_result(
-    license_status: str,
-    issues: list | None,
-    repository_info: dict | None = None,
-    model_info: dict | None = None,
-) -> dict:
-    """
-    score_engine.calculate_trust_score() 입력 스키마에 맞게 조립.
-
-    ``issues`` may be ``None`` (OSV unverified). Do not replace with ``[]``.
-    """
-    return {
-        "type": "library",
-        "license_status": license_status,
-        "issues": issues,
-        "model_info": model_info,
-        "repository_info": repository_info,
-    }
-
 
 # "aibom-guard" is the name the MCP client will show for this server
 mcp = FastMCP("aibom-guard")
@@ -457,7 +399,7 @@ def check_model(
     confidence, etc. Agents can merge it into
     ``{"packages": [...], "models": [this], "unscanned": []}``.
 
-    This is the MCP counterpart of ``python scanner.py ... --model REF``.
+    This is the MCP counterpart of ``aibom-guard ... --model REF``.
     It does not write SBOM files; use the CLI for CycloneDX / ML-BOM output.
 
     Args:
@@ -640,7 +582,14 @@ def check_repo_trust(
     return response
 
 
-if __name__ == "__main__":
-    # This starts the MCP server using stdio transport, which is what
-    # Claude Desktop / Cursor expect for locally-run MCP servers.
+def main() -> None:
+    """
+    Start the MCP server on stdio transport.
+
+    It stays in the foreground waiting on stdin; that is stdio MCP, not a hang.
+    """
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

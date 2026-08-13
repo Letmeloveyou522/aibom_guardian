@@ -1,21 +1,18 @@
 """
 tests/test_repository_target.py
 -----------------------------------
-Tests for check_repository's named-part arguments.
-
-    python3 -m pytest tests/test_repository_target.py -q
+Tests for check_repository's named target arguments.
 
 The single-string form ("requests==2.28.0") is easy to build wrong, and
 "owner/repo" alone is ambiguous between GitHub and Hugging Face. The named
-forms settle both. The positional form is unchanged, so the existing 39
-tests and the MCP tool keep working.
+forms settle both; the positional form still works unchanged.
 
-No network: only the argument resolution is under test.
+No network - only argument resolution is under test.
 """
 
 import pytest
 
-from repository_checker import _resolve_target
+from aibom_guard.repository_checker import _resolve_target
 
 
 def resolve(target=None, target_type="auto", **kw):

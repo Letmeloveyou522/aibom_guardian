@@ -3,8 +3,12 @@
 This document lists the external open source libraries used in the
 AIBOM-Guard project, along with their licenses. (For Article 8 compliance)
 
-Every entry below is actually imported or invoked by the code. The install
-list is `requirements.txt`.
+Every entry below is actually imported or invoked by the code. The canonical
+install list is `[project].dependencies` in `pyproject.toml`;
+`requirements.txt` mirrors it for installs from a clone, and
+`tests/test_packaging.py` fails if the two drift apart.
+
+The "Used by" column names modules under `src/aibom_guard/`.
 
 ## Runtime
 
@@ -25,6 +29,7 @@ list is `requirements.txt`.
 | Library | Purpose | GitHub | License |
 |---|---|---|---|
 | pytest | Unit test runner | https://github.com/pytest-dev/pytest | MIT |
+| pyflakes | CI lint: reports names that do not resolve | https://github.com/PyCQA/pyflakes | MIT |
 
 ## External APIs (not libraries, for reference)
 

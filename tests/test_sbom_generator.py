@@ -3,8 +3,6 @@ test_sbom_generator.py
 -----------------------------------
 Unit tests for the CycloneDX / ML-BOM writer.
 
-    python3 -m pytest test_sbom_generator.py -q
-
 sbom_generator.py had no tests, which is how the severity mapping stayed
 backwards for as long as it did. No network and no cyclonedx-py CLI needed:
 every test drives the pure functions over a hand-built base SBOM.
@@ -14,8 +12,8 @@ import json
 
 import pytest
 
-import sbom_generator
-from sbom_generator import (
+from aibom_guard import sbom_generator
+from aibom_guard.sbom_generator import (
     _map_severity,
     add_models_to_sbom,
     build_model_component,
