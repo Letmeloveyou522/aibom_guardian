@@ -14,6 +14,31 @@
 
 ### Added
 
+- **전이 의존성 검사.** 파일에 적힌 것만이 아니라 실제로 설치될 것 전부를
+  검사합니다. PyPI `requires_dist`를 고정 버전마다 읽어 아무것도 설치하지 않고
+  트리를 만듭니다. 예제 파일 기준 3개 → 7개, 취약점 5건 → 10건
+  (`requests`가 끌어오는 `urllib3`에만 CVE 5건). 리포트와 SBOM 모두
+  `direct`/`transitive`를 구분합니다. `--direct-only`로 끕니다.
+- **동시 조회.** 조회는 네트워크 대기가 대부분이라 스레드로 병렬화했습니다.
+  20줄 파일(전이 포함 53개) 기준 36.4초 → 7.9초. `--jobs N`, 기본 8.
+  `jobs=1`과 `jobs=8`의 리포트는 순서까지 동일합니다.
+- **릴리스 쿨다운** (`--min-release-age DAYS`). 그보다 최근에 올라온 버전을
+  경고합니다. 공격받은 릴리스는 대개 몇 시간 안에 내려가므로, 하루만 기다려도
+  그 창을 대부분 피합니다. 기본 0(끔).
+- **SARIF 2.1.0 출력** (`--sarif PATH`). GitHub code scanning이 읽어 PR에
+  인라인 주석으로 붙습니다. 발견을 requirements 파일의 해당 줄에 연결하며,
+  fingerprint에 버전이 들어가 업그레이드 후 같은 알림이 남지 않습니다.
+- **GitHub Action** (`action.yml`). `uses:` 한 줄로 남의 CI에 넣을 수 있습니다.
+
+### Changed
+
+- `requests.Session`을 스레드-로컬로 분리하고 워커마다 자체
+  `RecommendationEngine`을 만듭니다. 병렬 조회에서 세션을 공유하면 안 됩니다.
+- README 가중치표가 코드와 달랐습니다(`30/25/15/10/8/7/5` → 실제
+  `28/25/15/12/10/8/2`). 문서를 코드에 맞췄습니다.
+
+### Added
+
 - **패키징**: `pip install`로 설치되는 배포물이 됩니다. 콘솔 명령
   `aibom-guard`(스캐너)와 `aibom-guard-mcp`(MCP 서버)가 등록되고,
   `python -m aibom_guard`로도 실행됩니다.

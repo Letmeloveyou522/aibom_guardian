@@ -43,6 +43,10 @@
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
         },
         {
+          "name": "aibom-guard:dependency",
+          "value": "direct"
+        },
+        {
           "name": "aibom-guard:license_status",
           "value": "ALLOWED"
         },
@@ -97,6 +101,10 @@
         {
           "name": "aibom-guard:license_obligation:0",
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+        },
+        {
+          "name": "aibom-guard:dependency",
+          "value": "direct"
         },
         {
           "name": "aibom-guard:license_status",
@@ -155,6 +163,10 @@
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
         },
         {
+          "name": "aibom-guard:dependency",
+          "value": "direct"
+        },
+        {
           "name": "aibom-guard:license_status",
           "value": "ALLOWED"
         },
@@ -165,6 +177,214 @@
         {
           "name": "aibom-guard:verdict",
           "value": "WARNING"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/charset-normalizer@2.0.12",
+      "name": "charset-normalizer",
+      "version": "2.0.12",
+      "purl": "pkg:pypi/charset-normalizer@2.0.12",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "aibom-guard:license_spdx_id",
+          "value": "MIT"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "permissive"
+        },
+        {
+          "name": "aibom-guard:license_source",
+          "value": "pypi:license"
+        },
+        {
+          "name": "aibom-guard:license_declared",
+          "value": "MIT"
+        },
+        {
+          "name": "aibom-guard:license_obligation:0",
+          "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+        },
+        {
+          "name": "aibom-guard:dependency",
+          "value": "transitive"
+        },
+        {
+          "name": "aibom-guard:license_status",
+          "value": "ALLOWED"
+        },
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "100"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "ALLOW"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/idna@3.18",
+      "name": "idna",
+      "version": "3.18",
+      "purl": "pkg:pypi/idna@3.18",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "aibom-guard:license_spdx_id",
+          "value": "BSD-3-Clause"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "permissive"
+        },
+        {
+          "name": "aibom-guard:license_source",
+          "value": "pypi:license_expression"
+        },
+        {
+          "name": "aibom-guard:license_declared",
+          "value": "BSD-3-Clause"
+        },
+        {
+          "name": "aibom-guard:license_obligation:0",
+          "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+        },
+        {
+          "name": "aibom-guard:dependency",
+          "value": "transitive"
+        },
+        {
+          "name": "aibom-guard:license_status",
+          "value": "ALLOWED"
+        },
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "100"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "ALLOW"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/urllib3@1.26.20",
+      "name": "urllib3",
+      "version": "1.26.20",
+      "purl": "pkg:pypi/urllib3@1.26.20",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "aibom-guard:license_spdx_id",
+          "value": "MIT"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "permissive"
+        },
+        {
+          "name": "aibom-guard:license_source",
+          "value": "pypi:license"
+        },
+        {
+          "name": "aibom-guard:license_declared",
+          "value": "MIT"
+        },
+        {
+          "name": "aibom-guard:license_obligation:0",
+          "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
+        },
+        {
+          "name": "aibom-guard:dependency",
+          "value": "transitive"
+        },
+        {
+          "name": "aibom-guard:license_status",
+          "value": "ALLOWED"
+        },
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "75"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "WARNING"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/certifi@2026.7.22",
+      "name": "certifi",
+      "version": "2026.7.22",
+      "purl": "pkg:pypi/certifi@2026.7.22",
+      "licenses": [
+        {
+          "license": {
+            "id": "MPL-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "aibom-guard:license_spdx_id",
+          "value": "MPL-2.0"
+        },
+        {
+          "name": "aibom-guard:license_family",
+          "value": "copyleft"
+        },
+        {
+          "name": "aibom-guard:license_source",
+          "value": "pypi:license"
+        },
+        {
+          "name": "aibom-guard:license_declared",
+          "value": "MPL-2.0"
+        },
+        {
+          "name": "aibom-guard:license_obligation:0",
+          "value": "File-level copyleft. Source files you take from the project stay under its license and their modifications must be published; files you write yourself do not become subject to it."
+        },
+        {
+          "name": "aibom-guard:dependency",
+          "value": "transitive"
+        },
+        {
+          "name": "aibom-guard:license_status",
+          "value": "REVIEW"
+        },
+        {
+          "name": "aibom-guard:trust_score",
+          "value": "96"
+        },
+        {
+          "name": "aibom-guard:verdict",
+          "value": "ALLOW"
         }
       ]
     }
@@ -181,7 +401,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-08-07T16:10:20.213666+00:00",
+    "timestamp": "2026-08-13T22:06:57.978056+00:00",
     "tools": {
       "components": [
         {
@@ -292,14 +512,29 @@
     "manufacturer": {
       "name": "AIBOM-Guard"
     },
+    "authors": [
+      {
+        "name": "AIBOM-Guard"
+      }
+    ],
+    "lifecycles": [
+      {
+        "phase": "pre-build"
+      }
+    ],
     "properties": [
       {
         "name": "aibom-guard:profile",
         "value": "sbom"
       }
-    ]
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "subject:sample-requirements",
+      "name": "sample-requirements"
+    }
   },
-  "serialNumber": "urn:uuid:ce495511-4842-43a8-a272-899283662b88",
+  "serialNumber": "urn:uuid:f353bdb3-3a66-457d-9c42-5b2ff3bfb122",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
@@ -361,7 +596,7 @@
     },
     {
       "id": "GHSA-gc5v-m9x4-r6x2",
-      "description": "Requests is a HTTP library. Prior to version 2.33.0, the `requests.utils.extract_zipped_paths()` utility function uses a predictable filename when extracting files from zip archives into the system temporary directory. If the target file...",
+      "description": "Requests has Insecure Temp File Reuse in its extract_zipped_paths() utility function",
       "ratings": [
         {
           "source": {
@@ -388,7 +623,7 @@
     },
     {
       "id": "GHSA-j8r2-6x86-q33q",
-      "description": "Requests is a HTTP library. Since Requests 2.3.0, Requests has been leaking Proxy-Authorization headers to destination servers when redirected to an HTTPS endpoint. This is a product of how we use `rebuild_proxies` to reattach the `Proxy...",
+      "description": "Unintended leak of Proxy-Authorization header in requests",
       "ratings": [
         {
           "source": {
@@ -415,7 +650,7 @@
     },
     {
       "id": "GHSA-8q59-q68h-6hv4",
-      "description": "A vulnerability was discovered in the PyYAML library in versions before 5.4, where it is susceptible to arbitrary code execution when it processes untrusted YAML files through the full_load method or with the FullLoader loader. Applicati...",
+      "description": "Improper Input Validation in PyYAML",
       "ratings": [
         {
           "source": {
@@ -434,6 +669,139 @@
       "references": [
         {
           "id": "PYSEC-2021-142",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-2xpw-w6gg-jr37",
+      "description": "urllib3 streaming API improperly handles highly compressed data",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "high",
+          "method": "other"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "pkg:pypi/urllib3@1.26.20"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2026-1994",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-38jv-5279-wg99",
+      "description": "Decompression-bomb safeguards bypassed when following HTTP redirects (streaming API)",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "high",
+          "score": 7.5,
+          "method": "CVSSv31"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "pkg:pypi/urllib3@1.26.20"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2026-1996",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-gm62-xv2j-4w53",
+      "description": "urllib3 allows an unbounded number of links in the decompression chain",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "high",
+          "method": "other"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "pkg:pypi/urllib3@1.26.20"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2026-1998",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-pq67-6m6q-mj2v",
+      "description": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "medium",
+          "score": 5.3,
+          "method": "CVSSv31"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "pkg:pypi/urllib3@1.26.20"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2026-1999",
+          "source": {
+            "name": "PyPI Advisory Database"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-qccp-gfcp-xxvc",
+      "description": "urllib3: Sensitive headers forwarded across origins in proxied low-level redirects",
+      "ratings": [
+        {
+          "source": {
+            "name": "OSV"
+          },
+          "severity": "medium",
+          "score": 5.3,
+          "method": "CVSSv31"
+        }
+      ],
+      "affects": [
+        {
+          "ref": "pkg:pypi/urllib3@1.26.20"
+        }
+      ],
+      "references": [
+        {
+          "id": "PYSEC-2026-141",
           "source": {
             "name": "PyPI Advisory Database"
           }

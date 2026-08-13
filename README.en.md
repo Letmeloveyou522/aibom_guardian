@@ -5,18 +5,115 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
 
-Scans Python packages and Hugging Face models for security, license and
-supply-chain risk, and emits the result as a CycloneDX SBOM.
+**Tells you whether the packages and AI models in your `requirements.txt` are
+safe to use.** It checks for known vulnerabilities, licence problems and
+questionable provenance, then reports both as a table you read and a standard
+document your tools read.
 
 한국어: [README.md](README.md) ·
 Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) ·
 Security: [SECURITY.md](SECURITY.md) ·
 Changelog: [CHANGELOG.md](CHANGELOG.md)
 
-> **The design principle behind everything below:** a check that did not run
-> is not a check that passed. Anything this tool could not verify is reported
-> as `WARNING` with the reason attached — never as `ALLOW`. A gate that
-> reports success without having looked at anything is worse than no gate.
+---
+
+## What it catches
+
+```
+$ aibom-guard requirements.txt
+
+[INFO] 3 direct + 4 transitive = 7 packages to scan.
+
++--------------------+-----------+----------------+-------+-------------+---------+
+|      Package       |  Version  | License Status | Vulns | Trust Score | Verdict |
++--------------------+-----------+----------------+-------+-------------+---------+
+|      requests      |   2.28.0  |    ALLOWED     |   4   |      75     | WARNING |
+|       numpy        |   1.24.0  |    ALLOWED     |   0   |     100     |  ALLOW  |
+|       pyyaml       |   5.3.1   |    ALLOWED     |   1   |      49     |  BLOCK  |
+| charset-normalizer |   2.0.12  |    ALLOWED     |   0   |     100     |  ALLOW  |
+|        idna        |    3.18   |    ALLOWED     |   0   |     100     |  ALLOW  |
+|      urllib3       |  1.26.20  |    ALLOWED     |   5   |      75     | WARNING |
+|      certifi       | 2026.7.22 |     REVIEW     |   0   |      96     |  ALLOW  |
++--------------------+-----------+----------------+-------+-------------+---------+
+
+- pyyaml==5.3.1 (BLOCK, score 49)
+    [HARD BLOCK] Critical severity cve finding: GHSA-8q59-q68h-6hv4
+    -> suggested: PyYAML==6.0.3 (confirmed) - Upgrade to latest safe release
+
+[EXIT 2]
+```
+
+`urllib3` is not in the requirements file. `requests` pulled it in, and its
+five vulnerabilities only show up because the scan follows that. `REVIEW`
+means usable but with licence obligations, and the exit code is what fails
+your build.
+
+AI models go into the same table.
+
+```
+$ aibom-guard requirements.txt --model CompVis/stable-diffusion-v1-4
+
+| Model                         | License               | Weights              | Verdict |
+| CompVis/stable-diffusion-v1-4 | creativeml-openrail-m | safetensors + pickle | BLOCK   |
+```
+
+---
+
+## Why it exists
+
+Dependencies suggested by an LLM or copied from a tutorial bring three things
+with them.
+
+- **Packages that do not exist** — a name nobody registered on PyPI can be
+  claimed by anyone, so the next person to make the same typo installs an
+  attacker's code.
+- **Licences you cannot use** — OpenRAIL and Llama-family licences restrict
+  specific uses, which makes them not OSI open source. They have no SPDX
+  identifier, so ordinary licence scanners skip them.
+- **Model weights that execute** — a `.bin` file is a pickle and
+  `torch.load()` runs the code inside it. Loading the model is arbitrary code
+  execution.
+
+And **a check that did not run is not a check that passed.** If the
+vulnerability lookup fails the answer is "unknown", not "zero", and the
+verdict is `WARNING`.
+
+---
+
+## Quick start
+
+```bash
+pip install -e .
+aibom-guard requirements.txt
+```
+
+In CI:
+
+```yaml
+- uses: Letmeloveyou522/aibom_guard@v1
+```
+
+---
+
+## How it differs
+
+| | pip-audit | safety | syft · trivy | AIBOM-Guard |
+|---|:---:|:---:|:---:|:---:|
+| Vulnerabilities | ✅ | ✅ | ✅ | ✅ |
+| Transitive dependencies | ✅ | ✅ | ✅ | ✅ |
+| SBOM | ❌ | ❌ | ✅ | ✅ CycloneDX 1.6 |
+| Licence obligations | ❌ | partial | identify only | ✅ per licence |
+| **AI model licences** | ❌ | ❌ | ❌ | ✅ OpenRAIL, Llama |
+| **Model weight safety** | ❌ | ❌ | ❌ | ✅ pickle vs safetensors |
+| ML-BOM | ❌ | ❌ | partial | ✅ |
+| Release cooldown | ❌ | ❌ | ❌ | ✅ |
+| SARIF | ✅ | ✅ | ✅ | ✅ |
+| **Unverified never passes** | ❌ | ❌ | ❌ | ✅ |
+| Callable by an LLM agent | ❌ | ❌ | ❌ | ✅ 4 MCP tools |
+
+If you only need package vulnerabilities, `pip-audit` is lighter. This tool
+earns its place when **AI models have to be judged by the same standard and
+land in the same SBOM.**
 
 ---
 
@@ -81,6 +178,10 @@ aibom-guard examples/sample-requirements.txt \
 | Option | Description |
 |---|---|
 | `--model REF` | Include a Hugging Face model. Repeatable. Turns the SBOM into an ML-BOM |
+| `--direct-only` | Scan only what the file lists. The default follows dependencies |
+| `--min-release-age DAYS` | Warn about versions published fewer than DAYS ago. Default 0 (off) |
+| `--sarif PATH` | Also write SARIF 2.1.0, for GitHub code scanning |
+| `-j`, `--jobs N` | Concurrent lookups. Default 8; `1` scans one at a time |
 | `--supply-chain` | Repository trust checks. Slow — several network round trips per package |
 | `--model-pickle-scan MB` | Scan inside model pickle files. Default 0 (off) |
 | `--offline` | No network. License checks only |
@@ -105,6 +206,66 @@ version (`version_resolved: false`) or this tool did (`true`).
 Lines that cannot be scanned — `-r` / `-c` includes, URL and VCS requirements
 — are reported under `unscanned` rather than silently skipped. Under
 `--offline` ranges cannot be narrowed, so those lines become `unscanned` too.
+
+### Dependencies are followed
+
+Not just what the file lists — **everything that will be installed**. The tree
+is resolved from PyPI's `requires_dist` per pinned release, so nothing has to
+be installed.
+
+```
+[INFO] 3 direct + 4 transitive = 7 packages to scan.
+[Scanning] urllib3==1.26.20 ...  (resolved from urllib3 (<1.27,>=1.21.1))
+```
+
+One line of `requests==2.28.0` brings in `urllib3`, and that `urllib3` carries
+five CVEs. The report and the SBOM both record whether a package was listed
+(`direct`) or pulled in.
+
+Optional extras are skipped, platform and `python_version` markers are
+evaluated against the running interpreter, and the first occurrence of a name
+wins so a pinned version is never replaced by a dependency's range.
+Unresolvable dependencies are reported under `unscanned`. `--direct-only`
+turns the whole thing off.
+
+Lookups run concurrently — mostly network wait. For a 20-line file (53
+packages with dependencies) `--jobs 1` takes 36s and the default 8 takes 8s.
+The report is identical either way.
+
+### Release cooldown
+
+`--min-release-age DAYS` warns about versions published more recently.
+
+```
+[COOLDOWN] certifi==2026.7.22 published 22 day(s) ago (threshold 90).
+```
+
+Compromised releases are usually withdrawn within hours: the September 2025
+npm attack on chalk and debug was gone in about 2.5 hours. Waiting a day
+avoids most of that window, which is why pnpm 11 ships a 24-hour cooldown by
+default and pip 26.0 added `--uploaded-prior-to`.
+
+Off by default — a fresh release is not itself a defect.
+
+### CI integration
+
+SARIF makes GitHub annotate the pull request inline.
+
+```yaml
+- uses: Letmeloveyou522/aibom_guard@v1
+  with:
+    requirements: requirements.txt
+    min-release-age: 1
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: aibom-guard.sarif
+```
+
+Or directly:
+
+```bash
+aibom-guard requirements.txt --sarif aibom-guard.sarif
+```
 
 ### Exit codes
 
@@ -201,13 +362,13 @@ The score is a weighted deduction across seven categories.
 
 | Category | Weight | |
 |---|---|---|
-| malicious | 30 | Confirmed malicious code |
+| malicious | 28 | Confirmed malicious code |
 | cve | 25 | Published vulnerability |
 | license | 15 | Legal grounds to block |
-| typosquatting | 10 | Name-confusion attack |
-| hallucination | 8 | Package or model that does not exist |
-| provenance | 7 | Origin cannot be verified |
-| pii | 5 | Sensitive data exposure |
+| typosquatting | 12 | Name-confusion attack |
+| hallucination | 10 | Package or model that does not exist |
+| provenance | 8 | Origin cannot be verified |
+| pii | 2 | Sensitive data exposure |
 
 80 and above is `ALLOW`, below 50 is `BLOCK`, everything else is `WARNING`.
 

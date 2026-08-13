@@ -5,13 +5,108 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
 
-Python 패키지와 Hugging Face 모델의 보안·라이선스·공급망 위험을 검사하고
-결과를 CycloneDX SBOM으로 출력합니다.
+**`requirements.txt`에 적힌 패키지와 AI 모델이 써도 되는 것인지 검사합니다.**
+취약점이 있는지, 라이선스에 문제가 없는지, 출처가 믿을 만한지를 보고
+결과를 사람이 읽는 표와 표준 형식 문서로 내놓습니다.
 
 English: [README.en.md](README.en.md) ·
 기여: [CONTRIBUTING.md](CONTRIBUTING.md) ·
 보안 제보: [SECURITY.md](SECURITY.md) ·
 변경 이력: [CHANGELOG.md](CHANGELOG.md)
+
+---
+
+## 이런 걸 잡습니다
+
+```
+$ aibom-guard requirements.txt
+
+[INFO] 3 direct + 4 transitive = 7 packages to scan.
+
++--------------------+-----------+----------------+-------+-------------+---------+
+|      Package       |  Version  | License Status | Vulns | Trust Score | Verdict |
++--------------------+-----------+----------------+-------+-------------+---------+
+|      requests      |   2.28.0  |    ALLOWED     |   4   |      75     | WARNING |
+|       numpy        |   1.24.0  |    ALLOWED     |   0   |     100     |  ALLOW  |
+|       pyyaml       |   5.3.1   |    ALLOWED     |   1   |      49     |  BLOCK  |
+| charset-normalizer |   2.0.12  |    ALLOWED     |   0   |     100     |  ALLOW  |
+|        idna        |    3.18   |    ALLOWED     |   0   |     100     |  ALLOW  |
+|      urllib3       |  1.26.20  |    ALLOWED     |   5   |      75     | WARNING |
+|      certifi       | 2026.7.22 |     REVIEW     |   0   |      96     |  ALLOW  |
++--------------------+-----------+----------------+-------+-------------+---------+
+
+- pyyaml==5.3.1 (BLOCK, score 49)
+    [HARD BLOCK] Critical severity cve finding: GHSA-8q59-q68h-6hv4
+    -> suggested: PyYAML==6.0.3 (confirmed) - Upgrade to latest safe release
+
+[EXIT 2]
+```
+
+`urllib3`은 `requirements.txt`에 없습니다. `requests`가 끌고 들어온 것이고,
+거기 있는 취약점 5건이 이 스캔에서만 보입니다. `REVIEW`는 쓸 수는 있지만
+라이선스 의무가 따른다는 뜻이고, 종료 코드로 CI를 세울 수 있습니다.
+
+AI 모델도 같은 표에 들어갑니다.
+
+```
+$ aibom-guard requirements.txt --model CompVis/stable-diffusion-v1-4
+
+| Model                         | License               | Weights              | Verdict |
+| CompVis/stable-diffusion-v1-4 | creativeml-openrail-m | safetensors + pickle | BLOCK   |
+```
+
+---
+
+## 왜 필요한가
+
+LLM이 추천하고 문서에서 복사해 오는 의존성에는 세 가지가 섞여 들어옵니다.
+
+- **존재하지 않는 패키지** — PyPI에 없는 이름은 제3자가 선점 등록할 수 있어,
+  같은 오타를 낸 다음 사람이 공격자의 코드를 받습니다.
+- **쓸 수 없는 라이선스** — OpenRAIL·Llama 계열은 용도 제한 조항이 있어 OSI
+  오픈소스가 아닙니다. SPDX 식별자가 없어 일반 라이선스 검사기는 넘어갑니다.
+- **실행되는 모델 가중치** — `.bin`은 pickle이고 `torch.load()`가 그 안의
+  코드를 실행합니다. 불러오는 것만으로 임의 코드 실행입니다.
+
+그리고 **검사하지 못한 것을 통과시키지 않습니다.** 취약점 조회가 실패하면
+"0건"이 아니라 "알 수 없음"이고 판정은 `WARNING`입니다.
+
+---
+
+## 빠른 시작
+
+```bash
+pip install -e .
+aibom-guard requirements.txt
+```
+
+CI:
+
+```yaml
+- uses: Letmeloveyou522/aibom_guard@v1
+```
+
+---
+
+## 다른 도구와의 차이
+
+| | pip-audit | safety | syft · trivy | AIBOM-Guard |
+|---|:---:|:---:|:---:|:---:|
+| 취약점 탐지 | ✅ | ✅ | ✅ | ✅ |
+| 전이 의존성 | ✅ | ✅ | ✅ | ✅ |
+| SBOM 생성 | ❌ | ❌ | ✅ | ✅ CycloneDX 1.6 |
+| 라이선스 의무사항 안내 | ❌ | 일부 | 식별만 | ✅ 항목별 |
+| **AI 모델 라이선스 판정** | ❌ | ❌ | ❌ | ✅ OpenRAIL·Llama 계열 |
+| **모델 가중치 안전성** | ❌ | ❌ | ❌ | ✅ pickle vs safetensors |
+| ML-BOM | ❌ | ❌ | 부분 | ✅ |
+| 릴리스 쿨다운 | ❌ | ❌ | ❌ | ✅ |
+| SARIF | ✅ | ✅ | ✅ | ✅ |
+| **미검증을 통과시키지 않음** | ❌ | ❌ | ❌ | ✅ |
+| LLM 에이전트 연동 | ❌ | ❌ | ❌ | ✅ MCP 도구 4종 |
+
+패키지 취약점만 필요하면 `pip-audit`이 더 가볍습니다. **AI 모델까지 같은
+기준으로 판정하고 그 결과를 하나의 SBOM에 담아야 할 때** 이 도구의 자리가
+있습니다.
 
 ---
 
@@ -76,6 +171,10 @@ aibom-guard examples/sample-requirements.txt \
 | 옵션 | 설명 |
 |---|---|
 | `--model REF` | HF 모델 포함. 반복 지정 가능. SBOM이 ML-BOM이 됩니다 |
+| `--direct-only` | 파일에 적힌 패키지만 검사. 기본은 의존성까지 따라갑니다 |
+| `--min-release-age DAYS` | DAYS일이 안 된 릴리스를 경고. 기본 0(끔) |
+| `--sarif PATH` | SARIF 2.1.0 출력. GitHub code scanning용 |
+| `-j`, `--jobs N` | 동시 조회 수. 기본 8, `1`이면 순차 |
 | `--supply-chain` | 저장소 신뢰도 검사. 패키지마다 네트워크 왕복이 있어 느립니다 |
 | `--model-pickle-scan MB` | 모델 pickle 내부 검사. 기본 0(미실행) |
 | `--offline` | 네트워크 미사용. 라이선스만 검사합니다 |
@@ -98,6 +197,69 @@ PyPI에서 **실제로 설치될 버전**으로 좁혀 검사하고, 리포트�
 `-r`·`-c` 포함, URL/VCS 요구사항처럼 검사할 수 없는 줄은 `unscanned`에
 남기고 보고합니다. 조용히 넘어가지 않습니다. `--offline`이면 범위를 좁힐 수
 없으므로 그 줄도 `unscanned`가 됩니다.
+
+### 의존성까지 따라갑니다
+
+파일에 적힌 것만이 아니라 **실제로 설치될 것 전부**를 검사합니다. PyPI의
+`requires_dist`를 고정 버전마다 읽어 트리를 만들기 때문에 아무것도 설치하지
+않고 해석합니다.
+
+```
+[INFO] 3 direct + 4 transitive = 7 packages to scan.
+[Scanning] urllib3==1.26.20 ...  (resolved from urllib3 (<1.27,>=1.21.1))
+```
+
+`requests==2.28.0` 한 줄이 `urllib3`를 끌어오고, 그 `urllib3`에 CVE 5건이
+있습니다. 리포트와 SBOM 모두 직접 의존성인지(`direct`) 끌려온 것인지
+구분해 기록합니다.
+
+extras는 요청하지 않은 것으로 보고 건너뛰며, 플랫폼·파이썬 버전 마커는
+실행 중인 인터프리터 기준으로 평가합니다. 같은 이름이 여러 번 나오면 처음
+것이 이깁니다 — 파일이 고정한 버전을 의존성의 범위가 덮어쓰지 않습니다.
+
+해석하지 못한 의존성은 `unscanned`에 남습니다. `--direct-only`로 끄면 파일에
+적힌 줄만 봅니다.
+
+조회는 동시에 나갑니다. 대기 시간이 대부분이라 20줄짜리 파일(전이 포함 53개)
+기준 `--jobs 1`이 36초, 기본값 8이 8초입니다. 결과는 동일합니다.
+
+### 릴리스 쿨다운
+
+`--min-release-age DAYS`를 주면 그보다 최근에 올라온 버전을 경고합니다.
+
+```
+[COOLDOWN] certifi==2026.7.22 published 22 day(s) ago (threshold 90).
+```
+
+공격받은 릴리스는 대개 몇 시간 안에 내려갑니다 — 2025년 9월 npm의 chalk·debug
+사건은 약 2.5시간, Shai-Hulud 2.0은 약 12시간이었습니다. 하루만 기다려도
+그 창을 대부분 피하며, pnpm 11은 24시간 쿨다운을 기본값으로 넣었고
+`pip 26.0`도 `--uploaded-prior-to`를 추가했습니다.
+
+기본은 0(끔)입니다. 새 릴리스 자체가 결함은 아니고, 최신을 따라가는
+프로젝트에서는 전부 경고가 되기 때문입니다.
+
+### CI 연동
+
+SARIF로 내보내면 GitHub이 취약점을 PR에 **인라인 주석**으로 붙입니다.
+
+```yaml
+- uses: Letmeloveyou522/aibom_guard@v1
+  with:
+    requirements: requirements.txt
+    min-release-age: 1
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: aibom-guard.sarif
+```
+
+직접 실행해도 됩니다.
+
+```bash
+aibom-guard requirements.txt --sarif aibom-guard.sarif
+```
+
+전이 의존성은 파일에 줄이 없으므로 1번 줄에 붙고 메시지에 표시됩니다.
 
 ### 종료 코드
 
@@ -192,13 +354,13 @@ BLOCK만으로 게이트를 걸려면 `--fail-on block`을 쓰면 됩니다.
 
 | 항목 | 가중치 | |
 |---|---|---|
-| malicious | 30 | 악성 코드 확인 |
+| malicious | 28 | 악성 코드 확인 |
 | cve | 25 | 공표된 취약점 |
 | license | 15 | 법적 차단 사유 |
-| typosquatting | 10 | 이름 혼동 공격 |
-| hallucination | 8 | 존재하지 않는 패키지·모델 |
-| provenance | 7 | 출처 검증 불가 |
-| pii | 5 | 민감정보 노출 |
+| typosquatting | 12 | 이름 혼동 공격 |
+| hallucination | 10 | 존재하지 않는 패키지·모델 |
+| provenance | 8 | 출처 검증 불가 |
+| pii | 2 | 민감정보 노출 |
 
 80 이상 `ALLOW`, 50 미만 `BLOCK`, 나머지 `WARNING`입니다.
 
