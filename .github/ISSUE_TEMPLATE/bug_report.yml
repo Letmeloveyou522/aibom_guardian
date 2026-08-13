@@ -1,0 +1,74 @@
+name: 버그 제보
+description: 스캐너가 죽거나, 틀린 결과를 내거나, 문서와 다르게 동작할 때
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        보안 취약점은 여기가 아니라 [SECURITY.md](../blob/main/SECURITY.md)의
+        비공개 절차를 따라 주십시오. **위험한 패키지를 안전하다고 보고하게
+        만드는 입력**도 보안 문제로 취급합니다.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 무슨 일이 일어났나요
+      description: 기대한 동작과 실제 동작을 함께 적어 주세요.
+      placeholder: |
+        pyyaml==5.3.1 을 검사했는데 BLOCK이 나와야 할 것 같은데 ALLOW가 나옵니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 재현 방법
+      description: |
+        실행한 명령과 입력 파일 내용을 그대로 붙여 주세요.
+        `--offline`을 붙여도 재현되는지 알려주시면 원인 범위가 크게 좁혀집니다.
+      value: |
+        ```bash
+        aibom-guard requirements.txt
+        ```
+
+        requirements.txt 내용:
+        ```
+
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: 출력
+      description: |
+        터미널 출력 전체를 붙여 주세요. 오류라면 traceback을 잘라내지 말아 주세요.
+        `scan_report.json`의 해당 패키지 항목이 있으면 특히 도움이 됩니다.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: 버전
+      description: "`aibom-guard --version` 또는 커밋 해시"
+      placeholder: "0.1.0 / 3e37fae"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: 실행 환경
+      description: OS와 Python 버전
+      placeholder: "Windows 11 / Python 3.12.4"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 확인
+      options:
+        - label: "`pytest`를 돌려봤고, 통과 여부를 위에 적었습니다"
+        - label: 같은 내용의 이슈가 이미 있는지 찾아봤습니다
