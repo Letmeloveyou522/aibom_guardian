@@ -220,7 +220,7 @@ def query_vulnerabilities(
         do NOT score this as zero CVEs. Prefer an ``unverified`` issue and
         lower confidence instead.
 
-    Successful list items follow the team Data Protocol:
+    Successful list items are shaped for score_engine:
       {
         "type": "cve",
         "id": "GHSA-...",
@@ -251,7 +251,6 @@ def query_vulnerabilities(
             version,
             type(e).__name__,
         )
-        print(f"[WARNING] Failed to query vulnerabilities for {package_name}: {e}")
         return None
     except ValueError as e:
         # response.json() raises ValueError / JSONDecodeError on bad bodies
@@ -261,7 +260,6 @@ def query_vulnerabilities(
             version,
             type(e).__name__,
         )
-        print(f"[WARNING] Failed to parse OSV response for {package_name}: {e}")
         return None
 
     if not isinstance(data, dict):

@@ -3,17 +3,12 @@ test_repository_ssrf.py
 -----------------------------------
 Unit tests for repository_checker's SSRF defence.
 
-    python3 -m pytest tests/test_repository_ssrf.py -q
+`validate_public_url` decides whether a URL taken from package metadata -
+which whoever publishes the package controls - may be requested at all. A
+hole here turns the scanner into a request proxy for them.
 
-repository_checker.py is a third of the codebase and had the lowest test
-density in it. `validate_public_url` is the function that decides whether a
-URL taken from package metadata - which an attacker can set - is allowed to
-be requested at all, so a hole here turns the scanner into a request proxy
-for whoever publishes a package. Nothing pinned it.
-
-Every test here is offline: DNS is stubbed so the allowlist, the scheme and
-port rules, and the rebinding defence are exercised without leaving the
-machine.
+DNS is stubbed, so the allow-list, scheme and port rules, and the rebinding
+defence are all exercised offline.
 """
 
 import ipaddress
@@ -21,8 +16,8 @@ import socket
 
 import pytest
 
-import repository_checker
-from repository_checker import SSRFError, validate_public_url
+from aibom_guard import repository_checker
+from aibom_guard.repository_checker import SSRFError, validate_public_url
 
 
 @pytest.fixture
@@ -130,6 +125,47 @@ def test_non_standard_ports_are_refused(resolves_to):
     for port in (8080, 22, 3306, 6379):
         with pytest.raises(SSRFError):
             validate_public_url(f"https://github.com:{port}/x")
+
+
+def test_the_port_policy_is_the_constant(resolves_to):
+    """
+    The rule used to be spelled out inline as well as in ALLOWED_PORTS, so the
+    constant and the enforcement could disagree and nothing would notice. This
+    reads the constant and checks the function agrees with it.
+    """
+    resolves_to("140.82.121.4")
+
+    for port in repository_checker.ALLOWED_PORTS:
+        suffix = "" if port is None else f":{port}"
+        validate_public_url(f"https://github.com{suffix}/x")
+
+    for port in repository_checker.ALLOWED_HTTP_PORTS:
+        with pytest.raises(SSRFError):
+            validate_public_url(f"https://github.com:{port}/x")
+        validate_public_url(f"http://github.com:{port}/x", allow_http=True)
+
+
+@pytest.mark.parametrize("port", ["99999", "notaport", "-1", "443a"])
+def test_a_malformed_port_is_refused_not_raised_raw(resolves_to, port):
+    """
+    .port raises a plain ValueError for these. SSRFError is a *subclass* of
+    ValueError, so an unwrapped one escapes every `except SSRFError` and
+    aborts the scan. This assertion fails on the raw ValueError.
+    """
+    resolves_to("140.82.121.4")
+    with pytest.raises(SSRFError):
+        validate_public_url(f"https://github.com:{port}/x")
+
+
+def test_a_redirect_onto_a_bad_port_is_refused(resolves_to):
+    """
+    Redirects are the reason the port rule matters at all: the first URL can
+    be a clean https://github.com/... and the Location header can point at an
+    unexpected service port on the same allow-listed host.
+    """
+    resolves_to("140.82.121.4")
+    with pytest.raises(SSRFError):
+        validate_public_url("https://github.com:8080/redirected")
 
 
 def test_path_traversal_is_refused(resolves_to):

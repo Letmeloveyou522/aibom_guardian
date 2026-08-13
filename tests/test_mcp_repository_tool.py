@@ -11,6 +11,7 @@ stub is injected so tool wrappers can still be unit-tested.
 from __future__ import annotations
 
 import json
+import importlib
 import sys
 import types
 import unittest
@@ -19,8 +20,10 @@ from unittest.mock import patch
 
 def _install_mcp_stub_if_needed() -> bool:
     """Return True when a stub was installed."""
+    # import_module rather than a plain import: this is a probe, and an
+    # unused-import warning on a deliberate availability check is noise.
     try:
-        import mcp.server.fastmcp  # noqa: F401
+        importlib.import_module("mcp.server.fastmcp")
         return False
     except ImportError:
         pass
@@ -73,11 +76,10 @@ def _install_mcp_stub_if_needed() -> bool:
 
 _STUBBED = _install_mcp_stub_if_needed()
 
-import mcp_server  # noqa: E402
-from mcp_server import (  # noqa: E402
+from aibom_guard import mcp_server  # noqa: E402
+from aibom_guard.mcp_server import (  # noqa: E402
     build_repository_check_summary,
     check_license,
-    check_model,
     check_package,
     check_repo_trust,
     mcp,

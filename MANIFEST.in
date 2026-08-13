@@ -1,0 +1,18 @@
+# setuptools picks up src/ and tests/ on its own; everything below has to be
+# named so the sdist stays auditable and runnable.
+include LICENSE
+include README.md
+include DEPENDENCIES.md
+include CHANGELOG.md
+include CONTRIBUTING.md
+include SECURITY.md
+include CODE_OF_CONDUCT.md
+include requirements.txt
+
+recursive-include examples *.py *.txt *.json
+recursive-include tests *.py
+recursive-include tests/fixtures *.json *.md
+
+# Never ship scan output or caches - they are regenerated per run.
+exclude scan_report.json sbom.json _base_sbom.json
+global-exclude *.py[cod] __pycache__/*

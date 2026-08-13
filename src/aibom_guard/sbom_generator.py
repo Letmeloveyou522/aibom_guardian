@@ -1,36 +1,35 @@
 """
 sbom_generator.py
 -----------------------------------
-Generates a CycloneDX-format SBOM from a requirements.txt file, then
-enriches it with the vulnerability and license findings from our own
-scan (see scanner.py). The result is a single standard-compliant JSON
-file that also carries AIBOM-Guard's own risk analysis.
+Builds a CycloneDX SBOM from a requirements.txt, then merges in this scan's
+vulnerability and license findings, so one standard file carries both.
 
-When model scan results are present, components are emitted as
-``machine-learning-model`` with a CycloneDX ``modelCard`` (ML-BOM), and
-metadata is tagged with profile ``ml-bom`` (G7 SBOM Metadata).
+Shells out to the `cyclonedx-py` CLI (from cyclonedx-bom) for the base
+document. With model results present, components become
+``machine-learning-model`` with a CycloneDX ``modelCard`` and the metadata
+profile is tagged ``ml-bom``.
 
-Under the hood this just shells out to the `cyclonedx-py` CLI tool
-(from the cyclonedx-bom package) to build the base SBOM, then merges
-our extra data into it.
-
-CLI vs MCP: this module is driven by ``scanner.py`` (batch SBOM writer).
-MCP ``check_model`` / ``check_package`` return JSON only — they do not
-call this writer.
+Driven by scanner.py only; the MCP tools return JSON and never call this.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from osv_client import parse_cvss_v3_vector
+from . import __version__
+from .osv_client import parse_cvss_v3_vector
 
-AIBOM_GUARD_VERSION = "0.1.0"
+logger = logging.getLogger(__name__)
+
+# Goes into the SBOM's metadata.tools entry, so it must track the real version
+# rather than a literal that stops matching after a release.
+AIBOM_GUARD_VERSION = __version__
 AIBOM_GUARD_TOOL_NAME = "AIBOM-Guard"
 
 
@@ -47,12 +46,14 @@ def generate_base_sbom(requirements_path: str, tmp_output_path: str = "_base_sbo
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
     except FileNotFoundError:
-        print("[WARNING] cyclonedx-py not found. Install with: pip install cyclonedx-bom")
+        logger.warning(
+            "cyclonedx-py not found; the SBOM will have no base components. "
+            "Install with: pip install cyclonedx-bom"
+        )
         return {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": []}
 
     if result.returncode != 0:
-        print("[WARNING] cyclonedx-py failed to run:")
-        print(result.stderr)
+        logger.warning("cyclonedx-py failed to run: %s", result.stderr.strip())
         return {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": []}
 
     with open(tmp_output_path, "r", encoding="utf-8") as f:
@@ -321,7 +322,7 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
 
 def _supply_chain_properties(item: dict) -> list:
     """
-    Expose module 2's findings as CycloneDX component properties.
+    Expose repository_checker's findings as CycloneDX component properties.
 
     scanner.py collects supply-chain trust under --supply-chain, but without
     this the data never reached the SBOM - the document recorded the verdict

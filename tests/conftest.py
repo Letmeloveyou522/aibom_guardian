@@ -1,19 +1,19 @@
 """
 Shared pytest configuration.
 
-The modules under test live at the repository root, one directory up from
-here. `pythonpath = ["."]` in pyproject.toml normally handles that, but this
-also covers running pytest from inside tests/, or with an older pytest that
-does not support the pythonpath option.
+The package under test lives in src/aibom_guard, so it is not importable from
+the repository root. `pythonpath = ["src"]` in pyproject.toml normally handles
+that, but this also covers running pytest from inside tests/, or with an older
+pytest that does not support the pythonpath option.
 """
 
 import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC = Path(__file__).resolve().parent.parent / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 # license_checker downloads the SPDX and Blue Oak lists on first use and
 # caches them. Point that cache at a trimmed fixture pair so the suite never

@@ -1,11 +1,9 @@
 """
 test_recommendation.py
 -----------------------------------
-Unit tests for module 3 (recommendation.py).
+Unit tests for recommendation.py.
 
-    python3 -m pytest test_recommendation.py -q
-
-The module 3 demo CLI lives at `examples/demo_module3.py` (no assertions).
+The demo CLI lives at `examples/demo_recommendation.py` (no assertions).
 These are the actual unit tests. No network: every detector is driven with
 a hand-built PyPIPackageInfo.
 """
@@ -14,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from recommendation import (
+from aibom_guard.recommendation import (
     PyPIPackageInfo,
     RecommendationEngine,
     detect_deprecated,
@@ -58,7 +56,7 @@ def test_existing_package_is_not_a_hallucination():
 
 def test_pypi_network_error_is_unverified_not_confirmed_hallucination():
     """
-    P0-4: a transient PyPI failure must carry verified=False so score_engine
+    A transient PyPI failure must carry verified=False so score_engine
     excludes it from Trust Score deductions.
     """
     broken = PyPIPackageInfo(
@@ -237,7 +235,7 @@ def test_explanation_prompt_includes_supply_chain_and_fix():
     Explaining the CVE while ignoring that the package ships unsigned from
     an unmaintained repository tells the developer only half the story.
     """
-    from ai_explainer import build_prompt
+    from aibom_guard.ai_explainer import build_prompt
 
     prompt = build_prompt([{
         "package": "requests", "version": "2.28.0", "verdict": "WARNING",

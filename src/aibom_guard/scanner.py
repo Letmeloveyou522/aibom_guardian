@@ -5,20 +5,22 @@ AIBOM-Guard - main CLI.
 
 Takes a requirements.txt file and, for each pinned package:
 
-  1) classifies the license                  license_checker.py
-  2) queries OSV for known vulnerabilities   osv_client.py        (3)
+  1) classifies the license                  license_checker
+  2) queries OSV for known vulnerabilities   osv_client
   3) detects typosquatting / hallucinated /
-     deprecated packages and suggests fixes  recommendation.py    (3)
-  4) optionally checks supply-chain trust    repository_checker.py (2)
-  5) scores everything into one verdict      score_engine.py      (4)
-  6) writes scan_report.json + CycloneDX sbom.json                (5)
-  7) optionally explains the result locally  ai_explainer.py
+     deprecated packages and suggests fixes  recommendation
+  4) optionally checks supply-chain trust    repository_checker
+  5) scores everything into one verdict      score_engine
+  6) writes scan_report.json + CycloneDX sbom.json
+  7) optionally explains the result locally  ai_explainer
 
 Usage:
-    python3 scanner.py examples/sample-requirements.txt
-    python3 scanner.py reqs.txt --supply-chain      # add module 2 checks
-    python3 scanner.py reqs.txt --offline           # no PyPI/OSV lookups
-    python3 scanner.py reqs.txt --no-explain --json out.json
+    aibom-guard examples/sample-requirements.txt
+    aibom-guard reqs.txt --supply-chain      # add supply-chain checks
+    aibom-guard reqs.txt --offline           # no PyPI/OSV lookups
+    aibom-guard reqs.txt --no-explain --json out.json
+
+``python -m aibom_guard`` is equivalent to the console script.
 
 Exit codes (so this can gate CI):
     0  every package is ALLOW and every requirement line was scanned
@@ -29,16 +31,21 @@ Exit codes (so this can gate CI):
 
 import argparse
 import json
+import logging
 import re
 import sys
 from typing import NamedTuple
 from importlib.metadata import version as installed_version, PackageNotFoundError, metadata
 
-from osv_client import query_vulnerabilities
-from license_checker import classify_license_detailed, set_offline
-from sbom_generator import build_final_sbom
-from ai_explainer import explain_results
-from score_engine import calculate_trust_score
+from . import __version__
+from ._adapters import _build_check_result, _vulns_to_issues
+from .osv_client import query_vulnerabilities
+from .license_checker import classify_license_detailed, set_offline
+from .sbom_generator import build_final_sbom
+from .ai_explainer import explain_results
+from .score_engine import calculate_trust_score
+
+logger = logging.getLogger(__name__)
 
 try:
     from prettytable import PrettyTable
@@ -50,19 +57,19 @@ except ImportError:
 # missing transitive dependency, degrades to the core scan instead of
 # preventing the CLI from starting at all.
 try:
-    from recommendation import RecommendationEngine
+    from .recommendation import RecommendationEngine
     HAS_RECOMMENDATION = True
 except ImportError:
     HAS_RECOMMENDATION = False
 
 try:
-    from repository_checker import check_repository
+    from .repository_checker import check_repository
     HAS_REPOSITORY_CHECKER = True
 except ImportError:
     HAS_REPOSITORY_CHECKER = False
 
 try:
-    from model_checker import check_model
+    from .model_checker import check_model
     HAS_MODEL_CHECKER = True
 except ImportError:
     HAS_MODEL_CHECKER = False
@@ -499,34 +506,6 @@ def resolve_license(package_name: str, version: str = None,
     }
 
 
-def _vulns_to_issues(vulns: list) -> list:
-    """
-    OSV 취약점 목록을 score_engine이 기대하는 issues 형식으로 변환.
-
-    cvss_score is carried through deliberately: score_engine falls back to
-    the CVSS base score when a severity label is missing, and dropping the
-    field here would disable that path.
-    """
-    issues = []
-    for v in vulns:
-        sev = str(v.get("severity", "unknown")).lower()
-        if sev not in ("critical", "high", "medium", "low"):
-            sev = "unknown"
-        issue = {
-            "type": "cve",
-            "id": v.get("id"),
-            "severity": sev,
-            "summary": v.get("summary") or v.get("detail"),
-            "detail": v.get("detail") or v.get("summary"),
-        }
-        if v.get("cvss_score") is not None:
-            issue["cvss_score"] = v["cvss_score"]
-        if v.get("aliases"):
-            issue["aliases"] = v["aliases"]
-        issues.append(issue)
-    return issues
-
-
 OSV_UNVERIFIED_ISSUE = {
     "type": "unverified",
     "severity": "unknown",
@@ -547,29 +526,6 @@ LICENSE_UNVERIFIED_ISSUE = {
 }
 
 
-def _build_check_result(
-    license_status: str,
-    issues: list | None,
-    repository_info: dict | None = None,
-    model_info: dict | None = None,
-) -> dict:
-    """
-    score_engine.calculate_trust_score() 입력 스키마에 맞게 조립.
-
-    `issues` is the merged list from every producer - OSV plus whatever
-    module 3 found - already in the team Data Protocol shape. Module 2's
-    full result goes into `repository_info`; score_engine reads its
-    trust_score and folds in its issues.
-    """
-    return {
-        "type": "library",
-        "license_status": license_status,
-        "issues": issues,
-        "model_info": model_info,
-        "repository_info": repository_info,
-    }
-
-
 def analyze_package_risks(
     engine,
     name: str,
@@ -577,7 +533,7 @@ def analyze_package_risks(
     vulns: list | None,
 ) -> tuple[list | None, list]:
     """
-    Run module 3 over one package and return (issues, alternatives).
+    Run recommendation over one package and return (issues, alternatives).
 
     RecommendationEngine.analyze_package() merges the OSV findings we hand
     it into its own issue list, so its return value is the complete set -
@@ -623,7 +579,7 @@ def _vuln_count_label(vulns: list | None) -> str:
 
 def scan_model(model_ref: str, max_pickle_size_mb: int = 0) -> dict | None:
     """
-    Run module 1 over one Hugging Face model and score it.
+    Run model_checker over one Hugging Face model and score it.
 
     Returns the model_checker report with the AIBOM-Guard verdict folded in,
     or None when the model could not be read at all.
@@ -632,14 +588,17 @@ def scan_model(model_ref: str, max_pickle_size_mb: int = 0) -> dict | None:
     to scan pickle contents is opt-in because a single model can be tens of
     gigabytes; --model-pickle-scan raises it.
     """
+    # Logged, not printed: mcp_server.check_model calls this, and stdout is
+    # the JSON-RPC channel there. _configure_cli_logging shows it on the CLI.
     if not HAS_MODEL_CHECKER:
-        print("  [WARNING] model_checker.py unavailable - model scan skipped.")
+        logger.warning("model_checker unavailable - model scan skipped for %s",
+                       model_ref)
         return None
 
     try:
         report = check_model(model_ref, max_pickle_size_mb=max_pickle_size_mb)
     except Exception as exc:  # noqa: BLE001 - a bad model must not end the run
-        print(f"  [ERROR] could not read model '{model_ref}': {exc}")
+        logger.error("could not read model '%s': %s", model_ref, exc)
         return None
 
     # Grade the declared license. This is the whole point of an AIBOM:
@@ -675,7 +634,7 @@ def scan_model(model_ref: str, max_pickle_size_mb: int = 0) -> dict | None:
 
 def _model_issues(report: dict) -> list:
     """
-    Translate model_checker's findings into team Data Protocol issues.
+    Translate model_checker's findings into score_engine's issue categories.
 
     model_checker grades its own findings as HIGH/MEDIUM/LOW with its own
     issue types; score_engine works in the seven protocol categories. The
@@ -713,7 +672,7 @@ def _model_issues(report: dict) -> list:
 
 def check_supply_chain(name: str, version: str) -> dict | None:
     """
-    Run module 2 over one package. Returns None when it could not run.
+    Run repository_checker over one package. None when it could not run.
 
     Kept behind --supply-chain because it costs several network round trips
     per package (PyPI, GitHub, OpenSSF) and needs GITHUB_TOKEN to avoid
@@ -743,7 +702,7 @@ def run_scan(
     Scan every pinned package in `requirements_path`.
 
     Args:
-        supply_chain: also run module 2 per package (slow; needs network
+        supply_chain: also run repository_checker per package (slow; needs
             and ideally GITHUB_TOKEN).
         offline: skip every network lookup - OSV, PyPI and supply chain.
             The license check still runs against installed metadata.
@@ -888,7 +847,7 @@ def run_scan(
 
         report.append(entry)
 
-    # -- AI models (module 1) ------------------------------------------------
+    # -- AI models ------------------------------------------------------
     model_reports = []
     for model_ref in (models or []):
         if offline:
@@ -1052,7 +1011,7 @@ def print_report(report: list[dict], verbose: bool = False):
 
             # Non-CVE findings first: a typosquat or a hallucinated package is
             # a different kind of problem from a known vulnerability, and it
-            # is what module 3 exists to surface.
+            # is what recommendation exists to surface.
             for issue in item.get("issues") or []:
                 if issue.get("type") == "cve":
                     continue
@@ -1157,15 +1116,18 @@ class _Parser(argparse.ArgumentParser):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(
-        prog="scanner",
+        prog="aibom-guard",
         description="Scan a requirements.txt for vulnerability, license and "
                     "supply-chain risk, and emit a CycloneDX SBOM.",
     )
+    # Same __version__ pyproject packages, so it cannot disagree with the wheel.
+    parser.add_argument("--version", action="version",
+                        version=f"%(prog)s {__version__}")
     parser.add_argument("requirements", help="path to a requirements.txt")
     parser.add_argument("--supply-chain", action="store_true",
-                        help="also run repository/supply-chain trust checks "
-                             "(module 2). Slow: several network calls per "
-                             "package; set GITHUB_TOKEN to avoid rate limits.")
+                        help="also run repository/supply-chain trust checks. "
+                             "Slow: several network calls per package; set "
+                             "GITHUB_TOKEN to avoid rate limits.")
     parser.add_argument("--offline", action="store_true",
                         help="skip all network lookups (OSV, PyPI, GitHub)")
     parser.add_argument("--no-explain", action="store_true",
@@ -1228,8 +1190,24 @@ def decide_exit_code(report: list, unscanned: list, fail_on: str = "warning") ->
     return EXIT_CLEAN
 
 
+def _configure_cli_logging(verbose: bool) -> None:
+    """
+    Route library warnings to stderr for CLI runs.
+
+    The scanning modules log rather than print, because mcp_server imports the
+    same functions and stdout is the JSON-RPC channel there. Without a handler
+    the CLI would show nothing; stderr keeps the report on stdout pipeable.
+    """
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.WARNING,
+        format="  [%(levelname)s] %(message)s",
+        stream=sys.stderr,
+    )
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    _configure_cli_logging(args.verbose)
 
     try:
         report = run_scan(

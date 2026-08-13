@@ -14,20 +14,20 @@ an AI Bill of Materials needs:
   6) Model card presence + required fields
 
 Usage:
-    python3 model_checker.py https://huggingface.co/facebook/bart-base
-    python3 model_checker.py facebook/bart-base --max-pickle-size-mb 0
-    python3 model_checker.py org/model --revision v1.0 --json out.json
+    python -m aibom_guard.model_checker https://huggingface.co/facebook/bart-base
+    python -m aibom_guard.model_checker facebook/bart-base --max-pickle-size-mb 0
+    python -m aibom_guard.model_checker org/model --revision v1.0 --json out.json
 
 Exit codes (so this can gate a CI pipeline):
     0  collected, no blocking issue
     1  collection failed (bad URL / not found / no access / no network)
     2  collected, but a HIGH severity issue was found
 
-Requires: huggingface_hub, picklescan, PyYAML   (see requirements-aibom.txt)
+Requires huggingface_hub and picklescan (see requirements.txt).
 
-CLI vs MCP: standalone CLI and ``scanner.py --model`` / MCP ``check_model``
-all use this collector. Scoring fields (verdict, license_status) are added
-by ``scanner.scan_model`` for the shared ``scan_report.json`` models[] shape.
+This collector is shared by the standalone CLI, ``aibom-guard --model`` and
+MCP ``check_model``. Scoring fields (verdict, license_status) are added later
+by ``scanner.scan_model``.
 """
 
 import argparse

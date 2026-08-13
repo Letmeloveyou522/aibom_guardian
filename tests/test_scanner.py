@@ -3,18 +3,17 @@ test_scanner.py
 -----------------------------------
 Unit tests for the scanner pipeline wiring.
 
-    python3 -m pytest test_scanner.py -q
-
 scanner.py had no tests at all, which is why modules 2 and 3 could sit
 unwired for as long as they did - nothing asserted that their output reaches
 score_engine. Every network call is stubbed, so this runs offline.
 """
 
 import json
+import logging
 
 import pytest
 
-import scanner
+from aibom_guard import scanner
 
 
 # ---------------------------------------------------------------------------
@@ -197,12 +196,12 @@ def test_vulns_to_issues_preserves_aliases():
 
 
 # ---------------------------------------------------------------------------
-# Module 3 wiring
+# recommendation wiring
 # ---------------------------------------------------------------------------
 
 def test_recommendation_issues_reach_the_report(reqs, no_side_effects, monkeypatch):
     """
-    The whole point of the wiring: a typosquat found by module 3 has to end
+    The whole point of the wiring: a typosquat found by recommendation has to
     up in the report and in the score, not just in examples/demo_module3.py.
     """
     monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
@@ -253,7 +252,7 @@ def test_recommendation_failure_degrades_to_cve_only(reqs, no_side_effects,
 
 def test_missing_recommendation_module_warns(reqs, no_side_effects, monkeypatch,
                                              capsys):
-    """Absent module 3 must be announced, not silently skipped."""
+    """An absent recommendation module must be announced, not silently skipped."""
     monkeypatch.setattr(scanner, "HAS_RECOMMENDATION", False)
     monkeypatch.setattr(scanner, "query_vulnerabilities", lambda n, v: [])
 
@@ -264,7 +263,7 @@ def test_missing_recommendation_module_warns(reqs, no_side_effects, monkeypatch,
 
 
 # ---------------------------------------------------------------------------
-# Module 2 wiring
+# repository_checker wiring
 # ---------------------------------------------------------------------------
 
 def test_supply_chain_is_off_by_default(reqs, no_side_effects, monkeypatch):
@@ -297,7 +296,7 @@ def test_supply_chain_result_reaches_score_engine(reqs, no_side_effects,
     # A low repository trust must pull the package score down...
     assert report[0]["score_breakdown"]["_summary"]["repository_trust"] == 20
     assert report[0]["trust_score"] < 100
-    # ...and module 2's issue must be categorised, not dumped in unrecognised.
+    # ...and its issue must be categorised, not dumped in unrecognised.
     assert report[0]["score_breakdown"]["provenance"]["issues"] == 1
     assert "unrecognised" not in report[0]["score_breakdown"]
 
@@ -395,7 +394,7 @@ def test_cli_exit_code_1_on_missing_file(no_side_effects):
 
 
 # ---------------------------------------------------------------------------
-# Module 1 wiring - AI models in the AIBOM
+# model_checker wiring - AI models in the AIBOM
 # ---------------------------------------------------------------------------
 
 MODEL_REPORT = {
@@ -471,19 +470,28 @@ def test_remote_code_maps_to_provenance_not_malicious(monkeypatch):
     assert result["hard_block"] is False
 
 
-def test_model_scan_failure_returns_none(monkeypatch, capsys):
+# These two assert on the log rather than on stdout. mcp_server.check_model
+# calls scan_model, and on stdio MCP stdout carries the JSON-RPC stream, so a
+# print here corrupts the protocol - see tests/test_mcp_stdout_is_clean.py.
+# The requirement is unchanged: the failure still has to be announced.
+
+
+def test_model_scan_failure_is_reported(monkeypatch, caplog):
     def boom(*a, **k):
         raise RuntimeError("404 not found")
 
     monkeypatch.setattr(scanner, "check_model", boom)
-    assert scanner.scan_model("org/missing") is None
-    assert "could not read model" in capsys.readouterr().out
+    with caplog.at_level(logging.ERROR, logger="aibom_guard.scanner"):
+        assert scanner.scan_model("org/missing") is None
+    assert "could not read model" in caplog.text
+    assert "404 not found" in caplog.text
 
 
-def test_missing_model_checker_is_announced(monkeypatch, capsys):
+def test_missing_model_checker_is_announced(monkeypatch, caplog):
     monkeypatch.setattr(scanner, "HAS_MODEL_CHECKER", False)
-    assert scanner.scan_model("org/model") is None
-    assert "unavailable" in capsys.readouterr().out
+    with caplog.at_level(logging.WARNING, logger="aibom_guard.scanner"):
+        assert scanner.scan_model("org/model") is None
+    assert "unavailable" in caplog.text
 
 
 def test_models_reach_the_sbom_writer(reqs, no_side_effects, monkeypatch):

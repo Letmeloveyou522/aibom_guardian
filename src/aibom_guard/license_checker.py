@@ -12,71 +12,56 @@ Identifies a package or model license and says what using it obliges you to do.
 - BLOCKED: carries a use restriction, so it is not open source
 - UNKNOWN: could not be identified - not the same as safe
 
-Where the verdicts come from
-----------------------------
-Licenses are *identified* against two published registries rather than guessed
-at with keywords, and the answer cites which one decided:
+Identified against two registries, never guessed from keywords. The result
+cites which one decided. Both are downloaded on first use and cached
+(`_cache_dir`).
 
-  SPDX License List              727 identifiers, each with an
-                                 `isOsiApproved` flag
-  Blue Oak Council License List  225 licenses graded for how permissive
-                                 they are
+  SPDX License List              727 ids, each with an `isOsiApproved` flag
+  Blue Oak Council License List  225 licenses graded for permissiveness
 
-Both are downloaded on first use and cached; see `_cache_dir`.
+Neither alone works. `isOsiApproved` records whether someone filed with OSI,
+not how restrictive a license is: CC0-1.0, BSD-Source-Code and MIT-Festival
+are all `false` and all permissive. Blue Oak grades permissiveness directly
+and covers 161 SPDX ids OSI never approved - the set the flag gets wrong.
 
-Neither registry alone is enough, and the reason matters:
+A license in SPDX that neither OSI approved nor Blue Oak rated is REVIEW, not
+BLOCKED. BLOCKED needs a documented use restriction, and that list is short
+because no registry answers these:
 
-  * `isOsiApproved` records whether anyone submitted the license to OSI and
-    OSI approved it. It is a procedural fact, not a measure of how
-    restrictive the license is. CC0-1.0, BSD-Source-Code and MIT-Festival are
-    all `isOsiApproved: false` and all perfectly permissive - nobody filed.
-    Blocking on this flag alone over-blocks badly.
-  * Blue Oak grades permissiveness directly and covers 161 SPDX ids that OSI
-    never approved, which is exactly the set the OSI flag gets wrong.
+  * Commons Clause is in neither the SPDX list nor its 84 exceptions, and it
+    rides on a real license ("Apache-2.0 WITH Commons Clause"), so reading the
+    left side alone grades it ALLOWED.
+  * OpenRAIL, Llama, Gemma and Qwen have no SPDX id at all - and they are the
+    licenses an AIBOM tool exists to grade.
 
-So a license found in either registry is graded from that data. What is left
-over - a license in SPDX that neither OSI approved nor Blue Oak rated - is
-REVIEW, not BLOCKED: absence of evidence is not evidence of a restriction.
+Input shapes
+------------
+`importlib.metadata` does not return tidy SPDX ids:
 
-BLOCKED is reserved for a documented use restriction. That list is deliberately
-short and every entry names the restriction it carries, because no registry
-will answer these:
-
-  * Commons Clause is in neither the SPDX license list nor its 84 exceptions.
-    It rides on top of a real open-source license ("Apache-2.0 WITH Commons
-    Clause"), so reading only the left-hand side grades it ALLOWED.
-  * Open-weight model licenses - OpenRAIL, Llama, Gemma, Qwen - have no SPDX
-    identifier at all, and they are the licenses an AIBOM tool exists to
-    grade.
-
-Why the input needs more than a lookup
---------------------------------------
-`importlib.metadata` does not hand back a tidy SPDX id. It returns:
-
-  "MIT"                                     a short identifier
+  "MIT"                                     an identifier
   "License :: OSI Approved :: MIT License"  a PyPI trove classifier
   "MIT AND (GPL-3.0 OR BSD-3-Clause)"       an SPDX expression
-  "Copyright (c) 2005-2024, NumPy ..."      the entire license text, 47 KB of
-                                            it, including every bundled
-                                            third-party license
+  "Copyright (c) 2005-2024, NumPy ..."      47 KB of full licence text
 
-Each shape is handled on its own path. Two failures this design pins:
+Each shape has its own path. Two regressions this pins:
 
-  * numpy (BSD-3-Clause) graded BLOCKED, because its 47,527-character License
-    field contains "including" (a bare "nc" substring), the word "proprietary"
-    inside a sentence *permitting* linking with proprietary programs, and
-    "noncommercial" from a bundled license that does not govern numpy.
-  * "GNU General Public License v3 (GPLv3)" - the string PyPI actually serves
-    - graded UNKNOWN, so copyleft slipped through ungraded.
+  * numpy (BSD-3-Clause) graded BLOCKED - its 47,527-character License field
+    contains "including" (a bare "nc"), "proprietary" inside a sentence that
+    *permits* proprietary linking, and "noncommercial" from a bundled licence
+    that does not govern numpy.
+  * "GNU General Public License v3 (GPLv3)", the string PyPI actually serves,
+    graded UNKNOWN - copyleft slipping through ungraded.
 """
 
 import json
+import logging
 import os
 import re
-import sys
 import time
 from functools import lru_cache
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["classify_license", "classify_license_detailed", "normalize_to_spdx",
            "registry_versions", "set_offline",
@@ -220,11 +205,13 @@ def _registry() -> dict:
     blueoak, blueoak_source = _fetch_registry("blueoak-list.json", _BLUEOAK_URL)
 
     if spdx is None:
-        print("[WARNING] SPDX license list unavailable "
-              f"({'offline' if _OFFLINE else 'download failed'}); licenses "
-              "will be graded from built-in rules only and most will come "
-              "back UNKNOWN. Run once with network access to populate "
-              f"{_cache_dir()}.", file=sys.stderr)
+        logger.warning(
+            "SPDX license list unavailable (%s); licenses will be graded from "
+            "built-in rules only and most will come back UNKNOWN. Run once "
+            "with network access to populate %s.",
+            "offline" if _OFFLINE else "download failed",
+            _cache_dir(),
+        )
         spdx = {"licenses": []}
     if blueoak is None:
         blueoak = {"ratings": []}

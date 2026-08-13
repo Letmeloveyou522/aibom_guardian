@@ -3,25 +3,20 @@ test_model_checker.py
 -----------------------------------
 Unit tests for model_checker.py.
 
-Runs entirely offline - the Hugging Face Hub is replaced by fakes, so the
-suite is deterministic and finishes in under a second.
+Runs offline - the Hugging Face Hub is replaced by fakes.
 
-    python3 -m pytest test_model_checker.py -q
-
-The "malicious" pickle fixture is built with pickle.dumps() on an object
-whose __reduce__ names builtins.eval. Constructing the payload executes
-nothing, and nothing here ever unpickles it - this is the standard way to
-verify that a pickle scanner detects what it is supposed to detect.
+The "malicious" pickle fixture is pickle.dumps() on an object whose
+__reduce__ names builtins.eval. Building the payload executes nothing and
+nothing here unpickles it; this is how you test a pickle scanner.
 """
 
-import json
 import os
 import pickle
 import tempfile
 
 import pytest
 
-import model_checker as mc
+from aibom_guard import model_checker as mc
 
 
 # ---------------------------------------------------------------------------
@@ -801,7 +796,7 @@ def test_report_lists_every_file_in_the_repository():
 
 
 # ---------------------------------------------------------------------------
-# Exception visibility (P2-13)
+# Exception visibility
 # ---------------------------------------------------------------------------
 
 def test_card_dict_logs_when_to_dict_raises(caplog):
@@ -811,7 +806,7 @@ def test_card_dict_logs_when_to_dict_raises(caplog):
             raise RuntimeError("hub shape changed")
 
     info = FakeInfo(card_data=BrokenCard())
-    with caplog.at_level("DEBUG", logger="model_checker"):
+    with caplog.at_level("DEBUG", logger="aibom_guard.model_checker"):
         result = mc._card_dict(info)
     assert isinstance(result, dict)
     assert any("to_dict" in r.message for r in caplog.records)
@@ -826,7 +821,7 @@ def test_safety_label_logs_when_enum_import_path_fails(caplog, monkeypatch):
             raise RuntimeError("enum broken")
 
     monkeypatch.setattr(ps, "SafetyLevel", Boom(), raising=False)
-    with caplog.at_level("DEBUG", logger="model_checker"):
+    with caplog.at_level("DEBUG", logger="aibom_guard.model_checker"):
         label = mc._safety_label("SafetyLevel.DANGEROUS")
     assert label in ("dangerous", "suspicious", "innocuous")
     assert any("SafetyLevel" in r.message for r in caplog.records)

@@ -1,28 +1,28 @@
 """
 score_engine.py
 -----------------------------------
-Module 4 - Trust Score and final verdict.
+Trust Score and final verdict - the only place either is decided.
 
-    (1) model_checker ──┐
-    (2) repository_checker ┼──> (4) score_engine ──> (5) AIBOM / MCP
-    (3) recommendation ──┘        (Trust Score)       (sbom / scanner)
+    model_checker ──────┐
+    repository_checker ─┼──> score_engine ──> sbom_generator / scanner
+    recommendation ─────┘     (Trust Score)    mcp_server
 
-Every other module *collects evidence*; this module is the only place that
-turns evidence into a number and a verdict. Modules 1-3 deliberately do not
-score (see the module 3 README: "점수/최종 판정은 하지 않음 - ④ score_engine 전담").
+The other modules collect evidence and do not score. That is what makes the
+CLI and the MCP server return the same verdict for the same package.
 
 Public API
 ----------
     calculate_trust_score(check_result: dict) -> dict
 
-Input (assembled by scanner._build_check_result / mcp_server._build_check_result):
+Input (assembled by _adapters._build_check_result, which both the CLI and the
+MCP server go through):
 
     {
         "type": "library" | "model" | "repository",
         "license_status": "ALLOWED" | "REVIEW" | "BLOCKED" | "UNKNOWN" | ...,
         "issues": [ {"type": ..., "severity": ..., "id": ..., "summary": ...}, ... ],
-        "model_info": dict | None,        # module 1 output
-        "repository_info": dict | None,   # module 2 output
+        "model_info": dict | None,        # model_checker output
+        "repository_info": dict | None,   # repository_checker output
     }
 
 Output (consumed by scanner.run_scan and mcp_server.check_package):
@@ -36,54 +36,24 @@ Output (consumed by scanner.run_scan and mcp_server.check_package):
         "confidence": float,              # 0.0-1.0, how much evidence we had
     }
 
-Where the numbers come from
----------------------------
-The weights and thresholds here are not invented in isolation - they follow
-what the team already agreed on elsewhere in the codebase:
+Rules that are not obvious from the arithmetic
+---------------------------------------------
+* The seven ``issues[].type`` values are a contract with every producer:
+  cve, hallucination, typosquatting, malicious, pii, license, provenance.
+* Thresholds (>=80 ALLOW, <50 BLOCK, critical -> BLOCK) match
+  ``repository_checker.calculate_trust_score()`` so both scores share a scale.
+  repository_checker keeps CONDITIONAL internally; scanner normalises it.
+* Weights say how bad a finding is, not how likely it is. ``malicious`` is
+  filled only by picklescan on model weights, and ``pii`` has no producer at
+  all yet - its weight is a reserved slot.
+* ``verified: False`` issues do not deduct, only lower confidence. A PyPI
+  outage must not score like a confirmed hallucinated package.
+* When ``repository_info.trust_score`` is blended in, its issues are not
+  deducted again on top; they still show in the breakdown and still affect
+  confidence, hard blocks and the ALLOW gate.
 
-  * The seven categories are exactly the seven `issues[].type` values in the
-    team Data Protocol (module 3 README): cve, hallucination, typosquatting,
-    malicious, pii, license, provenance. The original scanner.py comment
-    ("refine this using the 7-category weighted scoring") refers to these.
-  * The verdict thresholds (>=80 ALLOW, <50 BLOCK, critical -> BLOCK) and the
-    confidence gate are taken from repository_checker.calculate_trust_score()
-    so that a package score and a repository score mean the same thing.
-  * The verdict vocabulary is ALLOW / WARNING / BLOCK, which is what
-    mcp_server.check_package and the recommendation.py module docstring both
-    document as this engine's output. repository_checker keeps CONDITIONAL
-    for its own module-2 verdict; scanner normalises it when reporting.
-
-Producer coverage (P2-14)
--------------------------
-Weights reflect *severity when a finding fires*, not how often a detector
-exists today. Two categories need explicit honesty:
-
-  * ``malicious`` — filled by model picklescan (module 1). There is no PyPI
-    package malware scanner yet; a confirmed hit also hard-blocks. Weight
-    stays high so a model finding cannot be diluted by other categories.
-  * ``pii`` — reserved protocol slot. No module currently emits ``type=pii``;
-    the weight is a placeholder so a future producer plugs in without a
-    schema change. Until then it never moves the score in practice.
-
-Verified vs unverified findings (P0-4)
---------------------------------------
-An issue with ``verified: False`` (e.g. PyPI network failure reported as
-hallucination by recommendation.detect_hallucination) is **not** deducted.
-It still lowers confidence so a transient outage cannot look like a clean
-ALLOW, and cannot masquerade as a confirmed hallucinated dependency.
-
-Double counting with module 2
------------------------------
-When ``repository_info.trust_score`` is blended into the final number,
-``repository_info.issues`` are **not** category-deducted again — those
-findings are already baked into module 2's score. They still appear in
-``breakdown[category].issues`` (visibility for callers like scanner) and
-still affect confidence / hard-block / ALLOW gates. Without a usable
-``trust_score``, repository issues deduct normally.
-
-Any tuning should be done in CATEGORY_WEIGHTS / SEVERITY_FACTORS below rather
-than scattered through the logic, and test_score_engine.py pins the current
-behaviour so a change is visible in review.
+Tune CATEGORY_WEIGHTS / SEVERITY_FACTORS below, not the logic.
+test_score_engine.py pins the current numbers.
 """
 
 from __future__ import annotations
@@ -104,32 +74,20 @@ __all__ = [
 # Tuning surface - everything adjustable lives here
 # ---------------------------------------------------------------------------
 
-# The seven categories of the team Data Protocol, and how many points each may
-# subtract from a perfect 100. Ordered worst-first; the weights sum to 100 so a
-# single maximally bad finding in every category lands exactly at 0.
-#
-# Rebalance notes (P2-14): bumped typosquatting / hallucination / provenance
-# (package-path detectors that actually fire) slightly; trimmed pii (no
-# producer yet) and malicious display weight (hard-block dominates; producer
-# is model-path only). Ranking malicious > cve > license > typosquat > pii
-# is preserved.
+# Points each category may subtract from a perfect 100. Worst first; they sum
+# to 100, so one maximally bad finding in every category lands exactly at 0.
 CATEGORY_WEIGHTS: dict[str, int] = {
-    # Producer: model_checker picklescan. No PyPI package malware detector yet.
-    # Confirmed hits also hard-block regardless of this weight.
-    "malicious": 28,
-    "cve": 25,              # known, published vulnerabilities (OSV)
-    "license": 15,          # legal blocker (competition Article 8)
-    "typosquatting": 12,    # name-confusion; recommendation.detect_typosquatting
-    "hallucination": 10,    # confirmed non-existent package (verified: True only)
+    "malicious": 28,        # model_checker picklescan only; also hard-blocks
+    "cve": 25,              # published vulnerabilities (OSV)
+    "license": 15,          # legal blocker
+    "typosquatting": 12,    # recommendation.detect_typosquatting
+    "hallucination": 10,    # non-existent package, verified: True only
     "provenance": 8,        # origin / yank / stale; repository findings
-    # Reserved — no module emits type=pii today. Keep a non-zero slot so a
-    # future producer does not need a protocol change.
-    "pii": 2,
+    "pii": 2,               # reserved: no producer yet
 }
 
-# How much of a category's weight one issue consumes, by severity.
-# "unknown" sits between medium and high on purpose: an unrated finding must
-# not be treated as harmless, which is how unscored issues quietly disappear.
+# How much of a category's weight one issue consumes. "unknown" sits above
+# "medium" deliberately - an unrated finding must not be treated as harmless.
 SEVERITY_FACTORS: dict[str, float] = {
     "critical": 1.0,
     "high": 0.7,
@@ -138,18 +96,10 @@ SEVERITY_FACTORS: dict[str, float] = {
     "low": 0.2,
 }
 
-# Issue types that producers emit outside the seven-type Data Protocol,
-# mapped onto the category they belong to.
-#
-# repository_checker (module 2) reports "repository", "signature" and
-# "dataset". All three are statements about where an artifact came from and
-# whether it can be verified, which is what `provenance` covers. Without this
-# mapping they land in `unrecognised` and every supply-chain finding is worth
-# the same flat 3 points regardless of what it says.
-#
-# Mapping here rather than editing module 2 keeps the change at the
-# integration point. The cleaner long-term fix is for module 2 to emit
-# protocol types directly.
+# repository_checker emits "repository", "signature" and "dataset" - all
+# statements about where an artifact came from, so they map to `provenance`.
+# Unmapped they fall into `unrecognised`, where every finding costs a flat 3
+# points regardless of what it says.
 CATEGORY_ALIASES: dict[str, str] = {
     "repository": "provenance",
     "signature": "provenance",
@@ -200,9 +150,9 @@ MIN_CONFIDENCE_FOR_BLOCK = 0.5
 # engine exists to prevent, so they are pooled here and reported by name.
 UNRECOGNISED_WEIGHT = 10
 
-# Weight given to module 2's repository trust when blending it with the
-# package/model score. A trustworthy artifact from an untrustworthy source is
-# not trustworthy, so the repository score pulls the final number.
+# Weight given to repository_checker's trust score when blending it with
+# the package/model score. A trustworthy artifact from an untrustworthy
+# source is not trustworthy, so the repository score pulls the final number.
 REPOSITORY_BLEND = 0.3
 
 
@@ -214,12 +164,12 @@ def _normalise_severity(raw: Any) -> str:
     """
     Map any severity representation onto the five known levels.
 
-    OSV returns raw CVSS vectors ("CVSS:3.1/AV:N/AC:L/..."), module 3 returns
-    lowercase words, and some sources return nothing at all. Comparing a CVSS
-    vector against "HIGH" never matches, which silently graded every finding
-    as harmless in the original scanner - so vectors are resolved through
-    cvss_score when the caller supplies one, and anything still unresolved
-    becomes "unknown" rather than being dropped.
+    OSV returns raw CVSS vectors ("CVSS:3.1/AV:N/AC:L/..."), recommendation
+    returns lowercase words, and some sources return nothing at all. Comparing
+    a CVSS vector against "HIGH" never matches, which silently graded every
+    finding as harmless in the original scanner - so vectors are resolved
+    through cvss_score when the caller supplies one, and anything still
+    unresolved becomes "unknown" rather than being dropped.
     """
     text = str(raw or "").strip().lower()
     if text in SEVERITY_FACTORS:
@@ -282,7 +232,7 @@ def _is_scoreable(issue: dict) -> bool:
 
 
 def _repository_trust_usable(repository_info: Optional[dict]) -> bool:
-    """True when module 2's trust_score can be blended into the final number."""
+    """True when repository_checker's trust_score can be blended in."""
     if not isinstance(repository_info, dict):
         return False
     try:
@@ -305,7 +255,7 @@ def _collect_issues(
     through exactly the same weighting as a CVE.
 
     When ``include_repository_issues`` is False (trust_score is being blended),
-    module 2's issues are omitted from *deduction* input; callers may still
+    repository_checker's issues are omitted from *deduction* input; callers may
     surface them separately for breakdown counts.
     """
     sources: list[Any] = [
@@ -335,7 +285,7 @@ def _surface_issue_counts(breakdown: dict, issues: list[dict]) -> list[str]:
     """
     Record issue counts in the breakdown without changing deductions.
 
-    Used when repository trust is blended: module 2 findings must remain
+    Used when repository trust is blended: repository_checker findings must stay
     visible (scanner asserts provenance.issues) but must not deduct again.
     """
     surfaced_unrecognised: list[str] = []
@@ -377,7 +327,8 @@ def _score_categories(issues: list[dict], license_status: str) -> tuple[dict, li
     is reported even when it scored nothing, so a reader can tell "checked and
     clean" apart from "never looked".
 
-    Issues with ``verified: False`` are skipped here (P0-4).
+    Issues with ``verified: False`` are skipped here - unverified is not
+    the same as confirmed, and only confirmed findings deduct.
     """
     load: dict[str, float] = {name: 0.0 for name in CATEGORY_WEIGHTS}
     counts: dict[str, int] = {name: 0 for name in CATEGORY_WEIGHTS}
@@ -462,7 +413,7 @@ def _hard_blocks(issues: list[dict], license_status: str,
         reasons.append(
             f"Critical severity {_issue_type(issue)} finding: {identifier}")
 
-    # Module 1 reports these as explicit flags rather than as issues.
+    # model_checker reports these as explicit flags rather than as issues.
     info = model_info or {}
     if info.get("is_malicious"):
         reasons.append("Model checker flagged the model as malicious.")
@@ -526,7 +477,7 @@ def _confidence(check_result: dict, issues: list[dict]) -> float:
 
 
 def _blend_repository_trust(score: float, repository_info: Optional[dict]) -> tuple[float, Optional[int]]:
-    """Pull the score toward module 2's repository trust, when available."""
+    """Pull the score toward repository_checker's trust score, when available."""
     if not isinstance(repository_info, dict):
         return score, None
     raw = repository_info.get("trust_score")
