@@ -36,7 +36,6 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from ._adapters import (
-    LICENSE_UNVERIFIED_ISSUE,
     _build_check_result,
     _vulns_to_issues,
     attach_license_unverified,
