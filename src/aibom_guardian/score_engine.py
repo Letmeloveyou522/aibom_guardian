@@ -492,10 +492,16 @@ def _blend_repository_trust(score: float, repository_info: Optional[dict]) -> tu
 def _decide_verdict(score: int, confidence: float, hard_block: bool,
                     issues: list[dict]) -> str:
     """
-    Turn the number into ALLOW / WARNING / BLOCK.
+    Turn the numeric score into ALLOW / WARNING / BLOCK.
 
-    Mirrors repository_checker.calculate_trust_score() so that a package
-    verdict and a repository verdict are directly comparable.
+    Mirrors ``repository_checker.calculate_trust_score()`` so package and
+    repository verdicts stay on the same scale (>=80 ALLOW, <50 BLOCK).
+
+    Confidence gates the extremes: below ``MIN_CONFIDENCE_FOR_BLOCK`` (0.5)
+    we refuse to BLOCK on arithmetic alone — an outage must not look like
+    malice. Above ``MIN_CONFIDENCE_FOR_ALLOW`` (0.7) with score >=80 and no
+    confirmed HIGH findings we ALLOW; anything else stays WARNING so partial
+    evidence never reads as a clean pass.
     """
     if hard_block:
         return "BLOCK"

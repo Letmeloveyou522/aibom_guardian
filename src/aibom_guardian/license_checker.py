@@ -613,7 +613,9 @@ def _grade_identifier(part: str) -> dict:
     Order is deliberate: a documented restriction outranks whatever else the
     string says, so "MIT, non-commercial use only" is BLOCKED, and
     "Apache-2.0 WITH Commons Clause" is graded on the rider rather than on the
-    Apache half.
+    Apache half. AI vendor licenses (OpenRAIL, Llama, Gemma) run before the
+    SPDX lookup because they have no SPDX id — skipping straight to the registry
+    would grade them UNKNOWN and let copyleft/restriction terms slip through.
     """
     text = _normalise(part)
     if not text or text in _NON_LICENSE_VALUES:

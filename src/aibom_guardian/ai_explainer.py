@@ -285,6 +285,13 @@ def _llm_response_is_valid(item: dict, text: str, forbidden_tokens: set[str]) ->
 
 
 def _call_ollama(prompt: str) -> str:
+    """
+    POST one prompt to the local Ollama HTTP API.
+
+    Uses a short ``num_predict`` cap because explanations are one or two
+    sentences per package; long generations from small models tend to invent
+    cross-package CVEs, which ``_llm_response_is_valid`` rejects anyway.
+    """
     payload = {
         "model": MODEL_NAME,
         "prompt": prompt,

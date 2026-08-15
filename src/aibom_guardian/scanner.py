@@ -23,9 +23,12 @@ Usage:
 ``python -m aibom_guardian`` is equivalent to the console script.
 
 Layout (P2 split):
-    ``_requirements.py``  — parse_requirements / transitive expand / Pinned
-    ``_cli_report.py``    — print_report / save_report / terminal tables
-    ``scanner.py``        — run_scan orchestration, license resolve, CLI main
+    ``_requirements.py``       — parse_requirements / transitive expand / Pinned
+    ``_cli_report.py``         — print_report / save_report / terminal tables
+    ``_scanner_license.py``    — resolve_license / PyPI release metadata
+    ``_scanner_collect.py``    — concurrent OSV + recommendation + supply chain
+    ``_scanner_models.py``     — scan_model / model issue translation
+    ``scanner.py``             — run_scan orchestration, CLI main
 
 Public names are still re-exported here so
 ``from aibom_guardian.scanner import parse_requirements, print_report`` keeps working.
@@ -40,7 +43,6 @@ Exit codes (so this can gate CI):
 import argparse
 import logging
 import sys
-import threading
 __all__ = [
     "HAS_PRETTYTABLE",
     "_MAX_VULNS_SHOWN",
@@ -60,9 +62,6 @@ __all__ = [
     "run_scan",
     "main",
 ]
-from concurrent.futures import ThreadPoolExecutor
-from importlib.metadata import version as installed_version, PackageNotFoundError, metadata
-
 from . import __version__
 from ._adapters import (
     LICENSE_UNVERIFIED_ISSUE,
@@ -104,8 +103,50 @@ from .sarif import write_sarif
 from .sbom_generator import build_final_sbom
 from .ai_explainer import explain_results
 from .score_engine import calculate_trust_score
+from ._scanner_license import (
+    resolve_license,
+    _installed_license,
+    _pypi_release_license,
+)
+from ._scanner_collect import (
+    DEFAULT_JOBS,
+    OSV_UNVERIFIED_ISSUE,
+    analyze_package_risks,
+    check_supply_chain,
+    _display_issues,
+    _gather,
+    _prefetch,
+)
+from ._scanner_models import scan_model
+
+# Extend __all__ with symbols tests and monkeypatches reach through scanner.*
+__all__ = __all__ + [
+    "resolve_license",
+    "_installed_license",
+    "_pypi_release_license",
+    "analyze_package_risks",
+    "check_supply_chain",
+    "check_repository",
+    "scan_model",
+    "check_model",
+    "HAS_MODEL_CHECKER",
+    "HAS_REPOSITORY_CHECKER",
+    "query_vulnerabilities",
+    "OSV_UNVERIFIED_ISSUE",
+    "DEFAULT_JOBS",
+    "_prefetch",
+    "_gather",
+    "_display_issues",
+]
 
 logger = logging.getLogger(__name__)
+
+try:
+    from .repository_checker import check_repository
+    HAS_REPOSITORY_CHECKER = True
+except ImportError:
+    check_repository = None  # type: ignore[misc, assignment]
+    HAS_REPOSITORY_CHECKER = False
 
 # Modules 2 and 3 are optional at import time so a partial checkout, or a
 # missing transitive dependency, degrades to the core scan instead of
@@ -117,15 +158,10 @@ except ImportError:
     HAS_RECOMMENDATION = False
 
 try:
-    from .repository_checker import check_repository
-    HAS_REPOSITORY_CHECKER = True
-except ImportError:
-    HAS_REPOSITORY_CHECKER = False
-
-try:
     from .model_checker import check_model
     HAS_MODEL_CHECKER = True
 except ImportError:
+    check_model = None  # type: ignore[misc, assignment]
     HAS_MODEL_CHECKER = False
 
 
@@ -147,414 +183,6 @@ class ScanReport(list):
 # Requirements parsing / transitive resolution live in _requirements.py.
 # Pinned, parse_requirements, expand_transitive, and the shared PyPI session
 # + _RELEASE_CACHE are imported above so ``scanner.Pinned`` etc. keep working.
-
-PYPI_RELEASE_URL = "https://pypi.org/pypi/{package}/{version}/json"
-
-
-def _license_candidates(fields: dict) -> list:
-    """
-    License strings a distribution offers, best-structured first.
-
-    PEP 639's `License-Expression` is authoritative when present. Below it the
-    order matters less than it looks, because `_best_candidate` re-ranks by
-    what actually resolves - a short free-text `License` beats a classifier
-    only when it names a real identifier.
-    """
-    candidates = []
-
-    expression = (fields.get("license_expression") or "").strip()
-    if expression and expression.upper() != "UNKNOWN":
-        candidates.append((expression, "license_expression"))
-
-    lic = (fields.get("license") or "").strip()
-    # A short, single-line License field is almost always an identifier
-    # (MIT, BSD-3-Clause, Apache-2.0), not the full text.
-    if lic and lic.upper() != "UNKNOWN" and len(lic) < 300 and lic.count("\n") <= 3:
-        candidates.append((lic, "license"))
-
-    for classifier in fields.get("classifiers") or []:
-        if classifier.startswith("License ::"):
-            candidates.append((classifier, "classifier"))
-
-    # The full text last: it is the least ambiguous evidence but the most
-    # expensive to read, and numpy ships 47 KB of it with third-party terms
-    # appended.
-    if lic and lic.upper() != "UNKNOWN" and (lic, "license") not in candidates:
-        candidates.append((lic, "license_text"))
-
-    return candidates
-
-
-def _best_candidate(candidates: list) -> tuple:
-    """
-    Pick the license string that identifies the license most precisely.
-
-    psycopg2 publishes `License: "LGPL with exceptions"` alongside the trove
-    classifier "GNU Library or Lesser General Public License (LGPL)". Taking
-    the first field in a fixed order throws away whichever one happens to be
-    the resolvable one, so each candidate is graded and the one that resolves
-    to an SPDX identifier wins.
-    """
-    graded = [(raw, field, classify_license_detailed(raw))
-              for raw, field in candidates]
-
-    for raw, field, detail in graded:
-        if detail["spdx_id"]:
-            return raw, field
-    for raw, field, detail in graded:
-        if detail["status"] != "UNKNOWN":
-            return raw, field
-    if graded:
-        raw, field, _ = graded[0]
-        return raw, field
-    return "", ""
-
-
-def _installed_license(package_name: str) -> tuple:
-    """Read the license of the copy installed in this environment."""
-    try:
-        meta = metadata(package_name)
-    except PackageNotFoundError:
-        return "NOT_INSTALLED", "", None
-
-    fields = {
-        "license_expression": meta.get("License-Expression") or "",
-        "license": meta.get("License") or "",
-        "classifiers": meta.get_all("Classifier") or [],
-    }
-    raw, field = _best_candidate(_license_candidates(fields))
-    try:
-        found_version = installed_version(package_name)
-    except PackageNotFoundError:
-        found_version = None
-    return (raw or "UNKNOWN"), field, found_version
-
-
-def _pypi_release_license(package_name: str, version: str) -> tuple:
-    """
-    Read the license PyPI records for one exact release.
-
-    Returns (raw, field, error). `error` is a string when the release could
-    not be read, so the caller can record *why* it fell back rather than
-    silently reporting the wrong version's terms.
-    """
-    key = (package_name.lower(), version)
-    if key in _RELEASE_CACHE:
-        return _RELEASE_CACHE[key]
-
-    try:
-        from urllib.parse import quote
-    except ImportError as exc:                      # pragma: no cover
-        return "", "", f"requests unavailable: {exc}"
-
-    url = PYPI_RELEASE_URL.format(package=quote(package_name, safe=""),
-                                  version=quote(version, safe=""))
-    try:
-        response = _pypi_session().get(url, timeout=PYPI_TIMEOUT_SEC)
-    except Exception as exc:                        # noqa: BLE001 - network
-        result = ("", "", f"network: {exc}")
-        _RELEASE_CACHE[key] = result
-        return result
-
-    if response.status_code == 404:
-        result = ("", "", f"release {package_name}=={version} not found on PyPI")
-        _RELEASE_CACHE[key] = result
-        return result
-    if response.status_code != 200:
-        result = ("", "", f"http {response.status_code}")
-        _RELEASE_CACHE[key] = result
-        return result
-
-    try:
-        info = response.json().get("info") or {}
-    except ValueError as exc:
-        result = ("", "", f"invalid json: {exc}")
-        _RELEASE_CACHE[key] = result
-        return result
-
-    raw, field = _best_candidate(_license_candidates(info))
-    result = (raw, field, None) if raw else (
-        "", "", f"{package_name}=={version} declares no license")
-    _RELEASE_CACHE[key] = result
-    return result
-
-
-def resolve_license(package_name: str, version: str = None,
-                    offline: bool = False) -> dict:
-    """
-    Resolve the license of the *requested* version of a package.
-
-    Reading the installed copy is not good enough, and the gap is not
-    theoretical: chardet 5.2.0 is LGPL-2.1 and chardet 7.5.1 is 0BSD. A
-    requirements file pinning 5.2.0 while the environment holds 7.5.1 would be
-    reported as permissive, and the copyleft obligation would be missed
-    entirely. Packages that are not installed at all reported NOT_INSTALLED
-    and were graded UNKNOWN.
-
-    So the pinned release on PyPI is the source of record, and the installed
-    copy is the fallback - marked as such, because it describes a different
-    version.
-
-    Returns:
-        license        the raw string to classify
-        source         pypi:<field> / installed:<field> / none
-        version        the version the license was read from, when known
-        unverified     True when the license does not come from the pinned
-                       release; score_engine lowers confidence on it rather
-                       than trusting a version that was never checked
-        error          why PyPI was not used, when it was not
-    """
-    if version and not offline:
-        raw, field, error = _pypi_release_license(package_name, version)
-        if raw:
-            return {"license": raw, "source": f"pypi:{field}",
-                    "version": version, "unverified": False, "error": None}
-    else:
-        error = "offline" if offline else "no version pinned"
-
-    raw, field, found_version = _installed_license(package_name)
-    source = f"installed:{field}" if field else "none"
-    # The installed copy only describes the pinned version when it *is* the
-    # pinned version.
-    matches_pin = bool(version) and found_version == version
-    return {
-        "license": raw,
-        "source": source if raw != "NOT_INSTALLED" else "none",
-        "version": found_version,
-        "unverified": not matches_pin,
-        "error": error,
-    }
-
-
-OSV_UNVERIFIED_ISSUE = {
-    "type": "unverified",
-    "severity": "unknown",
-    "detail": (
-        "OSV vulnerability lookup failed (network/API error). "
-        "CVE status is unverified — not the same as 'no known vulnerabilities'."
-    ),
-}
-
-# LICENSE_UNVERIFIED_ISSUE lives in _adapters so CLI and MCP share one object.
-
-
-def analyze_package_risks(
-    engine,
-    name: str,
-    version: str,
-    vulns: list | None,
-    min_release_age: int = 0,
-) -> tuple[list | None, list]:
-    """
-    Run recommendation over one package and return (issues, alternatives).
-
-    RecommendationEngine.analyze_package() merges the OSV findings we hand
-    it into its own issue list, so its return value is the complete set -
-    adding `vulns` again here would double-count every CVE.
-
-    When ``vulns`` is ``None`` (OSV lookup failed), return ``(None, [])`` so
-    the caller can pass ``issues=None`` into score_engine — meaning
-    "unverified", not "clean".
-
-    A failure downgrades to the OSV issues alone rather than aborting the
-    scan; the caller records the reason.
-    """
-    if vulns is None:
-        return None, []
-    if engine is None:
-        return _vulns_to_issues(vulns), []
-    try:
-        result = engine.analyze_package(name, version,
-                                        cve_issues=_vulns_to_issues(vulns),
-                                        min_release_age=min_release_age)
-    except Exception as exc:  # noqa: BLE001 - network/parse errors must not stop a scan
-        logger.warning("recommendation engine failed for %s: %s", name, exc)
-        return _vulns_to_issues(vulns), []
-    return result.get("issues") or [], result.get("alternatives") or []
-
-
-def _display_issues(issues: list | None, *, osv_unverified: bool,
-                    extra: list | None = None) -> list:
-    """Issues shown in the report/terminal (may include the unverified markers)."""
-    shown: list = []
-    if osv_unverified:
-        shown.append(dict(OSV_UNVERIFIED_ISSUE))
-    if extra:
-        shown.extend(extra)
-    if issues:
-        shown.extend(issues)
-    return shown
-
-
-def scan_model(model_ref: str, max_pickle_size_mb: int = 0) -> dict | None:
-    """
-    Run model_checker over one Hugging Face model and score it.
-
-    Returns the model_checker report with the AIBOM-Guardian verdict folded in,
-    or None when the model could not be read at all.
-
-    `max_pickle_size_mb` defaults to 0 (metadata only). Downloading weights
-    to scan pickle contents is opt-in because a single model can be tens of
-    gigabytes; --model-pickle-scan raises it.
-    """
-    # Logged, not printed: mcp_server.check_model calls this, and stdout is
-    # the JSON-RPC channel there. _configure_cli_logging shows it on the CLI.
-    if not HAS_MODEL_CHECKER:
-        logger.warning("model_checker unavailable - model scan skipped for %s",
-                       model_ref)
-        return None
-
-    try:
-        report = check_model(model_ref, max_pickle_size_mb=max_pickle_size_mb)
-    except Exception as exc:  # noqa: BLE001 - a bad model must not end the run
-        logger.error("could not read model '%s': %s", model_ref, exc)
-        return None
-
-    # Grade the declared license. This is the whole point of an AIBOM:
-    # llama3.1, gemma and the RAIL family are not OSI-approved, and the
-    # generic package path would never see them.
-    license_text = report.get("license_name") or report.get("license")
-    detail = classify_license_detailed(license_text)
-    report["license_status"] = detail["status"]
-    report["license_family"] = detail["family"]
-    report["license_reason"] = detail["reason"]
-
-    # score_engine also harvests issues out of `model_info`, so the raw
-    # model_checker findings are removed from the copy handed to it - they
-    # are already present, translated, in the top-level `issues` list.
-    # Leaving both in counted every model finding twice.
-    model_context = {k: v for k, v in report.items() if k != "issues"}
-
-    score_result = calculate_trust_score({
-        "type": "model",
-        "license_status": detail["status"],
-        "issues": _model_issues(report),
-        "model_info": model_context,
-        "repository_info": None,
-    })
-    report["risk_score"] = score_result["trust_score"]
-    report["verdict"] = score_result["verdict"]
-    report["hard_block"] = score_result["hard_block"]
-    report["hard_block_reasons"] = score_result["hard_block_reasons"]
-    report["score_breakdown"] = score_result["breakdown"]
-    report["confidence"] = score_result["confidence"]
-    return report
-
-
-def _model_issues(report: dict) -> list:
-    """
-    Translate model_checker's findings into score_engine's issue categories.
-
-    model_checker grades its own findings as HIGH/MEDIUM/LOW with its own
-    issue types; score_engine works in the six protocol categories. The
-    mapping is explicit rather than implicit so an unmapped finding type
-    shows up as `unrecognised` instead of vanishing.
-    """
-    type_map = {
-        "malicious": "malicious",          # dangerous pickle global
-        "suspicious": "malicious",
-        "pickle_only": "provenance",
-        "pickle_file": "provenance",
-        "remote_code": "provenance",       # trust_remote_code/auto_map — needs review, not confirmed malware
-        "external_code": "provenance",
-        "python_files": "provenance",
-        "no_model_card": "provenance",
-        "template_model_card": "provenance",
-        "incomplete_model_card": "provenance",
-        "no_license": "license",
-        "gated": "license",
-        "unverified": "provenance",
-    }
-    severity_map = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}
-
-    issues = []
-    for issue in report.get("issues") or []:
-        issues.append({
-            "type": type_map.get(issue.get("type"), issue.get("type")),
-            "id": issue.get("type"),
-            "severity": severity_map.get(issue.get("severity"), "unknown"),
-            "detail": issue.get("message"),
-            "summary": issue.get("message"),
-        })
-    return issues
-
-
-def check_supply_chain(name: str, version: str) -> dict | None:
-    """
-    Run repository_checker over one package. None when it could not run.
-
-    Kept behind --supply-chain because it costs several network round trips
-    per package (PyPI, GitHub, OpenSSF) and needs GITHUB_TOKEN to avoid
-    rate limits.
-    """
-    if not HAS_REPOSITORY_CHECKER:
-        return None
-    try:
-        return check_repository(f"{name}=={version}", target_type="pypi")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("supply-chain check failed for %s: %s", name, exc)
-        return None
-
-
-DEFAULT_JOBS = 8
-
-
-def _gather(entry, *, engine_for_thread, offline, supply_chain, min_release_age):
-    """Every network lookup for one package. Runs on a worker thread."""
-    name, version = entry.name, entry.version
-    lic = resolve_license(name, version, offline=offline)
-
-    if offline:
-        vulns, issues, alternatives = [], None, []
-    else:
-        vulns = query_vulnerabilities(name, version)
-        if vulns is None:
-            issues, alternatives = None, []
-        else:
-            issues, alternatives = analyze_package_risks(
-                engine_for_thread(), name, version, vulns, min_release_age)
-
-    repository_info = None
-    if supply_chain and not offline:
-        repository_info = check_supply_chain(name, version)
-
-    return {
-        "license": lic,
-        "vulns": vulns,
-        "issues": issues,
-        "alternatives": alternatives,
-        "repository_info": repository_info,
-    }
-
-
-def _prefetch(packages, *, engine_factory, offline, supply_chain, jobs,
-              min_release_age=0):
-    """
-    Look everything up concurrently, keyed by package.
-
-    These are network waits, not CPU work, so threads are the right tool and
-    the GIL is not in the way. The reporting loop still walks `packages` in
-    order, so output does not depend on which lookup finished first.
-    """
-    local = threading.local()
-
-    def engine_for_thread():
-        engine = getattr(local, "engine", None)
-        if engine is None:
-            engine = engine_factory()
-            local.engine = engine
-        return engine
-
-    def work(entry):
-        return _gather(entry, engine_for_thread=engine_for_thread,
-                       offline=offline, supply_chain=supply_chain,
-                       min_release_age=min_release_age)
-
-    if jobs <= 1 or len(packages) <= 1:
-        return {id(e): work(e) for e in packages}
-
-    with ThreadPoolExecutor(max_workers=min(jobs, len(packages))) as pool:
-        return dict(zip((id(e) for e in packages), pool.map(work, packages)))
 
 
 def run_scan(

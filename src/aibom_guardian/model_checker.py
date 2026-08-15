@@ -921,7 +921,19 @@ def check_model(model_ref, revision=None, max_pickle_size_mb=DEFAULT_MAX_PICKLE_
 
 
 def collect_issues(report):
-    """Turn the collected facts into a flat, sorted list of findings."""
+    """
+    Turn collected model facts into a flat, sorted list of findings.
+
+    Severity is chosen for downstream mapping in ``scanner._model_issues``,
+    not for final verdicts — score_engine owns ALLOW/WARNING/BLOCK. HIGH is
+    reserved for execution paths (picklescan globals, ``trust_remote_code``,
+    external repos); MEDIUM covers hygiene gaps (missing card, pickle-only
+    repos); LOW covers informational signals (gated access, stray ``.py`` files).
+
+    ``unverified`` findings are emitted whenever a check did not run (pickle scan
+    skipped, config unreadable) because silence would read as "clean" — the
+    failure mode this tool exists to prevent.
+    """
     issues = []
 
     def add(severity, issue_type, message):

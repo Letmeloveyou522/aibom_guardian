@@ -91,11 +91,17 @@ def _build_check_result(
     model_info: dict | None = None,
 ) -> dict:
     """
-    Assemble the input for score_engine.calculate_trust_score().
+    Assemble the input for ``score_engine.calculate_trust_score()``.
+
+    Centralised here (not duplicated in ``scanner.run_scan`` and
+    ``mcp_server.check_package``) so CLI and MCP cannot drift to different
+    shapes. ``type`` defaults to ``library`` because package checks are the
+    common path; ``scan_model`` passes ``type: model`` with ``model_info`` set.
 
     ``issues`` is the merged list from every producer. ``repository_info`` is
     repository_checker's whole result; score_engine reads its trust_score and
-    issues from there.
+    issues from there. ``None`` must survive intact — it means "never looked",
+    which is how unverified OSV results become WARNING instead of ALLOW.
     """
     return {
         "type": "library",
