@@ -10,7 +10,7 @@ numbers are an agreed decision, not a fact about the world.
 
 import pytest
 
-from aibom_guard.score_engine import (
+from aibom_guardian.score_engine import (
     ALLOW_THRESHOLD,
     BLOCK_THRESHOLD,
     CATEGORY_WEIGHTS,
@@ -152,8 +152,8 @@ def test_malicious_producer_coverage_is_documented():
     malicious is model-path only (picklescan). Legacy ``pii`` is not a weight
     category; CATEGORY_ALIASES maps it to provenance for old reports.
     """
-    from aibom_guard import score_engine
-    from aibom_guard.score_engine import CATEGORY_ALIASES
+    from aibom_guardian import score_engine
+    from aibom_guardian.score_engine import CATEGORY_ALIASES
     doc = score_engine.__doc__ or ""
     assert "picklescan" in doc.lower() or "model" in doc.lower()
     assert "pii" not in CATEGORY_WEIGHTS
@@ -442,7 +442,7 @@ def test_ungraded_typosquat_is_not_treated_as_half_strength():
     package name or it did not. Falling back to "unknown" (factor 0.5) meant
     a confirmed typosquat cost 5 of its 10 points.
     """
-    from aibom_guard.score_engine import CATEGORY_DEFAULT_SEVERITY, CATEGORY_WEIGHTS
+    from aibom_guardian.score_engine import CATEGORY_DEFAULT_SEVERITY, CATEGORY_WEIGHTS
 
     result = calculate_trust_score(check(issues=[
         {"type": "typosquatting", "detail": "'reqeusts' resembles 'requests'"}]))
@@ -456,7 +456,7 @@ def test_ungraded_cve_stays_unknown():
     CVSS severity is a real published rating. Inventing one for an unrated
     CVE would be a guess, so cve has no default.
     """
-    from aibom_guard.score_engine import CATEGORY_DEFAULT_SEVERITY
+    from aibom_guardian.score_engine import CATEGORY_DEFAULT_SEVERITY
 
     assert "cve" not in CATEGORY_DEFAULT_SEVERITY
     result = calculate_trust_score(check(issues=[{"type": "cve", "id": "X"}]))

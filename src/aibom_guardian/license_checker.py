@@ -106,17 +106,17 @@ def _cache_dir() -> Path:
     """
     Where the downloaded registries live.
 
-    AIBOM_GUARD_CACHE overrides it, which is how the test suite stays offline
+    AIBOM_GUARDIAN_CACHE overrides it, which is how the test suite stays offline
     and how a CI job can pre-seed the cache.
     """
-    override = os.environ.get("AIBOM_GUARD_CACHE")
+    override = os.environ.get("AIBOM_GUARDIAN_CACHE")
     if override:
         return Path(override)
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
     else:
         base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
-    return Path(base) / "aibom-guard" / "registries"
+    return Path(base) / "aibom-guardian" / "registries"
 
 # Sentinels the callers pass in when there was nothing to read. They are not
 # license strings and must not be matched against anything.

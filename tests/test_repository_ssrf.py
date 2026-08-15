@@ -16,8 +16,8 @@ import socket
 
 import pytest
 
-from aibom_guard import repository_checker
-from aibom_guard.repository_checker import SSRFError, validate_public_url
+from aibom_guardian import repository_checker
+from aibom_guardian.repository_checker import SSRFError, validate_public_url
 
 
 @pytest.fixture

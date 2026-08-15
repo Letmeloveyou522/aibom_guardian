@@ -12,7 +12,7 @@ No network - only argument resolution is under test.
 
 import pytest
 
-from aibom_guard.repository_checker import _resolve_target
+from aibom_guardian.repository_checker import _resolve_target
 
 
 def resolve(target=None, target_type="auto", **kw):

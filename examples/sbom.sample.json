@@ -23,39 +23,39 @@
       ],
       "properties": [
         {
-          "name": "aibom-guard:license_spdx_id",
+          "name": "aibom-guardian:license_spdx_id",
           "value": "BSD-3-Clause"
         },
         {
-          "name": "aibom-guard:license_family",
+          "name": "aibom-guardian:license_family",
           "value": "permissive"
         },
         {
-          "name": "aibom-guard:license_source",
+          "name": "aibom-guardian:license_source",
           "value": "pypi:license"
         },
         {
-          "name": "aibom-guard:license_declared",
+          "name": "aibom-guardian:license_declared",
           "value": "BSD-3-Clause"
         },
         {
-          "name": "aibom-guard:license_obligation:0",
+          "name": "aibom-guardian:license_obligation:0",
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
         },
         {
-          "name": "aibom-guard:dependency",
+          "name": "aibom-guardian:dependency",
           "value": "direct"
         },
         {
-          "name": "aibom-guard:license_status",
+          "name": "aibom-guardian:license_status",
           "value": "ALLOWED"
         },
         {
-          "name": "aibom-guard:trust_score",
+          "name": "aibom-guardian:trust_score",
           "value": "100"
         },
         {
-          "name": "aibom-guard:verdict",
+          "name": "aibom-guardian:verdict",
           "value": "ALLOW"
         }
       ]
@@ -83,39 +83,39 @@
       ],
       "properties": [
         {
-          "name": "aibom-guard:license_spdx_id",
+          "name": "aibom-guardian:license_spdx_id",
           "value": "MIT"
         },
         {
-          "name": "aibom-guard:license_family",
+          "name": "aibom-guardian:license_family",
           "value": "permissive"
         },
         {
-          "name": "aibom-guard:license_source",
+          "name": "aibom-guardian:license_source",
           "value": "pypi:license"
         },
         {
-          "name": "aibom-guard:license_declared",
+          "name": "aibom-guardian:license_declared",
           "value": "MIT"
         },
         {
-          "name": "aibom-guard:license_obligation:0",
+          "name": "aibom-guardian:license_obligation:0",
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
         },
         {
-          "name": "aibom-guard:dependency",
+          "name": "aibom-guardian:dependency",
           "value": "direct"
         },
         {
-          "name": "aibom-guard:license_status",
+          "name": "aibom-guardian:license_status",
           "value": "ALLOWED"
         },
         {
-          "name": "aibom-guard:trust_score",
+          "name": "aibom-guardian:trust_score",
           "value": "49"
         },
         {
-          "name": "aibom-guard:verdict",
+          "name": "aibom-guardian:verdict",
           "value": "BLOCK"
         }
       ]
@@ -143,39 +143,39 @@
       ],
       "properties": [
         {
-          "name": "aibom-guard:license_spdx_id",
+          "name": "aibom-guardian:license_spdx_id",
           "value": "Apache-2.0"
         },
         {
-          "name": "aibom-guard:license_family",
+          "name": "aibom-guardian:license_family",
           "value": "permissive"
         },
         {
-          "name": "aibom-guard:license_source",
+          "name": "aibom-guardian:license_source",
           "value": "pypi:license"
         },
         {
-          "name": "aibom-guard:license_declared",
+          "name": "aibom-guardian:license_declared",
           "value": "Apache 2.0"
         },
         {
-          "name": "aibom-guard:license_obligation:0",
+          "name": "aibom-guardian:license_obligation:0",
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
         },
         {
-          "name": "aibom-guard:dependency",
+          "name": "aibom-guardian:dependency",
           "value": "direct"
         },
         {
-          "name": "aibom-guard:license_status",
+          "name": "aibom-guardian:license_status",
           "value": "ALLOWED"
         },
         {
-          "name": "aibom-guard:trust_score",
+          "name": "aibom-guardian:trust_score",
           "value": "75"
         },
         {
-          "name": "aibom-guard:verdict",
+          "name": "aibom-guardian:verdict",
           "value": "WARNING"
         }
       ]
@@ -195,39 +195,39 @@
       ],
       "properties": [
         {
-          "name": "aibom-guard:license_spdx_id",
+          "name": "aibom-guardian:license_spdx_id",
           "value": "MIT"
         },
         {
-          "name": "aibom-guard:license_family",
+          "name": "aibom-guardian:license_family",
           "value": "permissive"
         },
         {
-          "name": "aibom-guard:license_source",
+          "name": "aibom-guardian:license_source",
           "value": "pypi:license"
         },
         {
-          "name": "aibom-guard:license_declared",
+          "name": "aibom-guardian:license_declared",
           "value": "MIT"
         },
         {
-          "name": "aibom-guard:license_obligation:0",
+          "name": "aibom-guardian:license_obligation:0",
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
         },
         {
-          "name": "aibom-guard:dependency",
+          "name": "aibom-guardian:dependency",
           "value": "transitive"
         },
         {
-          "name": "aibom-guard:license_status",
+          "name": "aibom-guardian:license_status",
           "value": "ALLOWED"
         },
         {
-          "name": "aibom-guard:trust_score",
+          "name": "aibom-guardian:trust_score",
           "value": "100"
         },
         {
-          "name": "aibom-guard:verdict",
+          "name": "aibom-guardian:verdict",
           "value": "ALLOW"
         }
       ]
@@ -247,39 +247,39 @@
       ],
       "properties": [
         {
-          "name": "aibom-guard:license_spdx_id",
+          "name": "aibom-guardian:license_spdx_id",
           "value": "BSD-3-Clause"
         },
         {
-          "name": "aibom-guard:license_family",
+          "name": "aibom-guardian:license_family",
           "value": "permissive"
         },
         {
-          "name": "aibom-guard:license_source",
+          "name": "aibom-guardian:license_source",
           "value": "pypi:license_expression"
         },
         {
-          "name": "aibom-guard:license_declared",
+          "name": "aibom-guardian:license_declared",
           "value": "BSD-3-Clause"
         },
         {
-          "name": "aibom-guard:license_obligation:0",
+          "name": "aibom-guardian:license_obligation:0",
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
         },
         {
-          "name": "aibom-guard:dependency",
+          "name": "aibom-guardian:dependency",
           "value": "transitive"
         },
         {
-          "name": "aibom-guard:license_status",
+          "name": "aibom-guardian:license_status",
           "value": "ALLOWED"
         },
         {
-          "name": "aibom-guard:trust_score",
+          "name": "aibom-guardian:trust_score",
           "value": "100"
         },
         {
-          "name": "aibom-guard:verdict",
+          "name": "aibom-guardian:verdict",
           "value": "ALLOW"
         }
       ]
@@ -299,39 +299,39 @@
       ],
       "properties": [
         {
-          "name": "aibom-guard:license_spdx_id",
+          "name": "aibom-guardian:license_spdx_id",
           "value": "MIT"
         },
         {
-          "name": "aibom-guard:license_family",
+          "name": "aibom-guardian:license_family",
           "value": "permissive"
         },
         {
-          "name": "aibom-guard:license_source",
+          "name": "aibom-guardian:license_source",
           "value": "pypi:license"
         },
         {
-          "name": "aibom-guard:license_declared",
+          "name": "aibom-guardian:license_declared",
           "value": "MIT"
         },
         {
-          "name": "aibom-guard:license_obligation:0",
+          "name": "aibom-guardian:license_obligation:0",
           "value": "Keep the copyright notice and license text with any redistribution. No obligation on your own source."
         },
         {
-          "name": "aibom-guard:dependency",
+          "name": "aibom-guardian:dependency",
           "value": "transitive"
         },
         {
-          "name": "aibom-guard:license_status",
+          "name": "aibom-guardian:license_status",
           "value": "ALLOWED"
         },
         {
-          "name": "aibom-guard:trust_score",
+          "name": "aibom-guardian:trust_score",
           "value": "75"
         },
         {
-          "name": "aibom-guard:verdict",
+          "name": "aibom-guardian:verdict",
           "value": "WARNING"
         }
       ]
@@ -351,39 +351,39 @@
       ],
       "properties": [
         {
-          "name": "aibom-guard:license_spdx_id",
+          "name": "aibom-guardian:license_spdx_id",
           "value": "MPL-2.0"
         },
         {
-          "name": "aibom-guard:license_family",
+          "name": "aibom-guardian:license_family",
           "value": "copyleft"
         },
         {
-          "name": "aibom-guard:license_source",
+          "name": "aibom-guardian:license_source",
           "value": "pypi:license"
         },
         {
-          "name": "aibom-guard:license_declared",
+          "name": "aibom-guardian:license_declared",
           "value": "MPL-2.0"
         },
         {
-          "name": "aibom-guard:license_obligation:0",
+          "name": "aibom-guardian:license_obligation:0",
           "value": "File-level copyleft. Source files you take from the project stay under its license and their modifications must be published; files you write yourself do not become subject to it."
         },
         {
-          "name": "aibom-guard:dependency",
+          "name": "aibom-guardian:dependency",
           "value": "transitive"
         },
         {
-          "name": "aibom-guard:license_status",
+          "name": "aibom-guardian:license_status",
           "value": "REVIEW"
         },
         {
-          "name": "aibom-guard:trust_score",
+          "name": "aibom-guardian:trust_score",
           "value": "96"
         },
         {
-          "name": "aibom-guard:verdict",
+          "name": "aibom-guardian:verdict",
           "value": "ALLOW"
         }
       ]
@@ -504,17 +504,17 @@
         },
         {
           "type": "application",
-          "name": "AIBOM-Guard",
+          "name": "AIBOM-Guardian",
           "version": "0.1.0"
         }
       ]
     },
     "manufacturer": {
-      "name": "AIBOM-Guard"
+      "name": "AIBOM-Guardian"
     },
     "authors": [
       {
-        "name": "AIBOM-Guard"
+        "name": "AIBOM-Guardian"
       }
     ],
     "lifecycles": [
@@ -524,7 +524,7 @@
     ],
     "properties": [
       {
-        "name": "aibom-guard:profile",
+        "name": "aibom-guardian:profile",
         "value": "sbom"
       }
     ],

@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from aibom_guard.recommendation import (
+from aibom_guardian.recommendation import (
     PyPIClient,
     PyPIPackageInfo,
     RecommendationEngine,
@@ -132,7 +132,7 @@ class TestPyPIClientOutcomes(unittest.TestCase):
         session.close.assert_not_called()
 
     def test_the_context_manager_closes_its_own_session(self):
-        with patch("aibom_guard.recommendation.requests.Session") as factory:
+        with patch("aibom_guardian.recommendation.requests.Session") as factory:
             created = factory.return_value
             with PyPIClient():
                 pass

@@ -1,7 +1,7 @@
 # Test fixtures — trimmed license registries
 
 `license_checker` downloads the SPDX License List and the Blue Oak Council
-License List on first use and caches them under `AIBOM_GUARD_CACHE`.
+License List on first use and caches them under `AIBOM_GUARDIAN_CACHE`.
 `conftest.py` points that variable here, so the test suite runs offline and
 does not depend on whatever happens to be in a developer's real cache.
 
@@ -21,7 +21,7 @@ import json, os
 from pathlib import Path
 
 cache = Path(os.environ.get(
-    "LOCALAPPDATA", Path.home() / ".cache")) / "aibom-guard" / "registries"
+    "LOCALAPPDATA", Path.home() / ".cache")) / "aibom-guardian" / "registries"
 src = json.loads((cache / "spdx-licenses.json").read_text(encoding="utf-8"))
 blue = json.loads((cache / "blueoak-list.json").read_text(encoding="utf-8"))
 

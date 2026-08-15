@@ -1,14 +1,14 @@
 # Open Source Libraries Used
 
 This document lists the external open source libraries used in the
-AIBOM-Guard project, along with their licenses. (For Article 8 compliance)
+AIBOM-Guardian project, along with their licenses. (For Article 8 compliance)
 
 Every entry below is actually imported or invoked by the code. The canonical
 install list is `[project].dependencies` in `pyproject.toml`;
 `requirements.txt` mirrors it for installs from a clone, and
 `tests/test_packaging.py` fails if the two drift apart.
 
-The "Used by" column names modules under `src/aibom_guard/`.
+The "Used by" column names modules under `src/aibom_guardian/`.
 
 ## Runtime
 
@@ -48,7 +48,7 @@ The "Used by" column names modules under `src/aibom_guard/`.
 > automating *access* to the JSON files but say nothing about redistributing
 > them, and neither SPDX data repository declares a license for the list
 > itself. Both are fetched on first use and cached under
-> `~/.cache/aibom-guard/registries` (`%LOCALAPPDATA%` on Windows).
+> `~/.cache/aibom-guardian/registries` (`%LOCALAPPDATA%` on Windows).
 
 > Whenever you add a new library, add its name / purpose / GitHub link /
 > license to the tables above and to `requirements.txt`.

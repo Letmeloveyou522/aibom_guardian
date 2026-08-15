@@ -12,8 +12,8 @@ import json
 
 import pytest
 
-from aibom_guard import sbom_generator
-from aibom_guard.sbom_generator import (
+from aibom_guardian import sbom_generator
+from aibom_guardian.sbom_generator import (
     _map_severity,
     add_models_to_sbom,
     build_model_component,
@@ -104,9 +104,9 @@ def test_attack_complexity_high_is_not_severity_high():
 def test_findings_are_attached_as_properties():
     sbom = enrich_sbom_with_findings(base_sbom("requests"), [package()])
     props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
-    assert props["aibom-guard:verdict"] == "WARNING"
-    assert props["aibom-guard:trust_score"] == "75"
-    assert props["aibom-guard:license_status"] == "ALLOWED"
+    assert props["aibom-guardian:verdict"] == "WARNING"
+    assert props["aibom-guardian:trust_score"] == "75"
+    assert props["aibom-guardian:license_status"] == "ALLOWED"
 
 
 def test_vulnerabilities_become_a_top_level_array():
@@ -216,16 +216,16 @@ def test_unedited_template_is_recorded_as_a_consideration():
 def test_findings_are_exposed_as_properties():
     props = {p["name"]: p["value"]
              for p in build_model_component(MODEL)["properties"]}
-    assert props["aibom-guard:verdict"] == "BLOCK"
-    assert props["aibom-guard:license_family"] == "ai-behavioural"
-    assert props["aibom-guard:weight_formats:pickle"] == "1"
-    assert props["aibom-guard:pickle_only"] == "false"
+    assert props["aibom-guardian:verdict"] == "BLOCK"
+    assert props["aibom-guardian:license_family"] == "ai-behavioural"
+    assert props["aibom-guardian:weight_formats:pickle"] == "1"
+    assert props["aibom-guardian:pickle_only"] == "false"
 
 
 def test_external_code_repos_are_listed():
     model = dict(MODEL, external_code_repos=["nomic-ai/nomic-bert-2048"])
     props = [p for p in build_model_component(model)["properties"]
-             if p["name"] == "aibom-guard:external_code_repo"]
+             if p["name"] == "aibom-guardian:external_code_repo"]
     assert props[0]["value"] == "nomic-ai/nomic-bert-2048"
 
 
@@ -246,7 +246,7 @@ def test_model_issues_become_vulnerabilities():
 def test_ml_bom_profile_is_declared():
     sbom = add_models_to_sbom(base_sbom("requests"), [MODEL])
     props = {p["name"]: p["value"] for p in sbom["metadata"]["properties"]}
-    assert props["aibom-guard:profile"] == "ml-bom"
+    assert props["aibom-guardian:profile"] == "ml-bom"
 
 
 def test_no_models_leaves_the_sbom_untouched():
@@ -290,11 +290,11 @@ def test_supply_chain_evidence_reaches_the_sbom():
         base_sbom("requests"), [package(supply_chain=SUPPLY)])
     props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
 
-    assert props["aibom-guard:openssf_score"] == "8.2"
-    assert props["aibom-guard:repository"] == "psf/requests"
-    assert props["aibom-guard:supply_chain_trust"] == "65"
-    assert props["aibom-guard:github_star"] == "54200"
-    assert props["aibom-guard:last_commit"] == "2026-07-27"
+    assert props["aibom-guardian:openssf_score"] == "8.2"
+    assert props["aibom-guardian:repository"] == "psf/requests"
+    assert props["aibom-guardian:supply_chain_trust"] == "65"
+    assert props["aibom-guardian:github_star"] == "54200"
+    assert props["aibom-guardian:last_commit"] == "2026-07-27"
 
 
 def test_boolean_supply_chain_fields_are_lowercased():
@@ -302,8 +302,8 @@ def test_boolean_supply_chain_fields_are_lowercased():
     sbom = enrich_sbom_with_findings(
         base_sbom("requests"), [package(supply_chain=SUPPLY)])
     props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
-    assert props["aibom-guard:signature"] == "false"
-    assert props["aibom-guard:provenance"] == "false"
+    assert props["aibom-guardian:signature"] == "false"
+    assert props["aibom-guardian:provenance"] == "false"
 
 
 def test_no_supply_chain_adds_no_properties():
@@ -327,23 +327,23 @@ def test_g7_metadata_includes_tools_timestamp_and_manufacturer():
     sbom = enrich_sbom_with_findings(base_sbom("requests"), [package()])
     meta = sbom["metadata"]
     assert "timestamp" in meta
-    assert meta["manufacturer"]["name"] == "AIBOM-Guard"
+    assert meta["manufacturer"]["name"] == "AIBOM-Guardian"
     tools = meta["tools"]
     assert isinstance(tools, dict)
     names = [c["name"] for c in tools["components"]]
-    assert "AIBOM-Guard" in names
+    assert "AIBOM-Guardian" in names
 
 
 def test_ensure_metadata_upgrades_profile_to_ml_bom():
     sbom = enrich_sbom_with_findings(base_sbom("requests"), [package()])
     assert {p["name"]: p["value"]
-            for p in sbom["metadata"]["properties"]}["aibom-guard:profile"] == "sbom"
+            for p in sbom["metadata"]["properties"]}["aibom-guardian:profile"] == "sbom"
     sbom = add_models_to_sbom(sbom, [MODEL])
     props = {p["name"]: p["value"] for p in sbom["metadata"]["properties"]}
-    assert props["aibom-guard:profile"] == "ml-bom"
+    assert props["aibom-guardian:profile"] == "ml-bom"
     # Profile must appear once, not duplicated.
     assert sum(1 for p in sbom["metadata"]["properties"]
-               if p["name"] == "aibom-guard:profile") == 1
+               if p["name"] == "aibom-guardian:profile") == 1
 
 
 def test_osv_none_vulnerabilities_do_not_raise_and_mark_unverified():
@@ -352,7 +352,7 @@ def test_osv_none_vulnerabilities_do_not_raise_and_mark_unverified():
     sbom = enrich_sbom_with_findings(base_sbom("requests"), report)
     assert "vulnerabilities" not in sbom
     props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
-    assert props["aibom-guard:osv_unverified"] == "true"
+    assert props["aibom-guardian:osv_unverified"] == "true"
 
 
 def test_model_component_always_has_model_card():
@@ -368,7 +368,7 @@ def test_ensure_cyclonedx_metadata_is_idempotent():
     ensure_cyclonedx_metadata(sbom, profile="sbom")
     ensure_cyclonedx_metadata(sbom, profile="sbom")
     tools = sbom["metadata"]["tools"]["components"]
-    assert sum(1 for c in tools if c["name"] == "AIBOM-Guard") == 1
+    assert sum(1 for c in tools if c["name"] == "AIBOM-Guardian") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -413,9 +413,9 @@ def test_obligations_and_provenance_ride_along():
     sbom_generator.enrich_sbom_with_findings(sbom, [_scan_row()])
 
     props = {p["name"]: p["value"] for p in sbom["components"][0]["properties"]}
-    assert props["aibom-guard:license_spdx_id"] == "Apache-2.0"
-    assert props["aibom-guard:license_source"] == "pypi:license"
-    assert props["aibom-guard:license_obligation:0"].startswith("Keep the")
+    assert props["aibom-guardian:license_spdx_id"] == "Apache-2.0"
+    assert props["aibom-guardian:license_source"] == "pypi:license"
+    assert props["aibom-guardian:license_obligation:0"].startswith("Keep the")
 
 
 def test_a_real_spdx_expression_is_emitted_as_an_expression():
@@ -458,7 +458,7 @@ def test_a_licence_the_generator_already_found_is_kept_visible():
     component = sbom["components"][0]
     assert component["licenses"] == [{"license": {"id": "Apache-2.0"}}]
     props = {p["name"]: p["value"] for p in component["properties"]}
-    assert "MIT" in props["aibom-guard:license_declared_by_generator"]
+    assert "MIT" in props["aibom-guardian:license_declared_by_generator"]
 
 
 # ---------------------------------------------------------------------------
@@ -475,7 +475,7 @@ def test_metadata_names_the_author_and_the_lifecycle_phase():
     sbom = ensure_cyclonedx_metadata({}, subject="my-service")
     meta = sbom["metadata"]
 
-    assert meta["authors"] == [{"name": "AIBOM-Guard"}]
+    assert meta["authors"] == [{"name": "AIBOM-Guardian"}]
     assert meta["lifecycles"] == [{"phase": "pre-build"}]
     assert meta["component"]["name"] == "my-service"
 
@@ -517,7 +517,7 @@ def test_a_fine_tune_records_the_model_it_came_from():
     assert ancestors[0]["name"] == "org/base"
     assert ancestors[0]["purl"] == "pkg:huggingface/org/base"
     relation = {p["name"]: p["value"] for p in ancestors[0]["properties"]}
-    assert relation["aibom-guard:base_model_relation"] == "finetune"
+    assert relation["aibom-guardian:base_model_relation"] == "finetune"
 
 
 def test_the_primary_weight_file_is_hashed():
@@ -530,8 +530,8 @@ def test_the_primary_weight_file_is_hashed():
 
     assert component["hashes"] == [{"alg": "SHA-256", "content": "a" * 64}]
     props = {p["name"]: p["value"] for p in component["properties"]}
-    assert props["aibom-guard:sha256:model.safetensors"] == "a" * 64
-    assert props["aibom-guard:sha256:pytorch_model.bin"] == "b" * 64
+    assert props["aibom-guardian:sha256:model.safetensors"] == "a" * 64
+    assert props["aibom-guardian:sha256:pytorch_model.bin"] == "b" * 64
 
 
 def test_a_pickle_only_model_still_gets_a_hash():
@@ -551,4 +551,4 @@ def test_a_model_without_published_hashes_omits_the_field():
 def test_the_model_timestamp_is_recorded():
     props = {p["name"]: p["value"]
              for p in build_model_component(_model())["properties"]}
-    assert props["aibom-guard:last_modified"] == "2026-01-02T03:04:05+00:00"
+    assert props["aibom-guardian:last_modified"] == "2026-01-02T03:04:05+00:00"

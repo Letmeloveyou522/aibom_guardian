@@ -1,7 +1,7 @@
 """
 scanner.py
 -----------------------------------
-AIBOM-Guard - main CLI.
+AIBOM-Guardian - main CLI.
 
 Takes a requirements.txt file and, for each pinned package:
 
@@ -15,12 +15,12 @@ Takes a requirements.txt file and, for each pinned package:
   7) optionally explains the result locally  ai_explainer
 
 Usage:
-    aibom-guard examples/sample-requirements.txt
-    aibom-guard reqs.txt --supply-chain      # add supply-chain checks
-    aibom-guard reqs.txt --offline           # no PyPI/OSV lookups
-    aibom-guard reqs.txt --no-explain --json out.json
+    aibom-guardian examples/sample-requirements.txt
+    aibom-guardian reqs.txt --supply-chain      # add supply-chain checks
+    aibom-guardian reqs.txt --offline           # no PyPI/OSV lookups
+    aibom-guardian reqs.txt --no-explain --json out.json
 
-``python -m aibom_guard`` is equivalent to the console script.
+``python -m aibom_guardian`` is equivalent to the console script.
 
 Layout (P2 split):
     ``_requirements.py``  — parse_requirements / transitive expand / Pinned
@@ -28,7 +28,7 @@ Layout (P2 split):
     ``scanner.py``        — run_scan orchestration, license resolve, CLI main
 
 Public names are still re-exported here so
-``from aibom_guard.scanner import parse_requirements, print_report`` keeps working.
+``from aibom_guardian.scanner import parse_requirements, print_report`` keeps working.
 
 Exit codes (so this can gate CI):
     0  every package is ALLOW and every requirement line was scanned
@@ -390,7 +390,7 @@ def scan_model(model_ref: str, max_pickle_size_mb: int = 0) -> dict | None:
     """
     Run model_checker over one Hugging Face model and score it.
 
-    Returns the model_checker report with the AIBOM-Guard verdict folded in,
+    Returns the model_checker report with the AIBOM-Guardian verdict folded in,
     or None when the model could not be read at all.
 
     `max_pickle_size_mb` defaults to 0 (metadata only). Downloading weights
@@ -815,7 +815,7 @@ class _Parser(argparse.ArgumentParser):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(
-        prog="aibom-guard",
+        prog="aibom-guardian",
         description="Scan a requirements.txt for vulnerability, license and "
                     "supply-chain risk, and emit a CycloneDX SBOM.",
     )

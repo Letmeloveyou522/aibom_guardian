@@ -1,7 +1,7 @@
 """
 mcp_server.py
 -----------------------------------
-Exposes AIBOM-Guard's scanning logic as an MCP (Model Context Protocol)
+Exposes AIBOM-Guardian's scanning logic as an MCP (Model Context Protocol)
 server, so AI agents/clients (e.g. Claude Desktop, Cursor) can call it
 directly - for example, asking "is package X version Y safe to use?"
 and getting back a real answer backed by OSV + license checks.
@@ -10,7 +10,7 @@ No scanning logic lives here; it wraps license_checker, osv_client,
 repository_checker and scanner.scan_model as MCP tools.
 
 Scope: one target per call, JSON back. No requirements.txt parsing, no
-scan_report.json / sbom.json, no Ollama. Use ``aibom-guard`` for those.
+scan_report.json / sbom.json, no Ollama. Use ``aibom-guardian`` for those.
 
 OSV None contract (shared with scanner / score_engine)
 ------------------------------------------------------
@@ -24,8 +24,8 @@ Tools:
     check_repo_trust — supply-chain trust for GitHub / HF / PyPI / local
     check_model     — Hugging Face model scan (scan_report ``models[]`` shape)
 
-Start the server with ``aibom-guard-mcp`` or
-``python -m aibom_guard.mcp_server``.
+Start the server with ``aibom-guardian-mcp`` or
+``python -m aibom_guardian.mcp_server``.
 """
 
 from __future__ import annotations
@@ -48,8 +48,8 @@ from .score_engine import calculate_trust_score
 
 logger = logging.getLogger(__name__)
 
-# "aibom-guard" is the name the MCP client will show for this server
-mcp = FastMCP("aibom-guard")
+# "aibom-guardian" is the name the MCP client will show for this server
+mcp = FastMCP("aibom-guardian")
 
 ALLOWED_TARGET_TYPES = frozenset({
     "auto",
@@ -460,7 +460,7 @@ def check_model(
     confidence, etc. Agents can merge it into
     ``{"packages": [...], "models": [this], "unscanned": []}``.
 
-    This is the MCP counterpart of ``aibom-guard ... --model REF``.
+    This is the MCP counterpart of ``aibom-guardian ... --model REF``.
     It does not write SBOM files; use the CLI for CycloneDX / ML-BOM output.
 
     Args:

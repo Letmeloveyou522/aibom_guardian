@@ -5,13 +5,13 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aibom-guard"
+name = "aibom-guardian"
 description = "Security, license and supply-chain scanner for Python and AI dependencies, with CycloneDX SBOM / ML-BOM output"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "AIBOM-Guard contributors" }]
+authors = [{ name = "AIBOM-Guardian contributors" }]
 keywords = [
     "sbom",
     "ml-bom",
@@ -41,11 +41,11 @@ classifiers = [
     "Topic :: System :: Software Distribution",
 ]
 
-# Single source of truth: src/aibom_guard/__init__.py.
+# Single source of truth: src/aibom_guardian/__init__.py.
 dynamic = ["version"]
 
 # These are the abstract runtime requirements - what an installed
-# `aibom-guard` needs. requirements.txt is the concrete dev environment and
+# `aibom-guardian` needs. requirements.txt is the concrete dev environment and
 # carries the same list with per-line rationale; tests/test_packaging.py
 # asserts the two never drift apart.
 dependencies = [
@@ -61,17 +61,17 @@ dependencies = [
 dev = ["pytest>=8.0", "pyflakes>=3.0"]
 
 [project.urls]
-Homepage = "https://github.com/Letmeloveyou522/aibom_guard"
-Repository = "https://github.com/Letmeloveyou522/aibom_guard"
-Issues = "https://github.com/Letmeloveyou522/aibom_guard/issues"
-Changelog = "https://github.com/Letmeloveyou522/aibom_guard/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Letmeloveyou522/aibom_guardian"
+Repository = "https://github.com/Letmeloveyou522/aibom_guardian"
+Issues = "https://github.com/Letmeloveyou522/aibom_guardian/issues"
+Changelog = "https://github.com/Letmeloveyou522/aibom_guardian/blob/main/CHANGELOG.md"
 
 [project.scripts]
-aibom-guard = "aibom_guard.scanner:main"
-aibom-guard-mcp = "aibom_guard.mcp_server:main"
+aibom-guardian = "aibom_guardian.scanner:main"
+aibom-guardian-mcp = "aibom_guardian.mcp_server:main"
 
 [tool.setuptools.dynamic]
-version = { attr = "aibom_guard.__version__" }
+version = { attr = "aibom_guardian.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

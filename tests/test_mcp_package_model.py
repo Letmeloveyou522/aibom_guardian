@@ -75,12 +75,12 @@ def _install_mcp_stub_if_needed() -> bool:
 
 _install_mcp_stub_if_needed()
 
-from aibom_guard import mcp_server  # noqa: E402
-from aibom_guard._adapters import (  # noqa: E402
+from aibom_guardian import mcp_server  # noqa: E402
+from aibom_guardian._adapters import (  # noqa: E402
     LICENSE_UNVERIFIED_ISSUE,
     attach_license_unverified,
 )
-from aibom_guard.mcp_server import (  # noqa: E402
+from aibom_guardian.mcp_server import (  # noqa: E402
     _vulns_to_issues,
     check_model,
     check_package,
@@ -123,7 +123,7 @@ class TestVulnsToIssuesContract(unittest.TestCase):
         are what this guards against - the CLI and MCP verdicts only match if
         both feed score_engine input built by the same code.
         """
-        from aibom_guard import _adapters, scanner
+        from aibom_guardian import _adapters, scanner
 
         self.assertIs(scanner._vulns_to_issues, _adapters._vulns_to_issues)
         self.assertIs(mcp_server._vulns_to_issues, _adapters._vulns_to_issues)
@@ -340,7 +340,7 @@ class TestCheckLicenseEnvelope(unittest.TestCase):
     """check_license returns the same MCP dict envelope as other tools."""
 
     def setUp(self):
-        from aibom_guard import mcp_server as ms
+        from aibom_guardian import mcp_server as ms
         self.ms = ms
 
     def test_mit_is_allowed_dict(self):

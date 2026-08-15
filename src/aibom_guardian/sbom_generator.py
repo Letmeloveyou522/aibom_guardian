@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 # Goes into the SBOM's metadata.tools entry, so it must track the real version
 # rather than a literal that stops matching after a release.
-AIBOM_GUARD_VERSION = __version__
-AIBOM_GUARD_TOOL_NAME = "AIBOM-Guard"
+AIBOM_GUARDIAN_VERSION = __version__
+AIBOM_GUARDIAN_TOOL_NAME = "AIBOM-Guardian"
 
 
 def generate_base_sbom(requirements_path: str, tmp_output_path: str = "_base_sbom.json") -> dict:
@@ -79,7 +79,7 @@ def ensure_cyclonedx_metadata(
     without being told.
 
     Safe to call more than once — existing values are preserved; the
-    AIBOM-Guard tool entry and profile property are added only if missing.
+    AIBOM-Guardian tool entry and profile property are added only if missing.
     """
     metadata = sbom.setdefault("metadata", {})
     if not metadata.get("timestamp"):
@@ -88,10 +88,10 @@ def ensure_cyclonedx_metadata(
         )
 
     if "manufacturer" not in metadata:
-        metadata["manufacturer"] = {"name": AIBOM_GUARD_TOOL_NAME}
+        metadata["manufacturer"] = {"name": AIBOM_GUARDIAN_TOOL_NAME}
 
     if "authors" not in metadata:
-        metadata["authors"] = [{"name": AIBOM_GUARD_TOOL_NAME}]
+        metadata["authors"] = [{"name": AIBOM_GUARDIAN_TOOL_NAME}]
 
     # G7 "SBOM generation context". CycloneDX spells it `lifecycles`.
     # "pre-build" is the honest phase: this reads a declared dependency list,
@@ -117,39 +117,39 @@ def ensure_cyclonedx_metadata(
     if isinstance(tools, dict):
         tool_components = tools.setdefault("components", [])
         already = any(
-            isinstance(c, dict) and c.get("name") == AIBOM_GUARD_TOOL_NAME
+            isinstance(c, dict) and c.get("name") == AIBOM_GUARDIAN_TOOL_NAME
             for c in tool_components
         )
         if not already:
             tool_components.append({
                 "type": "application",
-                "name": AIBOM_GUARD_TOOL_NAME,
-                "version": AIBOM_GUARD_VERSION,
+                "name": AIBOM_GUARDIAN_TOOL_NAME,
+                "version": AIBOM_GUARDIAN_VERSION,
             })
     elif isinstance(tools, list):
         already = any(
             isinstance(t, dict)
             and (
-                t.get("name") == AIBOM_GUARD_TOOL_NAME
-                or (t.get("components") or [{}])[0].get("name") == AIBOM_GUARD_TOOL_NAME
+                t.get("name") == AIBOM_GUARDIAN_TOOL_NAME
+                or (t.get("components") or [{}])[0].get("name") == AIBOM_GUARDIAN_TOOL_NAME
             )
             for t in tools
         )
         if not already:
             tools.append({
-                "vendor": AIBOM_GUARD_TOOL_NAME,
-                "name": AIBOM_GUARD_TOOL_NAME,
-                "version": AIBOM_GUARD_VERSION,
+                "vendor": AIBOM_GUARDIAN_TOOL_NAME,
+                "name": AIBOM_GUARDIAN_TOOL_NAME,
+                "version": AIBOM_GUARDIAN_VERSION,
             })
 
     props = metadata.setdefault("properties", [])
     profile_prop = next(
         (p for p in props
-         if isinstance(p, dict) and p.get("name") == "aibom-guard:profile"),
+         if isinstance(p, dict) and p.get("name") == "aibom-guardian:profile"),
         None,
     )
     if profile_prop is None:
-        props.append({"name": "aibom-guard:profile", "value": profile})
+        props.append({"name": "aibom-guardian:profile", "value": profile})
     elif profile == "ml-bom":
         # Upgrade sbom → ml-bom when models are attached; never downgrade.
         profile_prop["value"] = "ml-bom"
@@ -201,7 +201,7 @@ def _apply_license(component: dict, item: dict) -> None:
     existing = component.get("licenses")
     if existing and existing != [entry]:
         component.setdefault("properties", []).append({
-            "name": "aibom-guard:license_declared_by_generator",
+            "name": "aibom-guardian:license_declared_by_generator",
             "value": json.dumps(existing, ensure_ascii=False)[:200],
         })
     component["licenses"] = [entry]
@@ -214,17 +214,17 @@ def _apply_license(component: dict, item: dict) -> None:
         ("license_declared", raw[:120]),
     ):
         if value:
-            properties.append({"name": f"aibom-guard:{name}", "value": str(value)})
+            properties.append({"name": f"aibom-guardian:{name}", "value": str(value)})
 
     if item.get("license_unverified"):
-        properties.append({"name": "aibom-guard:license_unverified",
+        properties.append({"name": "aibom-guardian:license_unverified",
                            "value": "true"})
 
     # The obligation is the part a reader has to act on; "REVIEW" alone is not
     # an instruction.
     for index, obligation in enumerate(item.get("license_obligations") or []):
         properties.append({
-            "name": f"aibom-guard:license_obligation:{index}",
+            "name": f"aibom-guardian:license_obligation:{index}",
             "value": str(obligation),
         })
 
@@ -285,26 +285,26 @@ def enrich_sbom_with_findings(sbom: dict, scan_report: list[dict]) -> dict:
         component["properties"] = component.get("properties", [])
         if "direct" in item:
             component["properties"].append({
-                "name": "aibom-guard:dependency",
+                "name": "aibom-guardian:dependency",
                 "value": "direct" if item["direct"] else "transitive",
             })
         component["properties"].append({
-            "name": "aibom-guard:license_status",
+            "name": "aibom-guardian:license_status",
             "value": item["license_status"],
         })
         component["properties"].append({
-            "name": "aibom-guard:trust_score",
+            "name": "aibom-guardian:trust_score",
             "value": str(item["trust_score"]),
         })
         component["properties"].append({
-            "name": "aibom-guard:verdict",
+            "name": "aibom-guardian:verdict",
             "value": item["verdict"],
         })
         if item.get("osv_unverified") or (
             "vulnerabilities" in item and item["vulnerabilities"] is None
         ):
             component["properties"].append({
-                "name": "aibom-guard:osv_unverified",
+                "name": "aibom-guardian:osv_unverified",
                 "value": "true",
             })
         component["properties"].extend(_supply_chain_properties(item))
@@ -384,7 +384,7 @@ def _supply_chain_properties(item: dict) -> list:
             continue
         if isinstance(value, bool):
             value = str(value).lower()
-        properties.append({"name": f"aibom-guard:{name}", "value": str(value)})
+        properties.append({"name": f"aibom-guardian:{name}", "value": str(value)})
     return properties
 
 
@@ -496,7 +496,7 @@ def _base_model_ancestors(model: dict) -> list:
         relation = entry.get("relation") if isinstance(entry, dict) else None
         if relation:
             ancestor["properties"] = [
-                {"name": "aibom-guard:base_model_relation", "value": str(relation)},
+                {"name": "aibom-guardian:base_model_relation", "value": str(relation)},
             ]
         ancestors.append(ancestor)
     return ancestors
@@ -592,27 +592,27 @@ def build_model_component(model: dict) -> dict:
 
     component["modelCard"] = model_card
 
-    # -- AIBOM-Guard findings as properties ---------------------------------
+    # -- AIBOM-Guardian findings as properties ---------------------------------
     properties = [
-        ("aibom-guard:trust_score", str(model.get("risk_score", ""))),
-        ("aibom-guard:verdict", str(model.get("verdict", ""))),
-        ("aibom-guard:license_status", str(model.get("license_status", ""))),
-        ("aibom-guard:license_family", str(model.get("license_family", ""))),
-        ("aibom-guard:weight_formats:safetensors", str(len(formats.get("safetensors") or []))),
-        ("aibom-guard:weight_formats:pickle", str(len(formats.get("pickle") or []))),
-        ("aibom-guard:pickle_only", str(bool(formats.get("pickle_only"))).lower()),
-        ("aibom-guard:trust_remote_code", str(bool(model.get("trust_remote_code"))).lower()),
-        ("aibom-guard:model_card_completeness", str(card.get("completeness", ""))),
-        ("aibom-guard:pickle_scan_status",
+        ("aibom-guardian:trust_score", str(model.get("risk_score", ""))),
+        ("aibom-guardian:verdict", str(model.get("verdict", ""))),
+        ("aibom-guardian:license_status", str(model.get("license_status", ""))),
+        ("aibom-guardian:license_family", str(model.get("license_family", ""))),
+        ("aibom-guardian:weight_formats:safetensors", str(len(formats.get("safetensors") or []))),
+        ("aibom-guardian:weight_formats:pickle", str(len(formats.get("pickle") or []))),
+        ("aibom-guardian:pickle_only", str(bool(formats.get("pickle_only"))).lower()),
+        ("aibom-guardian:trust_remote_code", str(bool(model.get("trust_remote_code"))).lower()),
+        ("aibom-guardian:model_card_completeness", str(card.get("completeness", ""))),
+        ("aibom-guardian:pickle_scan_status",
          str((model.get("pickle_scan") or {}).get("status", ""))),
     ]
     for repo in model.get("external_code_repos") or []:
-        properties.append(("aibom-guard:external_code_repo", repo))
+        properties.append(("aibom-guardian:external_code_repo", repo))
 
     # G7 "Model timestamp": when the weights last changed. The commit SHA
     # pins *which* revision; this says how old it is.
     if model.get("last_modified"):
-        properties.append(("aibom-guard:last_modified", str(model["last_modified"])))
+        properties.append(("aibom-guardian:last_modified", str(model["last_modified"])))
 
     # Every weight file's digest, so a consumer can verify more than the one
     # artifact named in `hashes`.
@@ -620,7 +620,7 @@ def build_model_component(model: dict) -> dict:
         if path in {f.get("path") for f in
                     ((model.get("file_formats") or {}).get("safetensors") or [])
                     + ((model.get("file_formats") or {}).get("pickle") or [])}:
-            properties.append((f"aibom-guard:sha256:{path}", digest))
+            properties.append((f"aibom-guardian:sha256:{path}", digest))
 
     component["properties"] = [
         {"name": name, "value": value} for name, value in properties if value
@@ -657,7 +657,7 @@ def add_models_to_sbom(sbom: dict, model_reports: list) -> dict:
                       or f"AIBOM-{component['name']}-{issue.get('type')}-{index}",
                 "description": issue.get("message") or issue.get("detail") or "",
                 "ratings": [{
-                    "source": {"name": "AIBOM-Guard"},
+                    "source": {"name": "AIBOM-Guardian"},
                     "severity": _map_severity(issue.get("severity")),
                     "method": "other",
                 }],

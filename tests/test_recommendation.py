@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aibom_guard.recommendation import (
+from aibom_guardian.recommendation import (
     PyPIPackageInfo,
     RecommendationEngine,
     detect_deprecated,
@@ -235,7 +235,7 @@ def test_explanation_prompt_includes_supply_chain_and_fix():
     Explaining the CVE while ignoring that the package ships unsigned from
     an unmaintained repository tells the developer only half the story.
     """
-    from aibom_guard.ai_explainer import build_prompt
+    from aibom_guardian.ai_explainer import build_prompt
 
     prompt = build_prompt([{
         "package": "requests", "version": "2.28.0", "verdict": "WARNING",

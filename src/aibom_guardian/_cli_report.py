@@ -1,5 +1,5 @@
 """
-Terminal and JSON report helpers for the AIBOM-Guard CLI.
+Terminal and JSON report helpers for the AIBOM-Guardian CLI.
 
 Kept separate from scanner.py so the scan orchestration stays readable;
 behavior matches the former inlined implementations exactly.
@@ -78,7 +78,7 @@ def print_report(report: list[dict], verbose: bool = False):
     # Lazy: avoids a circular import with scanner (OSV_UNVERIFIED_ISSUE lives there).
     from .scanner import OSV_UNVERIFIED_ISSUE
 
-    print("\n===== AIBOM-Guard Scan Results =====\n")
+    print("\n===== AIBOM-Guardian Scan Results =====\n")
 
     # Only widen the table when supply-chain data was actually collected;
     # three empty columns on a normal scan is just noise.

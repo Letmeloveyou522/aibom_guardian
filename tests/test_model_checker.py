@@ -16,7 +16,7 @@ import tempfile
 
 import pytest
 
-from aibom_guard import model_checker as mc
+from aibom_guardian import model_checker as mc
 
 
 # ---------------------------------------------------------------------------
@@ -806,7 +806,7 @@ def test_card_dict_logs_when_to_dict_raises(caplog):
             raise RuntimeError("hub shape changed")
 
     info = FakeInfo(card_data=BrokenCard())
-    with caplog.at_level("DEBUG", logger="aibom_guard.model_checker"):
+    with caplog.at_level("DEBUG", logger="aibom_guardian.model_checker"):
         result = mc._card_dict(info)
     assert isinstance(result, dict)
     assert any("to_dict" in r.message for r in caplog.records)
@@ -821,7 +821,7 @@ def test_safety_label_logs_when_enum_import_path_fails(caplog, monkeypatch):
             raise RuntimeError("enum broken")
 
     monkeypatch.setattr(ps, "SafetyLevel", Boom(), raising=False)
-    with caplog.at_level("DEBUG", logger="aibom_guard.model_checker"):
+    with caplog.at_level("DEBUG", logger="aibom_guardian.model_checker"):
         label = mc._safety_label("SafetyLevel.DANGEROUS")
     assert label in ("dangerous", "suspicious", "innocuous")
     assert any("SafetyLevel" in r.message for r in caplog.records)

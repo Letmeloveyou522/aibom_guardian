@@ -12,8 +12,8 @@ import threading
 
 import pytest
 
-from aibom_guard import scanner
-from aibom_guard.scanner import Pinned, _prefetch
+from aibom_guardian import scanner
+from aibom_guardian.scanner import Pinned, _prefetch
 
 
 def pinned(name, version="1.0.0"):

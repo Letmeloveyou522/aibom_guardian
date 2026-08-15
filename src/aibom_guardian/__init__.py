@@ -1,19 +1,19 @@
 """
-AIBOM-Guard - security, license and supply-chain scanner for Python packages
+AIBOM-Guardian - security, license and supply-chain scanner for Python packages
 and Hugging Face models, with CycloneDX SBOM / ML-BOM output.
 
 Entry points
 ------------
-    aibom-guard <requirements.txt>      CLI            (aibom_guard.scanner)
-    aibom-guard-mcp                     MCP server     (aibom_guard.mcp_server)
-    python -m aibom_guard <req.txt>     same as the CLI
+    aibom-guardian <requirements.txt>      CLI            (aibom_guardian.scanner)
+    aibom-guardian-mcp                     MCP server     (aibom_guardian.mcp_server)
+    python -m aibom_guardian <req.txt>     same as the CLI
 
 Library use
 -----------
-    from aibom_guard import calculate_trust_score, classify_license_detailed
+    from aibom_guardian import calculate_trust_score, classify_license_detailed
 
 Re-exports resolve lazily. An eager import here would break
-``python -m aibom_guard.license_checker``: runpy imports the parent package
+``python -m aibom_guardian.license_checker``: runpy imports the parent package
 first, so the submodule would already be in sys.modules and runpy would then
 run a second copy of it as __main__.
 """

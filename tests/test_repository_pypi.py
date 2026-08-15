@@ -14,7 +14,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from aibom_guard.repository_checker import RepositoryChecker
+from aibom_guardian.repository_checker import RepositoryChecker
 
 FIXED_NOW = datetime(2026, 7, 26, tzinfo=timezone.utc)
 

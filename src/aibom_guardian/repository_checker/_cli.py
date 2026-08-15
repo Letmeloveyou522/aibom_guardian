@@ -1,5 +1,5 @@
 """
-Standalone CLI: python -m aibom_guard.repository_checker <target>
+Standalone CLI: python -m aibom_guardian.repository_checker <target>
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from ._api import check_repository
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m aibom_guard.repository_checker",  # else argparse says "__main__.py"
-        description="AIBOM-Guard repository / supply-chain trust checker",
+        prog="python -m aibom_guardian.repository_checker",  # else argparse says "__main__.py"
+        description="AIBOM-Guardian repository / supply-chain trust checker",
     )
     parser.add_argument("target", help="GitHub URL, HF URL/id, or PyPI package")
     parser.add_argument(

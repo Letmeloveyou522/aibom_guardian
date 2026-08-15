@@ -12,7 +12,7 @@ import logging
 
 import pytest
 
-from aibom_guard.license_checker import ALLOWED, BLOCKED, REVIEW, UNKNOWN, classify_license
+from aibom_guardian.license_checker import ALLOWED, BLOCKED, REVIEW, UNKNOWN, classify_license
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ def test_classifiers_normalise_to_spdx():
     Classifier strings must map onto SPDX ids before grading, so
     GPLv3 is recognised as GPL-3.0-only rather than UNKNOWN.
     """
-    from aibom_guard.license_checker import normalize_to_spdx
+    from aibom_guardian.license_checker import normalize_to_spdx
 
     assert normalize_to_spdx(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
@@ -117,7 +117,7 @@ def test_lgpl_is_not_swallowed_by_the_gpl_pattern():
 # Registries decide, and the answer says which one
 # ---------------------------------------------------------------------------
 
-from aibom_guard.license_checker import classify_license_detailed, registry_versions
+from aibom_guardian.license_checker import classify_license_detailed, registry_versions
 
 
 def test_registry_versions_are_reported():
@@ -655,7 +655,7 @@ def test_malformed_expressions_do_not_raise():
 # Registry loading: downloaded once, cached, and degrades safely
 # ---------------------------------------------------------------------------
 
-from aibom_guard import license_checker
+from aibom_guardian import license_checker
 
 
 @pytest.fixture
@@ -679,7 +679,7 @@ def test_offline_without_a_cache_never_invents_a_verdict(isolated_registry, capl
     """
     license_checker.set_offline(True)
 
-    with caplog.at_level(logging.WARNING, logger="aibom_guard.license_checker"):
+    with caplog.at_level(logging.WARNING, logger="aibom_guardian.license_checker"):
         versions = license_checker.registry_versions()
         assert versions["available"] is False
         assert versions["spdx_source"] == "unavailable"

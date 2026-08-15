@@ -1,10 +1,10 @@
-# AIBOM-Guard runtime dependencies.
+# AIBOM-Guardian runtime dependencies.
 #
 # This file is what the project itself needs to run:
 #     pip install -r requirements.txt
 #
 # pyproject.toml's [project].dependencies is the canonical list - that is what
-# `pip install aibom-guard` resolves. This file mirrors it with the reasoning
+# `pip install aibom-guardian` resolves. This file mirrors it with the reasoning
 # attached, for people installing from a clone. tests/test_packaging.py fails
 # if the two ever drift apart.
 #
@@ -12,7 +12,7 @@
 # (requests==2.28.0, numpy==1.24.0, pyyaml==5.3.1) are pinned to deliberately
 # vulnerable versions so the scanner has something to find - installing them
 # was never the intent. They now live in examples/sample-requirements.txt:
-#     aibom-guard examples/sample-requirements.txt
+#     aibom-guardian examples/sample-requirements.txt
 
 requests>=2.32            # HTTP for the OSV, PyPI and GitHub APIs
 prettytable>=3.0          # result table in the terminal

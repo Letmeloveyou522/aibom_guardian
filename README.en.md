@@ -1,6 +1,6 @@
-# AIBOM-Guard
+# AIBOM-Guardian
 
-[![CI](https://github.com/Letmeloveyou522/aibom_guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Letmeloveyou522/aibom_guard/actions/workflows/ci.yml)
+[![CI](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
@@ -28,7 +28,7 @@ Changelog: [CHANGELOG.md](CHANGELOG.md)
 ## What it produces
 
 ```
-$ aibom-guard requirements.txt
+$ aibom-guardian requirements.txt
 
 [INFO] 3 direct + 4 transitive = 7 packages to scan.
 
@@ -59,7 +59,7 @@ your build.
 AI models go into the same table.
 
 ```
-$ aibom-guard requirements.txt --model CompVis/stable-diffusion-v1-4
+$ aibom-guardian requirements.txt --model CompVis/stable-diffusion-v1-4
 
 | Model                         | License               | Weights              | Verdict |
 | CompVis/stable-diffusion-v1-4 | creativeml-openrail-m | safetensors + pickle | BLOCK   |
@@ -92,20 +92,20 @@ verdict is `WARNING`.
 
 ```bash
 pip install -e .
-aibom-guard requirements.txt
+aibom-guardian requirements.txt
 ```
 
 In CI:
 
 ```yaml
-- uses: Letmeloveyou522/aibom_guard@v1
+- uses: Letmeloveyou522/aibom_guardian@v1
 ```
 
 ---
 
 ## How it differs
 
-| | pip-audit | safety | syft · trivy | AIBOM-Guard |
+| | pip-audit | safety | syft · trivy | AIBOM-Guardian |
 |---|:---:|:---:|:---:|:---:|
 | Vulnerabilities | ✅ | ✅ | ✅ | ✅ |
 | Transitive dependencies | ✅ | ✅ | ✅ | ✅ |
@@ -130,8 +130,8 @@ land in the same SBOM.**
 Requires Python 3.10 or newer.
 
 ```bash
-git clone https://github.com/Letmeloveyou522/aibom_guard.git
-cd aibom_guard
+git clone https://github.com/Letmeloveyou522/aibom_guardian.git
+cd aibom_guardian
 
 python -m venv .venv
 .venv\Scripts\activate          # Windows
@@ -140,7 +140,7 @@ source .venv/bin/activate       # macOS / Linux
 pip install -e .
 ```
 
-`pip install -e .` installs the dependencies and registers the `aibom-guard`
+`pip install -e .` installs the dependencies and registers the `aibom-guardian`
 command. Use `pip install .` if you do not intend to edit the source.
 
 Verify:
@@ -167,10 +167,10 @@ seconds, and works without installing the package (`pyproject.toml` puts
 ## Usage
 
 ```bash
-aibom-guard examples/sample-requirements.txt
+aibom-guardian examples/sample-requirements.txt
 ```
 
-`python -m aibom_guard` does the same thing.
+`python -m aibom_guardian` does the same thing.
 
 `examples/sample-requirements.txt` is scan *input*, pinned to deliberately
 vulnerable versions. It is not something to `pip install -r`. To scan your own
@@ -179,7 +179,7 @@ project, pass the path to its `requirements.txt`.
 Include AI models:
 
 ```bash
-aibom-guard examples/sample-requirements.txt \
+aibom-guardian examples/sample-requirements.txt \
     --model CompVis/stable-diffusion-v1-4
 ```
 
@@ -260,19 +260,19 @@ Off by default — a fresh release is not itself a defect.
 SARIF makes GitHub annotate the pull request inline.
 
 ```yaml
-- uses: Letmeloveyou522/aibom_guard@v1
+- uses: Letmeloveyou522/aibom_guardian@v1
   with:
     requirements: requirements.txt
     min-release-age: 1
 - uses: github/codeql-action/upload-sarif@v3
   with:
-    sarif_file: aibom-guard.sarif
+    sarif_file: aibom-guardian.sarif
 ```
 
 Or directly:
 
 ```bash
-aibom-guard requirements.txt --sarif aibom-guard.sarif
+aibom-guardian requirements.txt --sarif aibom-guardian.sarif
 ```
 
 ### Exit codes
@@ -395,7 +395,7 @@ The weights and thresholds are agreed values, pinned by
 
 The SBOM carries resolved SPDX identifiers in the standard `licenses` field;
 obligations and the reasoning behind each verdict are attached as
-`aibom-guard:` properties. Model components additionally carry SHA-256
+`aibom-guardian:` properties. Model components additionally carry SHA-256
 `hashes` of the weight files, derivation (`pedigree.ancestors`) and the last
 modified date.
 
@@ -472,10 +472,10 @@ The last two rows matter: absence of evidence is not grounds to block.
 
 ### The lists are downloaded and cached, not vendored
 
-They are fetched on first run into `~/.cache/aibom-guard/registries`
-(`%LOCALAPPDATA%\aibom-guard\registries` on Windows). After that the cache is
+They are fetched on first run into `~/.cache/aibom-guardian/registries`
+(`%LOCALAPPDATA%\aibom-guardian\registries` on Windows). After that the cache is
 used; after 30 days a refresh is attempted, and if it fails the stale cache is
-used anyway. `AIBOM_GUARD_CACHE` overrides the location.
+used anyway. `AIBOM_GUARDIAN_CACHE` overrides the location.
 
 They are deliberately not committed to this repository. Blue Oak's terms
 permit automating *access* to the JSON files and say nothing about
@@ -571,9 +571,9 @@ single shared adapter (`_adapters.py`), and a test asserts they are literally
 the same function object.
 
 ```
-src/aibom_guard/
-    scanner.py              CLI entry point (aibom-guard)
-    mcp_server.py           MCP entry point (aibom-guard-mcp)
+src/aibom_guardian/
+    scanner.py              CLI entry point (aibom-guardian)
+    mcp_server.py           MCP entry point (aibom-guardian-mcp)
     _adapters.py            front end -> score_engine input (single copy)
     score_engine.py         Trust Score / final verdict  <- the only scorer
     model_checker.py        Hugging Face model metadata
@@ -607,16 +607,16 @@ the Hugging Face or PyPI paths. The import path from outside is unchanged.
 Individual modules can be run on their own:
 
 ```bash
-python -m aibom_guard.model_checker https://huggingface.co/google-bert/bert-base-uncased
-python -m aibom_guard.repository_checker https://github.com/pallets/flask --json
-python -m aibom_guard.license_checker
-python -m aibom_guard.score_engine
+python -m aibom_guardian.model_checker https://huggingface.co/google-bert/bert-base-uncased
+python -m aibom_guardian.repository_checker https://github.com/pallets/flask --json
+python -m aibom_guardian.license_checker
+python -m aibom_guardian.score_engine
 python examples/demo_recommendation.py reqeusts==1.0.0
 ```
 
 Run `model_checker` on its own and it **downloads and inspects** pickle files
 up to 512 MB, which can take minutes depending on model size. Pass
-`--max-pickle-size-mb 0` for metadata only. `aibom-guard --model` defaults the
+`--max-pickle-size-mb 0` for metadata only. `aibom-guardian --model` defaults the
 other way — 0, enabled with `--model-pickle-scan MB`.
 
 ---
@@ -636,7 +636,7 @@ and does not run Ollama explanations. It answers one target at a time as JSON.
 
 ### CLI vs MCP scope
 
-| | CLI (`aibom-guard`) | MCP (`aibom-guard-mcp`) |
+| | CLI (`aibom-guardian`) | MCP (`aibom-guardian-mcp`) |
 |---|---|---|
 | Input | `requirements.txt` + repeated `--model` | One target per tool |
 | Output | Terminal + `scan_report.json` + CycloneDX / ML-BOM | Tool return JSON only |
@@ -658,21 +658,21 @@ Claude Desktop configuration:
 ```json
 {
   "mcpServers": {
-    "aibom-guard": {
-      "command": "aibom-guard-mcp",
+    "aibom-guardian": {
+      "command": "aibom-guardian-mcp",
       "env": { "GITHUB_TOKEN": "...", "HF_TOKEN": "..." }
     }
   }
 }
 ```
 
-If `aibom-guard-mcp` is not on PATH — for example when it is installed only
+If `aibom-guardian-mcp` is not on PATH — for example when it is installed only
 inside a virtual environment — point at the interpreter directly:
 
 ```json
 {
   "command": "C:/path/to/.venv/Scripts/python.exe",
-  "args": ["-m", "aibom_guard.mcp_server"]
+  "args": ["-m", "aibom_guardian.mcp_server"]
 }
 ```
 

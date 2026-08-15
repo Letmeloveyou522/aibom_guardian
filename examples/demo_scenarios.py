@@ -29,13 +29,13 @@ from unittest.mock import patch
 # Runnable straight from a clone, without installing the package first.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from aibom_guard.model_checker import collect_issues  # noqa: E402
-from aibom_guard.recommendation import (  # noqa: E402
+from aibom_guardian.model_checker import collect_issues  # noqa: E402
+from aibom_guardian.recommendation import (  # noqa: E402
     PyPIPackageInfo,
     RecommendationEngine,
 )
-from aibom_guard.scanner import _model_issues  # noqa: E402
-from aibom_guard.score_engine import calculate_trust_score  # noqa: E402
+from aibom_guardian.scanner import _model_issues  # noqa: E402
+from aibom_guardian.score_engine import calculate_trust_score  # noqa: E402
 
 
 def _base_model_report(**overrides: Any) -> dict:
@@ -235,7 +235,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     mode = "live" if args.live else "offline"
-    print(f"AIBOM-Guard threat scenarios ({mode})")
+    print(f"AIBOM-Guardian threat scenarios ({mode})")
     rows = run_live() if args.live else run_offline()
 
     for row in rows:

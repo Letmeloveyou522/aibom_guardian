@@ -76,8 +76,8 @@ def _install_mcp_stub_if_needed() -> bool:
 
 _STUBBED = _install_mcp_stub_if_needed()
 
-from aibom_guard import mcp_server  # noqa: E402
-from aibom_guard.mcp_server import (  # noqa: E402
+from aibom_guardian import mcp_server  # noqa: E402
+from aibom_guardian.mcp_server import (  # noqa: E402
     build_repository_check_summary,
     check_license,
     check_package,

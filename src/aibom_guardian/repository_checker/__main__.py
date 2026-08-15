@@ -1,4 +1,4 @@
-"""``python -m aibom_guard.repository_checker <target>``.
+"""``python -m aibom_guardian.repository_checker <target>``.
 
 A package needs this file; ``-m`` cannot execute a package directory itself.
 """
