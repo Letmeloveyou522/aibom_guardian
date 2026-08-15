@@ -41,6 +41,25 @@ import argparse
 import logging
 import sys
 import threading
+__all__ = [
+    "HAS_PRETTYTABLE",
+    "_MAX_VULNS_SHOWN",
+    "_SEVERITY_ORDER",
+    "_VULN_SUMMARY_CHARS",
+    "_first_sentence",
+    "_print_vulnerabilities",
+    "_vuln_count_label",
+    "Pinned",
+    "TRANSITIVE_MAX_DEPTH",
+    "_DIRECTIVE_PREFIXES",
+    "_PYPI_SESSION",
+    "_normalize_name",
+    "_pypi_versions",
+    "_requires_dist",
+    "_resolve_specifier",
+    "run_scan",
+    "main",
+]
 from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import version as installed_version, PackageNotFoundError, metadata
 
