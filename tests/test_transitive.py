@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import pytest
 
-from aibom_guard import scanner
-from aibom_guard import _requirements
-from aibom_guard.scanner import Pinned, expand_transitive
+from aibom_guardian import scanner
+from aibom_guardian import _requirements
+from aibom_guardian.scanner import Pinned, expand_transitive
 
 
 @pytest.fixture

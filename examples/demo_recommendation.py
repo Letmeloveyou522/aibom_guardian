@@ -29,8 +29,8 @@ from typing import Optional
 # Runnable straight from a clone, without installing the package first.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from aibom_guard.osv_client import query_vulnerabilities  # noqa: E402
-from aibom_guard.recommendation import RecommendationEngine  # noqa: E402
+from aibom_guardian.osv_client import query_vulnerabilities  # noqa: E402
+from aibom_guardian.recommendation import RecommendationEngine  # noqa: E402
 
 DEFAULT_CASES = (
     "requests==2.28.0",
@@ -122,7 +122,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     specs = args.packages or list(DEFAULT_CASES)
 
     print("=" * 72)
-    print("AIBOM-Guard - osv_client + recommendation demo")
+    print("AIBOM-Guardian - osv_client + recommendation demo")
     print("  osv_client.query_vulnerabilities → RecommendationEngine.analyze_package")
     print("=" * 72)
 

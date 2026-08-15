@@ -8,7 +8,7 @@ Public entry point:
     check_repository(target, ...) -> dict
 
 Also usable as a CLI:
-    python -m aibom_guard.repository_checker https://github.com/pallets/flask
+    python -m aibom_guardian.repository_checker https://github.com/pallets/flask
 
 Split by target ecosystem rather than by layer:
 
@@ -29,7 +29,7 @@ Split by target ecosystem rather than by layer:
 
 The submodules are private; everything public is re-exported below, including
 the stdlib names tests patch through this namespace
-(``patch("aibom_guard.repository_checker.socket.getaddrinfo")``).
+(``patch("aibom_guardian.repository_checker.socket.getaddrinfo")``).
 """
 
 from __future__ import annotations
@@ -147,7 +147,7 @@ __all__ = [
 # Everything else the flat module used to expose, listed so the split is
 # invisible from the outside. Constants and private helpers were reachable
 # here before, and the stdlib names matter because tests patch through this
-# namespace - `patch("aibom_guard.repository_checker.shutil.which")` has to
+# namespace - `patch("aibom_guardian.repository_checker.shutil.which")` has to
 # keep resolving. Nothing new is published; this only stops the move from
 # quietly narrowing the surface.
 __all__ += [

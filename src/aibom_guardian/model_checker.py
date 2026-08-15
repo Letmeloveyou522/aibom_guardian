@@ -1,7 +1,7 @@
 """
 model_checker.py
 -----------------------------------
-AIBOM-Guard - AI model information collector (Hugging Face).
+AIBOM-Guardian - AI model information collector (Hugging Face).
 
 Takes a Hugging Face model URL (or `owner/model`) and collects everything
 an AI Bill of Materials needs:
@@ -14,9 +14,9 @@ an AI Bill of Materials needs:
   6) Model card presence + required fields
 
 Usage:
-    python -m aibom_guard.model_checker https://huggingface.co/facebook/bart-base
-    python -m aibom_guard.model_checker facebook/bart-base --max-pickle-size-mb 0
-    python -m aibom_guard.model_checker org/model --revision v1.0 --json out.json
+    python -m aibom_guardian.model_checker https://huggingface.co/facebook/bart-base
+    python -m aibom_guardian.model_checker facebook/bart-base --max-pickle-size-mb 0
+    python -m aibom_guardian.model_checker org/model --revision v1.0 --json out.json
 
 Exit codes (so this can gate a CI pipeline):
     0  collected, no blocking issue
@@ -25,7 +25,7 @@ Exit codes (so this can gate a CI pipeline):
 
 Requires huggingface_hub and picklescan (see requirements.txt).
 
-This collector is shared by the standalone CLI, ``aibom-guard --model`` and
+This collector is shared by the standalone CLI, ``aibom-guardian --model`` and
 MCP ``check_model``. Scoring fields (verdict, license_status) are added later
 by ``scanner.scan_model``.
 """
@@ -1018,7 +1018,7 @@ def collect_issues(report):
 def render(report):
     """Human-readable summary. Kept separate from check_model() so the JSON
     output and the terminal output cannot drift apart."""
-    lines = [f"AIBOM-Guard model report: {report['model_id']}", f"  {report['url']}"]
+    lines = [f"AIBOM-Guardian model report: {report['model_id']}", f"  {report['url']}"]
 
     def section(title):
         lines.extend(["", f"=== {title} ==="])

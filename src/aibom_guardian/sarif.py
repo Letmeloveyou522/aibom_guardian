@@ -16,7 +16,7 @@ import json
 from . import __version__
 
 SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
-INFORMATION_URI = "https://github.com/Letmeloveyou522/aibom_guard"
+INFORMATION_URI = "https://github.com/Letmeloveyou522/aibom_guardian"
 
 # SARIF has three levels. BLOCK is the only one that should fail a merge.
 _VERDICT_LEVEL = {"BLOCK": "error", "WARNING": "warning", "ALLOW": "note"}
@@ -49,7 +49,7 @@ _RULES = {
 
 
 def _rule_id(issue_type: str) -> str:
-    return f"aibom-guard/{issue_type or 'unknown'}"
+    return f"aibom-guardian/{issue_type or 'unknown'}"
 
 
 def _level(issue: dict) -> str:
@@ -119,7 +119,7 @@ def build_sarif(scan_report: list[dict], requirements_path: str) -> dict:
         "version": "2.1.0",
         "runs": [{
             "tool": {"driver": {
-                "name": "AIBOM-Guard",
+                "name": "AIBOM-Guardian",
                 "version": __version__,
                 "informationUri": INFORMATION_URI,
                 "rules": rules,

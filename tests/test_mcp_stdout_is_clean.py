@@ -75,7 +75,7 @@ def _install_mcp_stub_if_needed() -> bool:
 
 _install_mcp_stub_if_needed()
 
-from aibom_guard import mcp_server, osv_client  # noqa: E402
+from aibom_guardian import mcp_server, osv_client  # noqa: E402
 
 _LICENSE_OK = {
     "license": "MIT",
@@ -133,7 +133,7 @@ class TestMcpToolsDoNotWriteToStdout(unittest.TestCase):
         self.assert_silent(buffer, "check_package")
 
     def test_check_model_is_silent_when_the_model_cannot_be_read(self):
-        from aibom_guard import scanner
+        from aibom_guardian import scanner
 
         def explode(*args, **kwargs):
             raise RuntimeError("simulated hub failure")
@@ -146,7 +146,7 @@ class TestMcpToolsDoNotWriteToStdout(unittest.TestCase):
         self.assert_silent(buffer, "check_model")
 
     def test_check_model_is_silent_when_model_checker_is_missing(self):
-        from aibom_guard import scanner
+        from aibom_guardian import scanner
 
         with patch.object(scanner, "HAS_MODEL_CHECKER", False):
             with captured_stdout() as buffer:
@@ -173,21 +173,21 @@ class TestFailuresAreStillReported(unittest.TestCase):
             raise requests.exceptions.ConnectionError("simulated network failure")
 
         with patch.object(osv_client.requests, "post", explode):
-            with self.assertLogs("aibom_guard.osv_client", level="WARNING") as logs:
+            with self.assertLogs("aibom_guardian.osv_client", level="WARNING") as logs:
                 result = osv_client.query_vulnerabilities("requests", "2.28.0")
 
         self.assertIsNone(result)
         self.assertTrue(any("OSV query failed" in line for line in logs.output))
 
     def test_unreadable_model_is_logged(self):
-        from aibom_guard import scanner
+        from aibom_guardian import scanner
 
         def explode(*args, **kwargs):
             raise RuntimeError("simulated hub failure")
 
         with patch.object(scanner, "check_model", explode), \
              patch.object(scanner, "HAS_MODEL_CHECKER", True):
-            with self.assertLogs("aibom_guard.scanner", level="ERROR") as logs:
+            with self.assertLogs("aibom_guardian.scanner", level="ERROR") as logs:
                 report = scanner.scan_model("org/does-not-exist")
 
         self.assertIsNone(report)

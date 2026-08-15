@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aibom_guard.recommendation import (
+from aibom_guardian.recommendation import (
     PyPIClient,
     PyPIPackageInfo,
     detect_fresh_release,
@@ -121,7 +121,7 @@ class TestEngineWiring:
     def _engine(self, monkeypatch, package_info):
         from unittest.mock import MagicMock
 
-        from aibom_guard.recommendation import RecommendationEngine
+        from aibom_guardian.recommendation import RecommendationEngine
 
         client = MagicMock()
         client.get_package.return_value = package_info

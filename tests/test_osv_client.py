@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from aibom_guard.osv_client import (
+from aibom_guardian.osv_client import (
     _extract_severity,
     merge_aliased_vulnerabilities,
     query_vulnerabilities,
@@ -214,7 +214,7 @@ def test_partial_entries_do_not_raise(bad):
 
 def test_query_network_failure_returns_none_not_empty_list():
     """A failed OSV call must not look like 'zero CVEs found'."""
-    with patch("aibom_guard.osv_client.requests.post") as post:
+    with patch("aibom_guardian.osv_client.requests.post") as post:
         post.side_effect = requests.exceptions.Timeout("timed out")
         result = query_vulnerabilities("requests", "2.28.0")
     assert result is None
@@ -224,7 +224,7 @@ def test_query_network_failure_returns_none_not_empty_list():
 def test_query_http_error_returns_none():
     response = MagicMock()
     response.raise_for_status.side_effect = requests.exceptions.HTTPError("503")
-    with patch("aibom_guard.osv_client.requests.post", return_value=response):
+    with patch("aibom_guardian.osv_client.requests.post", return_value=response):
         result = query_vulnerabilities("requests", "2.28.0")
     assert result is None
 
@@ -233,7 +233,7 @@ def test_query_invalid_json_returns_none():
     response = MagicMock()
     response.raise_for_status.return_value = None
     response.json.side_effect = ValueError("No JSON")
-    with patch("aibom_guard.osv_client.requests.post", return_value=response):
+    with patch("aibom_guardian.osv_client.requests.post", return_value=response):
         result = query_vulnerabilities("requests", "2.28.0")
     assert result is None
 
@@ -243,7 +243,7 @@ def test_query_success_with_no_vulns_returns_empty_list():
     response = MagicMock()
     response.raise_for_status.return_value = None
     response.json.return_value = {"vulns": []}
-    with patch("aibom_guard.osv_client.requests.post", return_value=response):
+    with patch("aibom_guardian.osv_client.requests.post", return_value=response):
         result = query_vulnerabilities("some-safe-pkg", "1.0.0")
     assert result == []
 
@@ -262,7 +262,7 @@ def test_query_success_returns_parsed_list():
             "aliases": [],
         }],
     }
-    with patch("aibom_guard.osv_client.requests.post", return_value=response):
+    with patch("aibom_guardian.osv_client.requests.post", return_value=response):
         result = query_vulnerabilities("requests", "2.28.0")
     assert isinstance(result, list)
     assert len(result) == 1
@@ -285,7 +285,7 @@ def test_non_numeric_severity_score_is_logged_not_swallowed_silently(caplog):
         "severity": [{"type": "OTHER", "score": "not-a-number"}],
         "database_specific": {},
     }
-    with caplog.at_level(logging.DEBUG, logger="aibom_guard.osv_client"):
+    with caplog.at_level(logging.DEBUG, logger="aibom_guardian.osv_client"):
         label, score, vector = _extract_severity(vuln)
     assert label == "unknown"
     assert score is None

@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from aibom_guard.sarif import build_sarif, write_sarif
+from aibom_guardian.sarif import build_sarif, write_sarif
 
 
 def package(name="requests", version="2.28.0", issues=None, **overrides):
@@ -44,11 +44,11 @@ class TestDocumentShape:
         assert len(doc["runs"]) == 1
 
     def test_the_driver_names_the_tool_and_its_version(self):
-        import aibom_guard
+        import aibom_guardian
 
         driver = build_sarif([], "requirements.txt")["runs"][0]["tool"]["driver"]
-        assert driver["name"] == "AIBOM-Guard"
-        assert driver["version"] == aibom_guard.__version__
+        assert driver["name"] == "AIBOM-Guardian"
+        assert driver["version"] == aibom_guardian.__version__
 
     def test_a_clean_scan_is_a_run_with_no_results(self):
         """Not an empty file - "we looked and found nothing" is a valid run."""
@@ -142,7 +142,7 @@ class TestFingerprints:
 
 class TestScannerIntegration:
     def test_the_cli_writes_the_file(self, tmp_path, monkeypatch):
-        from aibom_guard import scanner
+        from aibom_guardian import scanner
 
         reqs = tmp_path / "requirements.txt"
         reqs.write_text("requests==2.28.0\n", encoding="utf-8")

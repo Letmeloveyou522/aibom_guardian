@@ -4,7 +4,7 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르고,
 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다.
 
-버전 번호의 단일 출처는 [`src/aibom_guard/__init__.py`](src/aibom_guard/__init__.py)의
+버전 번호의 단일 출처는 [`src/aibom_guardian/__init__.py`](src/aibom_guardian/__init__.py)의
 `__version__`입니다. `pyproject.toml`이 여기서 읽어 가고, 릴리스 워크플로가
 태그와 일치하는지 검사합니다.
 
@@ -30,8 +30,8 @@
   fingerprint에 버전이 들어가 업그레이드 후 같은 알림이 남지 않습니다.
 - **GitHub Action** (`action.yml`). `uses:` 한 줄로 남의 CI에 넣을 수 있습니다.
 - **패키징**: `pip install`로 설치되는 배포물이 됩니다. 콘솔 명령
-  `aibom-guard`(스캐너)와 `aibom-guard-mcp`(MCP 서버)가 등록되고,
-  `python -m aibom_guard`로도 실행됩니다.
+  `aibom-guardian`(스캐너)와 `aibom-guardian-mcp`(MCP 서버)가 등록되고,
+  `python -m aibom_guardian`로도 실행됩니다.
 - **CI 빌드 검증**: 매 푸시마다 휠과 sdist를 만들고 `twine check`합니다.
   릴리스 워크플로는 태그를 달 때만 도는데, 그때 처음 실패를 발견하는 상황을
   막기 위한 것입니다.
@@ -47,14 +47,14 @@
   `RecommendationEngine`을 만듭니다. 병렬 조회에서 세션을 공유하면 안 됩니다.
 - README 가중치표가 코드와 달랐습니다(`30/25/15/10/8/7/5` → 실제
   `28/25/15/12/10/8/2`). 문서를 코드에 맞췄습니다.
-- **구조**: 최상위에 흩어져 있던 모듈 10개를 `src/aibom_guard/` 패키지로
+- **구조**: 최상위에 흩어져 있던 모듈 10개를 `src/aibom_guardian/` 패키지로
   옮겼습니다. 최상위 모듈이 여러 개인 flat 레이아웃은 setuptools가 배포물로
   만들 수 없어, 이전 릴리스 워크플로는 실행되면 반드시 실패하는 상태였습니다.
-- **실행 방법**: `python scanner.py <파일>` → `aibom-guard <파일>`.
-  개별 모듈은 `python -m aibom_guard.<모듈>`로 실행합니다.
+- **실행 방법**: `python scanner.py <파일>` → `aibom-guardian <파일>`.
+  개별 모듈은 `python -m aibom_guardian.<모듈>`로 실행합니다.
 - **MCP 설정**: Claude Desktop에 `mcp_server.py` 경로를 넘기던 방식이
-  동작하지 않습니다. `aibom-guard-mcp` 또는
-  `python -m aibom_guard.mcp_server`를 쓰십시오.
+  동작하지 않습니다. `aibom-guardian-mcp` 또는
+  `python -m aibom_guardian.mcp_server`를 쓰십시오.
 - `_vulns_to_issues`와 `_build_check_result`가 `scanner.py`와
   `mcp_server.py`에 복사되어 있던 것을 `_adapters.py` 한 곳으로 합쳤습니다.
   두 사본은 이미 갈라져 있었고(MCP 쪽만 `None`을 처리), CLI와 MCP가 같은
@@ -172,4 +172,4 @@
 - 나열할 수 없는 디렉터리에서 `check_provenance`가 크래시하던 문제
 - 라이선스 오탐 및 hallucination 판정 로직 분리
 
-[Unreleased]: https://github.com/Letmeloveyou522/aibom_guard/compare/main...dev
+[Unreleased]: https://github.com/Letmeloveyou522/aibom_guardian/compare/main...dev

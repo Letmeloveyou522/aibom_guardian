@@ -13,8 +13,8 @@ import logging
 
 import pytest
 
-from aibom_guard import scanner
-from aibom_guard import _requirements
+from aibom_guardian import scanner
+from aibom_guardian import _requirements
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +245,7 @@ def test_recommendation_failure_degrades_to_cve_only(reqs, no_side_effects,
     monkeypatch.setattr(scanner, "RecommendationEngine",
                         lambda *a, **k: FakeEngine(boom=True))
 
-    with caplog.at_level(logging.WARNING, logger="aibom_guard.scanner"):
+    with caplog.at_level(logging.WARNING, logger="aibom_guardian.scanner"):
         report = scanner.run_scan(reqs, explain=False)
 
     assert len(report) == 1
@@ -484,7 +484,7 @@ def test_model_scan_failure_is_reported(monkeypatch, caplog):
         raise RuntimeError("404 not found")
 
     monkeypatch.setattr(scanner, "check_model", boom)
-    with caplog.at_level(logging.ERROR, logger="aibom_guard.scanner"):
+    with caplog.at_level(logging.ERROR, logger="aibom_guardian.scanner"):
         assert scanner.scan_model("org/missing") is None
     assert "could not read model" in caplog.text
     assert "404 not found" in caplog.text
@@ -492,7 +492,7 @@ def test_model_scan_failure_is_reported(monkeypatch, caplog):
 
 def test_missing_model_checker_is_announced(monkeypatch, caplog):
     monkeypatch.setattr(scanner, "HAS_MODEL_CHECKER", False)
-    with caplog.at_level(logging.WARNING, logger="aibom_guard.scanner"):
+    with caplog.at_level(logging.WARNING, logger="aibom_guardian.scanner"):
         assert scanner.scan_model("org/model") is None
     assert "unavailable" in caplog.text
 

@@ -1,9 +1,9 @@
-name: AIBOM-Guard
+name: AIBOM-Guardian
 description: >-
   Scan Python requirements and Hugging Face models for vulnerabilities,
   license restrictions and supply-chain risk. Emits a CycloneDX SBOM and
   optional SARIF.
-author: AIBOM-Guard contributors
+author: AIBOM-Guardian contributors
 
 branding:
   icon: shield
@@ -41,7 +41,7 @@ inputs:
   sarif-file:
     description: Where to write SARIF. Empty disables SARIF output.
     required: false
-    default: aibom-guard.sarif
+    default: aibom-guardian.sarif
   sbom-file:
     description: Where to write the CycloneDX SBOM.
     required: false
@@ -71,7 +71,7 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: Install AIBOM-Guard
+    - name: Install AIBOM-Guardian
       shell: bash
       run: python -m pip install --quiet "${{ github.action_path }}"
 
@@ -93,7 +93,7 @@ runs:
         [ -n "${{ inputs.sarif-file }}" ] && args+=(--sarif "${{ inputs.sarif-file }}")
 
         set +e
-        aibom-guard "${args[@]}"
+        aibom-guardian "${args[@]}"
         code=$?
         set -e
 

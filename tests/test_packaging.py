@@ -68,11 +68,11 @@ def test_mcp_stays_pinned():
 def test_console_scripts_point_at_real_callables():
     """A typo'd entry point only surfaces after install, which is too late."""
     scripts = read_pyproject()["project"]["scripts"]
-    assert scripts["aibom-guard"] == "aibom_guard.scanner:main"
-    assert scripts["aibom-guard-mcp"] == "aibom_guard.mcp_server:main"
+    assert scripts["aibom-guardian"] == "aibom_guardian.scanner:main"
+    assert scripts["aibom-guardian-mcp"] == "aibom_guardian.mcp_server:main"
 
-    from aibom_guard import scanner
-    from aibom_guard import mcp_server
+    from aibom_guardian import scanner
+    from aibom_guardian import mcp_server
 
     assert callable(scanner.main)
     assert callable(mcp_server.main)
@@ -80,16 +80,16 @@ def test_console_scripts_point_at_real_callables():
 
 def test_version_is_single_sourced():
     """
-    pyproject reads the version from aibom_guard.__version__. If someone adds
+    pyproject reads the version from aibom_guardian.__version__. If someone adds
     a static `version =` back, the two can disagree and the wheel ships a lie.
     """
     project = read_pyproject()["project"]
     assert "version" not in project, "version must stay dynamic, not hardcoded"
     assert "version" in project["dynamic"]
 
-    import aibom_guard
+    import aibom_guardian
 
-    assert aibom_guard.__version__.count(".") >= 2
+    assert aibom_guardian.__version__.count(".") >= 2
 
 
 def test_sbom_reports_the_real_tool_version():
@@ -97,13 +97,13 @@ def test_sbom_reports_the_real_tool_version():
     metadata.tools states which tool produced the document, so a hardcoded
     version there would make every SBOM misstate its own provenance.
     """
-    import aibom_guard
-    from aibom_guard import sbom_generator
+    import aibom_guardian
+    from aibom_guardian import sbom_generator
 
-    assert sbom_generator.AIBOM_GUARD_VERSION == aibom_guard.__version__
+    assert sbom_generator.AIBOM_GUARDIAN_VERSION == aibom_guardian.__version__
 
     sbom = sbom_generator.ensure_cyclonedx_metadata({})
     entries = sbom["metadata"]["tools"]["components"]
-    ours = [c for c in entries if c["name"] == sbom_generator.AIBOM_GUARD_TOOL_NAME]
-    assert ours, "AIBOM-Guard is missing from metadata.tools"
-    assert ours[0]["version"] == aibom_guard.__version__
+    ours = [c for c in entries if c["name"] == sbom_generator.AIBOM_GUARDIAN_TOOL_NAME]
+    assert ours, "AIBOM-Guardian is missing from metadata.tools"
+    assert ours[0]["version"] == aibom_guardian.__version__

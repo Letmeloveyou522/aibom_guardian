@@ -1,7 +1,7 @@
 # 보안 정책 / Security Policy
 
 **English:** Please report vulnerabilities privately via
-[GitHub Security Advisories](https://github.com/Letmeloveyou522/aibom_guard/security/advisories/new),
+[GitHub Security Advisories](https://github.com/Letmeloveyou522/aibom_guardian/security/advisories/new),
 not through public issues. Details below are in Korean; reports in English
 are welcome.
 
@@ -20,7 +20,7 @@ are welcome.
 **공개 이슈로 올리지 말아 주십시오.** 수정본이 나오기 전에 공개되면
 이 도구를 쓰는 쪽이 그대로 노출됩니다.
 
-[GitHub Security Advisories](https://github.com/Letmeloveyou522/aibom_guard/security/advisories/new)로
+[GitHub Security Advisories](https://github.com/Letmeloveyou522/aibom_guardian/security/advisories/new)로
 비공개 제보해 주십시오. 저장소 소유자에게만 보입니다.
 
 제보에 아래가 있으면 확인이 빠릅니다.

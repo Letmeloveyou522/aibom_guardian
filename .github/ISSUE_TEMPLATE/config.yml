@@ -1,10 +1,10 @@
 blank_issues_enabled: true
 contact_links:
   - name: 보안 취약점 제보
-    url: https://github.com/Letmeloveyou522/aibom_guard/security/advisories/new
+    url: https://github.com/Letmeloveyou522/aibom_guardian/security/advisories/new
     about: >-
       공개 이슈가 아니라 비공개 advisory로 보내 주십시오. 위험한 패키지를
       안전하다고 보고하게 만드는 입력도 여기에 해당합니다.
   - name: 사용법 질문
-    url: https://github.com/Letmeloveyou522/aibom_guard/discussions
+    url: https://github.com/Letmeloveyou522/aibom_guardian/discussions
     about: 버그인지 확실하지 않은 질문은 Discussions에서 편하게 물어보세요.

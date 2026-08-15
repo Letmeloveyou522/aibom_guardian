@@ -1,4 +1,4 @@
-# Example scan input for AIBOM-Guard.
+# Example scan input for AIBOM-Guardian.
 #
 #     python3 scanner.py examples/sample-requirements.txt
 #

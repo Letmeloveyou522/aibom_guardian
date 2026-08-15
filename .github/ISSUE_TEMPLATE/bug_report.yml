@@ -28,7 +28,7 @@ body:
         `--offline`을 붙여도 재현되는지 알려주시면 원인 범위가 크게 좁혀집니다.
       value: |
         ```bash
-        aibom-guard requirements.txt
+        aibom-guardian requirements.txt
         ```
 
         requirements.txt 내용:
@@ -51,7 +51,7 @@ body:
     id: version
     attributes:
       label: 버전
-      description: "`aibom-guard --version` 또는 커밋 해시"
+      description: "`aibom-guardian --version` 또는 커밋 해시"
       placeholder: "0.1.0 / 3e37fae"
     validations:
       required: true

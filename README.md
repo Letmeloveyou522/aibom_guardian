@@ -1,16 +1,16 @@
-# AIBOM-Guard
+# AIBOM-Guardian
 
-[![CI](https://github.com/Letmeloveyou522/aibom_guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Letmeloveyou522/aibom_guard/actions/workflows/ci.yml)
+[![CI](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
-[![MCP](https://img.shields.io/badge/MCP-4%20tools-purple)](src/aibom_guard/mcp_server.py)
+[![MCP](https://img.shields.io/badge/MCP-4%20tools-purple)](src/aibom_guardian/mcp_server.py)
 
 > **Vibe Coding 시대, 개발자를 위한 AI 공급망 메인테이너 에이전트**
 
 LLM이 추천하고, 문서에서 복사하고, `pip install` 한 줄로 들어오는
 의존성 — 그 안에 **없는 패키지**, **쓸 수 없는 라이선스**, **실행되는
-pickle 가중치**가 섞여 있습니다. AIBOM-Guard는 Python 패키지와 Hugging Face
+pickle 가중치**가 섞여 있습니다. AIBOM-Guardian는 Python 패키지와 Hugging Face
 모델을 한 번에 검사해 두 가지를 남깁니다.
 
 | 산출물 | 의미 |
@@ -60,7 +60,7 @@ English: [README.en.md](README.en.md) ·
 
 MCP 도구 4종: `check_package` · `check_license` · `check_repo_trust` ·
 `check_model`. 에이전트는 도구를 호출하고, 배치 CI·SBOM 파일 출력은
-`aibom-guard` CLI가 담당합니다.
+`aibom-guardian` CLI가 담당합니다.
 
 > **범위 안내:** 취약점 소스는 **OSV**, 공급망 점수는 **OpenSSF Scorecard**,
 > 서명 검증은 **cosign(Sigstore CLI)**, 모델 직렬화는 **picklescan**입니다.
@@ -99,7 +99,7 @@ SPDX License List + Blue Oak Council로 식별하고, OpenRAIL / Llama / Gemma
 
 ### GitHub Actions 보안 게이트
 ```yaml
-- uses: Letmeloveyou522/aibom_guard@v1
+- uses: Letmeloveyou522/aibom_guardian@v1
   with:
     requirements: requirements.txt
     fail-on: warning   # block | warning | never
@@ -113,7 +113,7 @@ Composite Action이 SBOM·SARIF·JSON 리포트를 남기고, 종료 코드로 C
 ## 실행 결과 예시
 
 ```text
-$ aibom-guard examples/sample-requirements.txt
+$ aibom-guardian examples/sample-requirements.txt
 
 [INFO] 3 direct + 4 transitive = 7 packages to scan.
 
@@ -136,7 +136,7 @@ $ aibom-guard examples/sample-requirements.txt
 `urllib3`은 requirements에 없어도 `requests`의 **전이 의존성**으로 잡힙니다.
 
 ```text
-$ aibom-guard requirements.txt --model CompVis/stable-diffusion-v1-4
+$ aibom-guardian requirements.txt --model CompVis/stable-diffusion-v1-4
 
 | Model                         | License               | Weights              | Verdict |
 | CompVis/stable-diffusion-v1-4 | creativeml-openrail-m | safetensors + pickle | BLOCK   |
@@ -158,8 +158,8 @@ BLOCK만 막으려면 `--fail-on block`을 사용하십시오.
 ## 디렉터리 구조
 
 ```text
-aibom_guard/
-├── src/aibom_guard/
+aibom_guardian/
+├── src/aibom_guardian/
 │   ├── scanner.py              # CLI 오케스트레이터 (run_scan / main)
 │   ├── _requirements.py        # requirements 파싱 · 전이 의존성
 │   ├── _cli_report.py          # 터미널 리포트 · save_report
@@ -206,8 +206,8 @@ aibom_guard/
 ### 설치
 
 ```bash
-git clone https://github.com/Letmeloveyou522/aibom_guard.git
-cd aibom_guard
+git clone https://github.com/Letmeloveyou522/aibom_guardian.git
+cd aibom_guardian
 
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -220,28 +220,28 @@ pytest                             # 네트워크 없이 수 초 내 통과해�
 
 ```bash
 # 기본 스캔 (전이 의존성 포함) + SBOM
-aibom-guard examples/sample-requirements.txt
+aibom-guardian examples/sample-requirements.txt
 
 # AI 모델 포함 → ML-BOM
-aibom-guard requirements.txt --model CompVis/stable-diffusion-v1-4
+aibom-guardian requirements.txt --model CompVis/stable-diffusion-v1-4
 
 # 공급망 · 서명 · OpenSSF
-aibom-guard requirements.txt --supply-chain
+aibom-guardian requirements.txt --supply-chain
 
 # CI 친화: 설명 생략, SARIF, fail 정책
-aibom-guard requirements.txt --no-explain --sarif out.sarif --fail-on warning
+aibom-guardian requirements.txt --no-explain --sarif out.sarif --fail-on warning
 
 # 오프라인 (라이선스 캐시·설치 사본만)
-aibom-guard requirements.txt --offline --fail-on never
+aibom-guardian requirements.txt --offline --fail-on never
 ```
 
-또는 `python -m aibom_guard requirements.txt`.
+또는 `python -m aibom_guardian requirements.txt`.
 
 ### MCP (에이전트 연동)
 
 ```bash
-aibom-guard-mcp
-# 또는: python -m aibom_guard.mcp_server
+aibom-guardian-mcp
+# 또는: python -m aibom_guardian.mcp_server
 ```
 
 Claude Desktop / Cursor 예시:
@@ -249,8 +249,8 @@ Claude Desktop / Cursor 예시:
 ```json
 {
   "mcpServers": {
-    "aibom-guard": {
-      "command": "aibom-guard-mcp",
+    "aibom-guardian": {
+      "command": "aibom-guardian-mcp",
       "env": { "GITHUB_TOKEN": "...", "HF_TOKEN": "..." }
     }
   }
@@ -305,7 +305,7 @@ Claude Desktop / Cursor 예시:
 
 ```bash
 pytest -q
-python -m pyflakes src/aibom_guard tests examples
+python -m pyflakes src/aibom_guardian tests examples
 python -m build
 ```
 
@@ -313,7 +313,7 @@ python -m build
 
 ## 다른 도구와의 차이
 
-| | pip-audit | safety | syft · trivy | **AIBOM-Guard** |
+| | pip-audit | safety | syft · trivy | **AIBOM-Guardian** |
 |---|:---:|:---:|:---:|:---:|
 | 취약점 (OSV 등) | ✅ | ✅ | ✅ | ✅ |
 | 전이 의존성 | ✅ | ✅ | ✅ | ✅ |
@@ -345,7 +345,7 @@ python -m build
 | Blue Oak / OSI 승인 관대 라이선스 | `ALLOWED` |
 | 식별 실패 | `UNKNOWN` (통과 아님) |
 
-캐시: `~/.cache/aibom-guard/registries` (`AIBOM_GUARD_CACHE`로 변경 가능).
+캐시: `~/.cache/aibom-guardian/registries` (`AIBOM_GUARDIAN_CACHE`로 변경 가능).
 `--offline`이고 캐시가 없으면 내장 규칙만 남으며, 이 경우 **ALLOWED로
 무너지지 않습니다.**
 
@@ -387,5 +387,5 @@ python -m build
 ---
 
 <p align="center">
-  <b>AIBOM-Guard</b> — ship AI dependencies you can still explain tomorrow.
+  <b>AIBOM-Guardian</b> — ship AI dependencies you can still explain tomorrow.
 </p>

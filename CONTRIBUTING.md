@@ -1,9 +1,9 @@
 # 기여 가이드
 
-AIBOM-Guard에 기여해 주셔서 감사합니다. 이 문서는 개발 환경 준비부터
+AIBOM-Guardian에 기여해 주셔서 감사합니다. 이 문서는 개발 환경 준비부터
 PR이 병합되기까지 필요한 것을 담고 있습니다.
 
-버그 제보나 질문만 하실 거라면 [이슈](https://github.com/Letmeloveyou522/aibom_guard/issues)를
+버그 제보나 질문만 하실 거라면 [이슈](https://github.com/Letmeloveyou522/aibom_guardian/issues)를
 열어 주시면 됩니다. 보안 취약점은 이슈가 아니라 [SECURITY.md](SECURITY.md)의
 절차를 따라 주십시오.
 
@@ -14,8 +14,8 @@ PR이 병합되기까지 필요한 것을 담고 있습니다.
 Python 3.10 이상이 필요합니다.
 
 ```bash
-git clone https://github.com/Letmeloveyou522/aibom_guard.git
-cd aibom_guard
+git clone https://github.com/Letmeloveyou522/aibom_guardian.git
+cd aibom_guardian
 
 python -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
@@ -49,7 +49,7 @@ None    # OSV가 응답하지 않음                    → 알 수 없음
 
 `None`을 `[]`로 바꾸는 코드는 **"아무도 검사하지 않은 패키지를 안전하다고
 보고"**하게 만듭니다. 이 도구가 저지를 수 있는 최악의 버그입니다.
-[`src/aibom_guard/_adapters.py`](src/aibom_guard/_adapters.py)의 모듈
+[`src/aibom_guardian/_adapters.py`](src/aibom_guardian/_adapters.py)의 모듈
 docstring에 전체 계약이 적혀 있습니다.
 
 같은 이유로 라이선스를 읽지 못했을 때도 `ALLOWED`로 넘기지 않고
@@ -62,7 +62,7 @@ docstring에 전체 계약이 적혀 있습니다.
 전담합니다. CLI와 MCP가 같은 답을 내놓는 근거가 이것입니다.
 
 두 진입점이 `score_engine`에 넘기는 입력은
-[`_adapters.py`](src/aibom_guard/_adapters.py) 한 곳에서 만듭니다. 복사해서
+[`_adapters.py`](src/aibom_guardian/_adapters.py) 한 곳에서 만듭니다. 복사해서
 쓰지 마십시오 — 이전에 그렇게 했다가 두 사본이 갈라졌고, 지금은 테스트가
 동일 객체인지 검사합니다.
 
@@ -75,7 +75,7 @@ docstring에 전체 계약이 적혀 있습니다.
 
 ### 4. 테스트는 네트워크를 쓰지 않습니다
 
-`tests/conftest.py`가 `AIBOM_GUARD_CACHE`를 `tests/fixtures`로 돌려 SPDX·
+`tests/conftest.py`가 `AIBOM_GUARDIAN_CACHE`를 `tests/fixtures`로 돌려 SPDX·
 Blue Oak 목록을 받지 않게 합니다. 새 테스트가 외부 API를 호출한다면
 `unittest.mock.patch`로 막아 주십시오.
 
@@ -177,9 +177,9 @@ docstring으로 올려 주십시오.
 ## 프로젝트 구조
 
 ```
-src/aibom_guard/
-    scanner.py              CLI 진입점 (aibom-guard)
-    mcp_server.py           MCP 진입점 (aibom-guard-mcp)
+src/aibom_guardian/
+    scanner.py              CLI 진입점 (aibom-guardian)
+    mcp_server.py           MCP 진입점 (aibom-guardian-mcp)
     _adapters.py            두 진입점 → score_engine 입력 변환 (단일 사본)
     score_engine.py         Trust Score / 최종 판정  ← 유일한 채점자
     model_checker.py        Hugging Face 모델 정보 수집
@@ -201,7 +201,7 @@ tests/                      단위 테스트 (네트워크 미사용)
 ### lint
 
 ```bash
-pyflakes src/aibom_guard tests examples
+pyflakes src/aibom_guardian tests examples
 ```
 
 CI가 이걸 돌립니다. 스타일 검사가 아니라 **해석되지 않는 이름**을 잡는

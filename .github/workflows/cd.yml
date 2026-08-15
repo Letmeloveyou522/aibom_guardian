@@ -69,10 +69,10 @@ jobs:
         # downloaded the wrong file.
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          built=$(ls dist/*.whl | sed -E 's/.*aibom_guard-([^-]+)-.*/\1/')
+          built=$(ls dist/*.whl | sed -E 's/.*aibom_guardian-([^-]+)-.*/\1/')
           echo "tag=$tag built=$built"
           if [ "$tag" != "$built" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match packaged version $built (see src/aibom_guard/__init__.py)"
+            echo "::error::tag $GITHUB_REF_NAME does not match packaged version $built (see src/aibom_guardian/__init__.py)"
             exit 1
           fi
 

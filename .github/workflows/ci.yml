@@ -41,7 +41,7 @@ jobs:
 
       - name: Run test suite
         # The suite is offline by design: tests/conftest.py points
-        # AIBOM_GUARD_CACHE at tests/fixtures so the SPDX / Blue Oak lists are
+        # AIBOM_GUARDIAN_CACHE at tests/fixtures so the SPDX / Blue Oak lists are
         # never fetched. If a test ever starts needing the network it fails
         # here, rather than passing silently against a developer's warm cache.
         run: pytest -q
@@ -65,7 +65,7 @@ jobs:
         # here — measured coverage belongs in a dedicated coverage job if added.
         run: |
           python -m pip install --upgrade pip pyflakes
-          python -m pyflakes src/aibom_guard tests examples
+          python -m pyflakes src/aibom_guardian tests examples
 
   build:
     name: Build wheel + sdist
@@ -117,7 +117,7 @@ jobs:
 
       - name: Install the package
         # From pyproject, not requirements.txt: this exercises what a user
-        # gets. The `aibom-guard` command below only exists if
+        # gets. The `aibom-guardian` command below only exists if
         # [project.scripts] is right.
         run: |
           python -m pip install --upgrade pip
@@ -130,8 +130,8 @@ jobs:
         # regression that silently returns 0 breaks the build.
         run: |
           set +e
-          aibom-guard examples/sample-requirements.txt --offline --no-explain \
-            --sarif aibom-guard.sarif
+          aibom-guardian examples/sample-requirements.txt --offline --no-explain \
+            --sarif aibom-guardian.sarif
           code=$?
           set -e
           echo "scanner exited with $code"
@@ -153,7 +153,7 @@ jobs:
           assert sbom["bomFormat"] == "CycloneDX", sbom.get("bomFormat")
           print("sbom.json OK:", sbom["bomFormat"], sbom["specVersion"])
 
-          sarif = json.load(open("aibom-guard.sarif"))
+          sarif = json.load(open("aibom-guardian.sarif"))
           assert sarif["version"] == "2.1.0", sarif.get("version")
           assert sarif["runs"], "SARIF has no runs"
           print("sarif OK:", len(sarif["runs"][0]["results"]), "results")
