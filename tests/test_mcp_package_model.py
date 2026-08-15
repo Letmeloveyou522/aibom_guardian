@@ -76,6 +76,10 @@ def _install_mcp_stub_if_needed() -> bool:
 _install_mcp_stub_if_needed()
 
 from aibom_guard import mcp_server  # noqa: E402
+from aibom_guard._adapters import (  # noqa: E402
+    LICENSE_UNVERIFIED_ISSUE,
+    attach_license_unverified,
+)
 from aibom_guard.mcp_server import (  # noqa: E402
     _vulns_to_issues,
     check_model,
@@ -125,6 +129,45 @@ class TestVulnsToIssuesContract(unittest.TestCase):
         self.assertIs(mcp_server._vulns_to_issues, _adapters._vulns_to_issues)
         self.assertIs(scanner._build_check_result, _adapters._build_check_result)
         self.assertIs(mcp_server._build_check_result, _adapters._build_check_result)
+        self.assertIs(scanner.LICENSE_UNVERIFIED_ISSUE, _adapters.LICENSE_UNVERIFIED_ISSUE)
+        self.assertIs(scanner.attach_license_unverified, _adapters.attach_license_unverified)
+        self.assertIs(
+            mcp_server.attach_license_unverified, _adapters.attach_license_unverified
+        )
+
+
+class TestAttachLicenseUnverified(unittest.TestCase):
+    def test_verified_license_leaves_issues_alone(self):
+        issues = [{"type": "cve", "id": "GHSA-x", "severity": "low"}]
+        lic = {"unverified": False, "source": "pypi:license", "error": None}
+        self.assertIs(attach_license_unverified(issues, lic), issues)
+        self.assertIsNone(attach_license_unverified(None, lic))
+
+    def test_unverified_appends_issue_to_list(self):
+        merged = attach_license_unverified(
+            [],
+            {"unverified": True, "source": "installed:license", "error": "offline"},
+            detail="custom detail",
+        )
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["type"], "unverified")
+        self.assertEqual(merged[0]["severity"], "unknown")
+        self.assertEqual(merged[0]["detail"], "custom detail")
+        self.assertIsNot(merged[0], LICENSE_UNVERIFIED_ISSUE)
+
+    def test_unverified_never_coerces_osv_none_to_list(self):
+        """OSV failure must stay None even when the license is also unverified."""
+        result = attach_license_unverified(
+            None,
+            {"unverified": True, "source": "installed:license", "error": "offline"},
+        )
+        self.assertIsNone(result)
+
+    def test_default_detail_comes_from_shared_constant(self):
+        merged = attach_license_unverified(
+            [], {"unverified": True, "source": "none", "error": "not found"},
+        )
+        self.assertEqual(merged[0]["detail"], LICENSE_UNVERIFIED_ISSUE["detail"])
 
 
 class TestCheckPackageOsvNone(unittest.TestCase):
@@ -155,7 +198,16 @@ class TestCheckPackageOsvNone(unittest.TestCase):
 
         self.assertEqual(result["vulnerabilities"], [])
         self.assertFalse(result["osv_unverified"])
+        self.assertFalse(result["license_unverified"])
         self.assertGreaterEqual(result["confidence"], 0.5)
+
+    def test_non_pypi_ecosystem_is_rejected(self):
+        """License resolution is PyPI-only; npm must not return a half-answer."""
+        result = check_package("lodash", "4.17.21", ecosystem="npm")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["tool"], "check_package")
+        self.assertEqual(result["error"]["type"], "unsupported_ecosystem")
+        self.assertIn("PyPI", result["error"]["detail"])
 
     def test_osv_findings_preserve_cvss_in_scoring_path(self):
         vulns = [{
@@ -176,6 +228,45 @@ class TestCheckPackageOsvNone(unittest.TestCase):
         self.assertFalse(result["osv_unverified"])
         # Critical-ish via CVSS fallback should lower the score below clean.
         self.assertLess(result["trust_score"], 100)
+
+    def test_license_unverified_lowers_confidence_like_cli(self):
+        """
+        P0: license_unverified must reach score_engine, not only the response
+        flag. With a clean OSV result this still yields WARNING / lower
+        confidence — matching scanner.run_scan.
+        """
+        with patch.object(mcp_server, "query_vulnerabilities", return_value=[]), \
+             patch.object(mcp_server, "resolve_license", return_value={
+                 "license": "MIT", "source": "installed:license",
+                 "version": "2.34.2", "unverified": True, "error": "offline"}):
+            result = check_package("requests", "2.28.0")
+
+        self.assertTrue(result["license_unverified"])
+        self.assertFalse(result["osv_unverified"])
+        self.assertEqual(result["vulnerabilities"], [])
+        self.assertEqual(result["verdict"], "WARNING")
+        self.assertLess(result["confidence"], 0.7)
+        self.assertEqual(result["license_source"], "installed:license")
+        # Clean verified path stays higher confidence — regression for P0 drift.
+        with patch.object(mcp_server, "query_vulnerabilities", return_value=[]), \
+             patch.object(mcp_server, "resolve_license", return_value={
+                 "license": "MIT", "source": "pypi:license_expression",
+                 "version": "2.28.0", "unverified": False, "error": None}):
+            clean = check_package("requests", "2.28.0")
+        self.assertGreater(clean["confidence"], result["confidence"])
+    def test_license_unverified_does_not_hide_osv_none(self):
+        """Both failures: issues stay None; osv_unverified remains true."""
+        with patch.object(mcp_server, "query_vulnerabilities", return_value=None), \
+             patch.object(mcp_server, "resolve_license", return_value={
+                 "license": "UNKNOWN", "source": "none",
+                 "version": None, "unverified": True, "error": "not found"}):
+            result = check_package("missing-pkg", "1.0.0")
+
+        self.assertIsNone(result["vulnerabilities"])
+        self.assertTrue(result["osv_unverified"])
+        self.assertTrue(result["license_unverified"])
+        self.assertEqual(result["verdict"], "WARNING")
+        self.assertLess(result["confidence"], 0.5)
 
 
 class TestCheckModelMCP(unittest.TestCase):
@@ -243,6 +334,38 @@ class TestCheckModelMCP(unittest.TestCase):
         # Compatible with wrapping into the scan_report document.
         document = {"packages": [], "models": [result], "unscanned": []}
         self.assertEqual(document["models"][0]["model_id"], "org/demo-model")
+
+
+class TestCheckLicenseEnvelope(unittest.TestCase):
+    """check_license returns the same MCP dict envelope as other tools."""
+
+    def setUp(self):
+        from aibom_guard import mcp_server as ms
+        self.ms = ms
+
+    def test_mit_is_allowed_dict(self):
+        result = self.ms.check_license("MIT")
+        self.assertIsInstance(result, dict)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool"], "check_license")
+        self.assertEqual(result["status"], "ALLOWED")
+        self.assertEqual(result["spdx_id"], "MIT")
+        self.assertEqual(result["family"], "permissive")
+        self.assertIn("reason", result)
+        self.assertIn("obligations", result)
+        json.dumps(result)
+
+    def test_gpl_is_review(self):
+        result = self.ms.check_license("GPL-3.0")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "REVIEW")
+        self.assertTrue(result.get("spdx_id"))
+
+    def test_rejects_non_string(self):
+        result = self.ms.check_license(None)  # type: ignore[arg-type]
+        self.assertFalse(result["success"])
+        self.assertEqual(result["tool"], "check_license")
+        self.assertEqual(result["error"]["type"], "invalid_input")
 
 
 if __name__ == "__main__":

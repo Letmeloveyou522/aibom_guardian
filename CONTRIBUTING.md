@@ -68,7 +68,7 @@ docstring에 전체 계약이 적혀 있습니다.
 
 ### 3. 가중치와 임계값은 합의된 값입니다
 
-7개 항목 가중치(malicious 30, cve 25, license 15, ...)와 판정 경계
+6개 항목 가중치(malicious 28, cve 25, license 15, typosquatting 12, ...)와 판정 경계
 (80 이상 ALLOW, 50 미만 BLOCK)는 `tests/test_score_engine.py`가 고정합니다.
 바꾸려면 **테스트를 함께 고치고 PR에 근거를 적어 주십시오.** 숫자만 조용히
 바뀌면 지난 리포트와 비교가 불가능해집니다.

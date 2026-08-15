@@ -34,7 +34,13 @@ Thumbs.db
 scan_report.json
 sbom.json
 _base_sbom.json
+aibom-guard.sarif
+artifacts/
 *.log
 
 # Local model / Hub caches
 .cache/
+.aibom-guard/
+
+# Accidental sdist unpack leftovers
+aibom_guard-*/

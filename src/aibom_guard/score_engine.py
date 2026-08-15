@@ -38,14 +38,14 @@ Output (consumed by scanner.run_scan and mcp_server.check_package):
 
 Rules that are not obvious from the arithmetic
 ---------------------------------------------
-* The seven ``issues[].type`` values are a contract with every producer:
-  cve, hallucination, typosquatting, malicious, pii, license, provenance.
+* The six ``issues[].type`` values are a contract with every producer:
+  cve, hallucination, typosquatting, malicious, license, provenance.
 * Thresholds (>=80 ALLOW, <50 BLOCK, critical -> BLOCK) match
   ``repository_checker.calculate_trust_score()`` so both scores share a scale.
   repository_checker keeps CONDITIONAL internally; scanner normalises it.
 * Weights say how bad a finding is, not how likely it is. ``malicious`` is
-  filled only by picklescan on model weights, and ``pii`` has no producer at
-  all yet - its weight is a reserved slot.
+  filled only by picklescan on model weights. Legacy ``pii`` findings (no
+  producer ever shipped) alias to ``provenance`` for old reports.
 * ``verified: False`` issues do not deduct, only lower confidence. A PyPI
   outage must not score like a confirmed hallucinated package.
 * When ``repository_info.trust_score`` is blended in, its issues are not
@@ -82,8 +82,7 @@ CATEGORY_WEIGHTS: dict[str, int] = {
     "license": 15,          # legal blocker
     "typosquatting": 12,    # recommendation.detect_typosquatting
     "hallucination": 10,    # non-existent package, verified: True only
-    "provenance": 8,        # origin / yank / stale; repository findings
-    "pii": 2,               # reserved: no producer yet
+    "provenance": 10,       # origin / yank / stale; repository findings
 }
 
 # How much of a category's weight one issue consumes. "unknown" sits above
@@ -107,6 +106,8 @@ CATEGORY_ALIASES: dict[str, str] = {
     "integrity": "provenance",
     "vulnerability": "cve",
     "deprecated": "provenance",
+    # Removed as a weight category (no producer). Old reports still score.
+    "pii": "provenance",
 }
 
 # Severity to assume when a producer reports a finding without grading it.
@@ -124,7 +125,6 @@ CATEGORY_DEFAULT_SEVERITY: dict[str, str] = {
     "typosquatting": "high",
     "hallucination": "high",
     "provenance": "medium",
-    "pii": "medium",
     "license": "medium",
 }
 
@@ -145,7 +145,7 @@ BLOCK_THRESHOLD = 50
 MIN_CONFIDENCE_FOR_ALLOW = 0.7
 MIN_CONFIDENCE_FOR_BLOCK = 0.5
 
-# Issues whose `type` is not one of the seven still have to cost something.
+# Issues whose `type` is not one of the six still have to cost something.
 # Silently ignoring an unrecognised finding is the exact failure mode this
 # engine exists to prevent, so they are pooled here and reported by name.
 UNRECOGNISED_WEIGHT = 10

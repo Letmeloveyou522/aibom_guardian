@@ -218,7 +218,7 @@ def test_every_issue_declares_a_protocol_type():
     score_engine buckets by `issues[].type`. An issue without one lands in
     `unrecognised` and is scored as a flat deduction.
     """
-    protocol = {"cve", "hallucination", "typosquatting", "malicious", "pii",
+    protocol = {"cve", "hallucination", "typosquatting", "malicious",
                 "license", "provenance"}
     engine = RecommendationEngine()
     result = engine.analyze_package("reqeusts", "1.0.0", skip_pypi=True)

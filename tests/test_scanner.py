@@ -14,6 +14,7 @@ import logging
 import pytest
 
 from aibom_guard import scanner
+from aibom_guard import _requirements
 
 
 # ---------------------------------------------------------------------------
@@ -36,9 +37,9 @@ def no_network(monkeypatch):
     needs stubbing too - otherwise a test's answer changes the day a new
     release lands.
     """
-    monkeypatch.setattr(scanner, "_pypi_versions",
+    monkeypatch.setattr(_requirements, "_pypi_versions",
                         lambda name: ["1.0.0", "2.0.0", "2.5.0"])
-    monkeypatch.setattr(scanner, "_requires_dist", lambda name, version: [])
+    monkeypatch.setattr(_requirements, "_requires_dist", lambda name, version: [])
     return monkeypatch
 
 
@@ -742,9 +743,9 @@ class FakeResponse:
 @pytest.fixture(autouse=True)
 def clear_release_cache():
     """resolve_license memoises per (package, version) for the process."""
-    scanner._RELEASE_CACHE.clear()
+    _requirements._RELEASE_CACHE.clear()
     yield
-    scanner._RELEASE_CACHE.clear()
+    _requirements._RELEASE_CACHE.clear()
 
 
 def _fake_pypi(monkeypatch, info, status_code=200):
@@ -753,7 +754,7 @@ def _fake_pypi(monkeypatch, info, status_code=200):
         def get(self, url, timeout=None):
             return FakeResponse({"info": info}, status_code)
 
-    monkeypatch.setattr(scanner, "_PYPI_SESSION", FakeSession())
+    monkeypatch.setattr(_requirements, "_PYPI_SESSION", FakeSession())
 
 
 def test_license_comes_from_the_pinned_release_not_the_installed_copy(monkeypatch):
@@ -928,20 +929,20 @@ def test_releases_this_interpreter_cannot_install_are_not_chosen(monkeypatch):
         def get(self, url, timeout=None):
             return FakeResponse()
 
-    monkeypatch.setattr(scanner, "_PYPI_SESSION", FakeSession())
+    monkeypatch.setattr(_requirements, "_PYPI_SESSION", FakeSession())
 
     class Fake39:
         version_info = (3, 9, 18)
 
-    monkeypatch.setattr(scanner, "sys", Fake39)
-    scanner._RELEASE_CACHE.clear()
+    monkeypatch.setattr(_requirements, "sys", Fake39)
+    _requirements._RELEASE_CACHE.clear()
     assert scanner._resolve_specifier("pytest", ">=8.0") == "8.3.5"
 
     monkeypatch.undo()
-    scanner._RELEASE_CACHE.clear()
-    monkeypatch.setattr(scanner, "_PYPI_SESSION", FakeSession())
+    _requirements._RELEASE_CACHE.clear()
+    monkeypatch.setattr(_requirements, "_PYPI_SESSION", FakeSession())
     assert scanner._resolve_specifier("pytest", ">=8.0") == "9.1.1"
-    scanner._RELEASE_CACHE.clear()
+    _requirements._RELEASE_CACHE.clear()
 
 
 def test_a_bare_name_is_not_reported_as_a_pin(reqs, no_side_effects, monkeypatch,

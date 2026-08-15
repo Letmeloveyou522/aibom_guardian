@@ -128,40 +128,46 @@ def test_unknown_severity_lowers_confidence():
 
 
 # ---------------------------------------------------------------------------
-# The seven categories
+# The six categories
 # ---------------------------------------------------------------------------
 
-def test_all_seven_protocol_categories_are_scored():
+def test_all_six_protocol_categories_are_scored():
     """Producers emit exactly these issue types - the list is a contract."""
     assert set(CATEGORY_WEIGHTS) == {
         "cve", "hallucination", "typosquatting", "malicious",
-        "pii", "license", "provenance"}
+        "license", "provenance"}
     assert sum(CATEGORY_WEIGHTS.values()) == 100
 
 
 def test_categories_are_ordered_by_seriousness():
     weights = CATEGORY_WEIGHTS
     assert weights["malicious"] > weights["cve"] > weights["license"]
-    assert weights["license"] > weights["typosquatting"] > weights["pii"]
-    # Detectable package-path categories outrank the unused pii placeholder.
-    assert weights["typosquatting"] > weights["hallucination"] > weights["provenance"]
-    assert weights["provenance"] > weights["pii"]
+    assert weights["license"] > weights["typosquatting"]
+    assert weights["typosquatting"] > weights["hallucination"]
+    assert weights["hallucination"] == weights["provenance"]
 
 
-def test_malicious_and_pii_producer_coverage_is_documented():
+def test_malicious_producer_coverage_is_documented():
     """
-    malicious is model-path only; pii has no producer yet.
-    Weights stay in CATEGORY_WEIGHTS so a future emitter needs no schema change,
-    but the module docstring must spell that out (README is owned elsewhere).
+    malicious is model-path only (picklescan). Legacy ``pii`` is not a weight
+    category; CATEGORY_ALIASES maps it to provenance for old reports.
     """
     from aibom_guard import score_engine
+    from aibom_guard.score_engine import CATEGORY_ALIASES
     doc = score_engine.__doc__ or ""
     assert "picklescan" in doc.lower() or "model" in doc.lower()
-    assert "pii" in doc.lower()
-    assert "no module currently emits" in doc.lower() or "reserved" in doc.lower()
+    assert "pii" not in CATEGORY_WEIGHTS
+    assert CATEGORY_ALIASES.get("pii") == "provenance"
     assert CATEGORY_WEIGHTS["malicious"] >= CATEGORY_WEIGHTS["cve"]
-    assert CATEGORY_WEIGHTS["pii"] > 0
     assert sum(CATEGORY_WEIGHTS.values()) == 100
+
+
+def test_legacy_pii_issue_aliases_to_provenance():
+    """Old reports with type=pii must still deduct, via provenance."""
+    result = calculate_trust_score(check(issues=[
+        {"type": "pii", "severity": "medium"}]))
+    assert result["breakdown"]["provenance"]["issues"] >= 1
+    assert result["trust_score"] < 100
 
 
 def test_breakdown_reports_every_category_even_when_clean():

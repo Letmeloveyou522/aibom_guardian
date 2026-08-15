@@ -16,6 +16,16 @@ from __future__ import annotations
 
 VALID_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
 
+# Same contract as OSV unverified: a license read from something other than
+# the pinned release describes a version nobody asked about. severity
+# "unknown" is what score_engine._confidence keys on, so this lowers
+# confidence rather than passing off another version's terms as the answer.
+LICENSE_UNVERIFIED_ISSUE = {
+    "type": "unverified",
+    "severity": "unknown",
+    "detail": "License could not be read from the pinned release.",
+}
+
 
 def _vulns_to_issues(vulns: list | None) -> list | None:
     """
@@ -46,6 +56,32 @@ def _vulns_to_issues(vulns: list | None) -> list | None:
             issue["aliases"] = vuln["aliases"]
         issues.append(issue)
     return issues
+
+
+def attach_license_unverified(
+    issues: list | None,
+    lic: dict | None,
+    *,
+    detail: str | None = None,
+) -> list | None:
+    """
+    Append a license-unverified issue when the license was not read from
+    the pinned release.
+
+    Never coerces ``None`` → ``[]``. When OSV already failed (``issues is
+    None``), score_engine already treats the package as unverified; adding a
+    one-item list here would hide that and look like a successful empty CVE
+    scan plus one soft finding.
+    """
+    if not isinstance(lic, dict) or not lic.get("unverified"):
+        return issues
+    if issues is None:
+        return None
+
+    issue = dict(LICENSE_UNVERIFIED_ISSUE)
+    if detail:
+        issue["detail"] = detail
+    return list(issues) + [issue]
 
 
 def _build_check_result(
