@@ -366,7 +366,7 @@ loader can be pointed at it, which lowers the risk.
 
 ### How the verdict is reached
 
-The score is a weighted deduction across seven categories.
+The score is a weighted deduction across six categories.
 
 | Category | Weight | |
 |---|---|---|
@@ -375,8 +375,7 @@ The score is a weighted deduction across seven categories.
 | license | 15 | Legal grounds to block |
 | typosquatting | 12 | Name-confusion attack |
 | hallucination | 10 | Package or model that does not exist |
-| provenance | 8 | Origin cannot be verified |
-| pii | 2 | Sensitive data exposure |
+| provenance | 10 | Origin cannot be verified |
 
 80 and above is `ALLOW`, below 50 is `BLOCK`, everything else is `WARNING`.
 
@@ -631,7 +630,7 @@ and does not run Ollama explanations. It answers one target at a time as JSON.
 | Tool | Role | CLI equivalent |
 |---|---|---|
 | `check_package` | OSV CVEs + license + Trust Score. On OSV failure: `vulnerabilities: null`, `osv_unverified: true`, WARNING | A package row |
-| `check_license` | Classify a license string (ALLOWED / REVIEW / BLOCKED / UNKNOWN) | `license_checker` |
+| `check_license` | Classify a license string → `{status, spdx_id, family, …}` | `license_checker` |
 | `check_repo_trust` | GitHub activity, OpenSSF, signatures, provenance, HF dataset documentation | `--supply-chain` |
 | `check_model` | Hugging Face model scan. Returns the same schema as an entry in `scan_report.json`'s `models[]` | `--model REF` |
 

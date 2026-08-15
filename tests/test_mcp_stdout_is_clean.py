@@ -156,8 +156,10 @@ class TestMcpToolsDoNotWriteToStdout(unittest.TestCase):
 
     def test_check_license_is_silent(self):
         with captured_stdout() as buffer:
-            mcp_server.check_license("MIT")
+            result = mcp_server.check_license("MIT")
         self.assert_silent(buffer, "check_license")
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result.get("status"), "ALLOWED")
 
 
 class TestFailuresAreStillReported(unittest.TestCase):

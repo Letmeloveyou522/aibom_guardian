@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from aibom_guard import scanner
+from aibom_guard import _requirements
 from aibom_guard.scanner import Pinned, expand_transitive
 
 
@@ -22,9 +23,10 @@ def deps(monkeypatch):
 
     def _set(table, versions=("1.0.0", "2.0.0", "2.5.0")):
         monkeypatch.setattr(
-            scanner, "_requires_dist",
-            lambda name, version: table.get(scanner._normalize_name(name), []))
-        monkeypatch.setattr(scanner, "_pypi_versions", lambda name: list(versions))
+            _requirements, "_requires_dist",
+            lambda name, version: table.get(_requirements._normalize_name(name), []))
+        monkeypatch.setattr(_requirements, "_pypi_versions",
+                            lambda name: list(versions))
 
     return _set
 
@@ -163,8 +165,8 @@ class TestScannerIntegration:
             lambda name, version=None, offline=False: {
                 "license": "MIT", "source": "pypi:license_expression",
                 "version": version, "unverified": False, "error": None})
-        monkeypatch.setattr(scanner, "_pypi_versions", lambda name: ["1.0.0"])
-        monkeypatch.setattr(scanner, "_requires_dist",
+        monkeypatch.setattr(_requirements, "_pypi_versions", lambda name: ["1.0.0"])
+        monkeypatch.setattr(_requirements, "_requires_dist",
                             lambda name, version: ["b"] if name == "a" else [])
         monkeypatch.chdir(tmp_path)
 

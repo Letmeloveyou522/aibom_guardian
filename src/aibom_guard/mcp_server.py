@@ -20,7 +20,7 @@ so score_engine lowers confidence and yields WARNING (unverified ≠ clean).
 
 Tools:
     check_package   — OSV CVE + license + Trust Score for one package pin
-    check_license   — classify a license string
+    check_license   — classify a license string (dict: status/spdx_id/family/…)
     check_repo_trust — supply-chain trust for GitHub / HF / PyPI / local
     check_model     — Hugging Face model scan (scan_report ``models[]`` shape)
 
@@ -35,8 +35,13 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from ._adapters import _build_check_result, _vulns_to_issues
-from .license_checker import classify_license, classify_license_detailed
+from ._adapters import (
+    LICENSE_UNVERIFIED_ISSUE,
+    _build_check_result,
+    _vulns_to_issues,
+    attach_license_unverified,
+)
+from .license_checker import classify_license_detailed
 from .osv_client import query_vulnerabilities
 from .repository_checker import check_repository
 from .scanner import resolve_license, scan_model
@@ -59,6 +64,7 @@ MAX_TARGET_LENGTH = 2048
 TOOL_CHECK_REPO_TRUST = "check_repo_trust"
 TOOL_CHECK_MODEL = "check_model"
 TOOL_CHECK_PACKAGE = "check_package"
+TOOL_CHECK_LICENSE = "check_license"
 
 
 def _error_response(
@@ -313,15 +319,18 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
     Use this when the user asks specifically about vulnerabilities, CVE lists,
     or whether a package version has known security advisories via OSV.
 
-    Looks up known vulnerabilities via the OSV database, checks the license of
-    the installed package against an allowed-license list, and returns a Trust
-    Score (0-100) plus a verdict of ALLOW, WARNING or BLOCK as computed by
-    score_engine.
+    Looks up known vulnerabilities via the OSV database, resolves the license
+    for the **pinned PyPI release**, and returns a Trust Score (0-100) plus a
+    verdict of ALLOW, WARNING or BLOCK as computed by score_engine.
 
     OSV failure contract: when the OSV API cannot be reached,
     ``vulnerabilities`` is ``null`` (JSON) / ``None``, ``osv_unverified`` is
     true, and the verdict is WARNING with low confidence — never treated as
     "no known CVEs".
+
+    Ecosystem support: **PyPI only**. License resolution reads PyPI release
+    metadata (with an installed-copy fallback). Other ecosystems are rejected
+    rather than returning a half-checked result.
 
     This tool does NOT analyze GitHub activity, OpenSSF Scorecard, commit
     pinning, artifact SHA-256 integrity, signatures, provenance, or Hugging
@@ -331,9 +340,17 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
     Args:
         name: Package name, e.g. "requests"
         version: Package version, e.g. "2.28.0"
-        ecosystem: Package ecosystem, e.g. "PyPI" or "npm" (default: PyPI)
+        ecosystem: Must be "PyPI" (default). Other values return an error.
     """
-    vulns = query_vulnerabilities(name, version, ecosystem)
+    if not isinstance(ecosystem, str) or ecosystem.strip().upper() != "PYPI":
+        return _error_response(
+            "unsupported_ecosystem",
+            "check_package supports the PyPI ecosystem only "
+            f"(got {ecosystem!r}). License resolution is PyPI-specific.",
+            tool=TOOL_CHECK_PACKAGE,
+        )
+
+    vulns = query_vulnerabilities(name, version, "PyPI")
     osv_unverified = vulns is None
     # Never coerce None → [] — score_engine must see issues is None.
     issues_for_score = _vulns_to_issues(vulns)
@@ -342,6 +359,28 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
     lic_raw = lic["license"]
     lic_detail = classify_license_detailed(lic_raw)
     lic_status = lic_detail["status"]
+
+    # Same path as scanner.run_scan: an unverified license must reach
+    # score_engine so confidence drops / WARNING is possible. Still never
+    # turns OSV None into a list.
+    detail = None
+    if lic.get("unverified"):
+        if lic.get("source") == "none":
+            detail = (
+                f"No license could be read for {name}=={version}: "
+                f"{lic.get('error')}, and it is not installed locally."
+            )
+        else:
+            seen = f" (version {lic['version']})" if lic.get("version") else ""
+            detail = (
+                f"License for {name}=={version} was read from "
+                f"{lic.get('source')}{seen} because {lic.get('error')}. A "
+                f"package can change license between releases, so these "
+                f"terms may not be the pinned release's."
+            )
+    issues_for_score = attach_license_unverified(
+        issues_for_score, lic, detail=detail,
+    )
 
     score_result = calculate_trust_score(
         _build_check_result(lic_status, issues_for_score)
@@ -372,16 +411,39 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
 
 
 @mcp.tool()
-def check_license(license_string: str) -> str:
+def check_license(license_string: str) -> dict:
     """
     Classify a license string as ALLOWED, REVIEW, BLOCKED, or UNKNOWN,
-    based on the competition's open-source license policy (only
-    OSI-approved, non-restrictive licenses are ALLOWED).
+    based on the open-source license policy (only OSI-approved,
+    non-restrictive licenses are ALLOWED).
+
+    Returns the same MCP envelope shape as the other tools
+    (``success``, ``tool``, plus classification fields):
+
+        status, spdx_id, family, reason, obligations, source, reference
 
     Args:
         license_string: A license name, e.g. "MIT" or "GPL-3.0"
     """
-    return classify_license(license_string)
+    if not isinstance(license_string, str):
+        return _error_response(
+            "invalid_input",
+            "license_string must be a string.",
+            tool=TOOL_CHECK_LICENSE,
+        )
+    detail = classify_license_detailed(license_string)
+    return {
+        "success": True,
+        "tool": TOOL_CHECK_LICENSE,
+        "input": license_string,
+        "status": detail["status"],
+        "spdx_id": detail.get("spdx_id") or "",
+        "family": detail["family"],
+        "reason": detail["reason"],
+        "obligations": detail.get("obligations") or [],
+        "source": detail.get("source") or "",
+        "reference": detail.get("reference") or "",
+    }
 
 
 @mcp.tool()
