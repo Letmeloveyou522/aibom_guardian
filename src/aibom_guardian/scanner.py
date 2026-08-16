@@ -41,6 +41,7 @@ Exit codes (so this can gate CI):
 """
 
 import argparse
+import json
 import logging
 import sys
 __all__ = [
@@ -60,6 +61,7 @@ __all__ = [
     "_requires_dist",
     "_resolve_specifier",
     "run_scan",
+    "run_npm_scan",
     "main",
 ]
 from . import __version__
@@ -118,9 +120,11 @@ from ._scanner_collect import (
     _prefetch,
 )
 from ._scanner_models import scan_model
+from .npm_checker import run_npm_scan
 
 # Extend __all__ with symbols tests and monkeypatches reach through scanner.*
 __all__ = __all__ + [
+    "run_npm_scan",
     "resolve_license",
     "_installed_license",
     "_pypi_release_license",
@@ -450,7 +454,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Same __version__ pyproject packages, so it cannot disagree with the wheel.
     parser.add_argument("--version", action="version",
                         version=f"%(prog)s {__version__}")
-    parser.add_argument("requirements", help="path to a requirements.txt")
+    parser.add_argument("requirements", nargs="?",
+                        help="path to a requirements.txt (omit when using --npm)")
+    parser.add_argument("--npm", dest="npm_path", metavar="PATH",
+                        help="scan npm package.json dependencies/devDependencies "
+                             "(no transitive expansion)")
     parser.add_argument("--supply-chain", action="store_true",
                         help="also run repository/supply-chain trust checks. "
                              "Slow: several network calls per package; set "
@@ -551,24 +559,46 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     _configure_cli_logging(args.verbose)
 
+    if args.npm_path and args.requirements:
+        print("[ERROR] Use either a requirements.txt path or --npm, not both.",
+              file=sys.stderr)
+        return EXIT_INPUT_ERROR
+    if not args.npm_path and not args.requirements:
+        print("[ERROR] Provide a requirements.txt path or --npm PATH.",
+              file=sys.stderr)
+        return EXIT_INPUT_ERROR
+
     try:
-        report = run_scan(
-            args.requirements,
-            supply_chain=args.supply_chain,
-            offline=args.offline,
-            explain=not args.no_explain,
-            report_path=args.report_path,
-            sbom_path=args.sbom_path,
-            models=args.models,
-            model_pickle_size_mb=args.model_pickle_scan,
-            verbose=args.verbose,
-            transitive=not args.direct_only,
-            jobs=args.jobs,
-            min_release_age=args.min_release_age,
-            sarif_path=args.sarif_path,
-        )
+        if args.npm_path:
+            report = run_npm_scan(
+                args.npm_path,
+                offline=args.offline,
+                explain=not args.no_explain,
+                report_path=args.report_path,
+                verbose=args.verbose,
+            )
+        else:
+            report = run_scan(
+                args.requirements,
+                supply_chain=args.supply_chain,
+                offline=args.offline,
+                explain=not args.no_explain,
+                report_path=args.report_path,
+                sbom_path=args.sbom_path,
+                models=args.models,
+                model_pickle_size_mb=args.model_pickle_scan,
+                verbose=args.verbose,
+                transitive=not args.direct_only,
+                jobs=args.jobs,
+                min_release_age=args.min_release_age,
+                sarif_path=args.sarif_path,
+            )
     except FileNotFoundError:
-        print(f"[ERROR] No such file: {args.requirements}", file=sys.stderr)
+        target = args.npm_path or args.requirements
+        print(f"[ERROR] No such file: {target}", file=sys.stderr)
+        return EXIT_INPUT_ERROR
+    except (ValueError, json.JSONDecodeError) as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
         return EXIT_INPUT_ERROR
 
     if not report:
