@@ -1,8 +1,9 @@
 """
 npm_checker.py
 -----------------------------------
-Minimal npm ecosystem support: scan ``package.json`` ``dependencies`` and
-``devDependencies`` only (no transitive expansion).
+npm ecosystem support: scan ``package.json`` ``dependencies`` and
+``devDependencies``, then walk registry ``dependencies`` the same way
+``_requirements.expand_transitive`` walks PyPI ``requires_dist``.
 
 License strings come from the npm registry; verdicts reuse
 ``license_checker.classify_license_detailed``. CVEs reuse
@@ -36,6 +37,7 @@ NPM_REGISTRY_URL = "https://registry.npmjs.org/{package}"
 NPM_REGISTRY_VERSION_URL = "https://registry.npmjs.org/{package}/{version}"
 NPM_TIMEOUT_SEC = 10.0
 OSV_ECOSYSTEM = "npm"
+NPM_TRANSITIVE_MAX_DEPTH = 12
 
 _REGISTRY_CACHE: dict = {}
 _NPM_SESSION = None
@@ -45,6 +47,19 @@ _THREAD_LOCAL = threading.local()
 _VERSION_TOKEN = re.compile(
     r"^(\d+\.\d+\.\d+(?:[-+][\w.-]+)?|\d+\.\d+(?:[-+][\w.-]+)?|\d+(?:[-+][\w.-]+)?)$"
 )
+# python-semver (and packaging) do not speak npm's ^ / ~ / || grammar, and
+# neither is a project dependency, so range matching stays local and small.
+_SEMVER_RE = re.compile(
+    r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$"
+)
+
+
+class _Semver(NamedTuple):
+    major: int
+    minor: int
+    patch: int
+    prerelease: tuple
+    precision: int  # 1, 2, or 3 components written in the spec
 
 
 class NpmPackage(NamedTuple):
@@ -55,6 +70,8 @@ class NpmPackage(NamedTuple):
     spec: str             # original range string from package.json
     section: str          # "dependencies" or "devDependencies"
     exact: bool           # True when spec is an exact pin, not a range prefix
+    direct: bool = True   # False when pulled in by another package
+    depth: int = 0        # 0 = named in package.json
 
 
 def _npm_session():
@@ -134,6 +151,278 @@ def parse_package_json(path: str) -> tuple[list[NpmPackage], list[str]]:
             )
 
     return packages, unscanned
+
+
+def _normalize_npm_name(name: str) -> str:
+    """Registry names are case-insensitive; keep scope slashes intact."""
+    return str(name or "").strip().lower()
+
+
+def _parse_semver(text: str) -> _Semver | None:
+    """Parse a version or range base into comparable parts. None if not semver."""
+    raw = str(text or "").strip()
+    match = _SEMVER_RE.match(raw)
+    if not match:
+        return None
+    major = int(match.group(1))
+    minor_s, patch_s, pre_s = match.group(2), match.group(3), match.group(4)
+    precision = 1 + int(minor_s is not None) + int(patch_s is not None)
+    minor = int(minor_s) if minor_s is not None else 0
+    patch = int(patch_s) if patch_s is not None else 0
+    prerelease = tuple(pre_s.split(".")) if pre_s else ()
+    return _Semver(major, minor, patch, prerelease, precision)
+
+
+def _pre_sort_key(parts: tuple) -> tuple:
+    key = []
+    for part in parts:
+        if str(part).isdigit():
+            key.append((0, int(part)))
+        else:
+            key.append((1, str(part)))
+    return tuple(key)
+
+
+def _semver_sort_key(version: _Semver) -> tuple:
+    # A release ranks above any prerelease of the same triple, matching semver.
+    return (version.major, version.minor, version.patch,
+            not version.prerelease, _pre_sort_key(version.prerelease))
+
+
+def _npm_versions(package_name: str) -> list:
+    """
+    Published versions of an npm package.
+
+    Cached per process: a tree walk asks for the same package's version list
+    from many parents, and registry.npmjs.org should not be asked twice.
+    """
+    key = ("__versions__", _normalize_npm_name(package_name))
+    if key in _REGISTRY_CACHE:
+        return _REGISTRY_CACHE[key]
+
+    try:
+        from urllib.parse import quote
+    except ImportError:                              # pragma: no cover
+        return []
+
+    url = NPM_REGISTRY_URL.format(package=quote(package_name, safe=""))
+    try:
+        response = _npm_session().get(url, timeout=NPM_TIMEOUT_SEC)
+        response.raise_for_status()
+        versions = list((response.json().get("versions") or {}).keys())
+    except Exception:                                # noqa: BLE001 - network
+        _REGISTRY_CACHE[key] = []
+        return []
+
+    _REGISTRY_CACHE[key] = versions
+    return list(versions)
+
+
+def _npm_spec_matches(spec: str, version: str) -> bool:
+    """
+    True when ``version`` satisfies a simple npm range.
+
+    Supports exact pins, ``^``, ``~``, and ``||`` unions of those. Compound
+    comparators (``>=`` / ``<`` hyphen ranges, wildcards) are out of scope.
+    """
+    text = str(spec or "").strip()
+    if not text or text in ("*", "latest"):
+        return False
+    if "||" in text:
+        return any(_npm_spec_matches(part, version) for part in text.split("||"))
+    if " - " in text:
+        return False
+
+    parsed = _parse_semver(version)
+    if parsed is None:
+        return False
+
+    if text.startswith((">=", "<=", ">", "<")):
+        return False
+
+    if text.startswith("^"):
+        base = _parse_semver(text[1:].strip())
+        return base is not None and _caret_allows(base, parsed)
+    if text.startswith("~"):
+        base = _parse_semver(text[1:].strip())
+        return base is not None and _tilde_allows(base, parsed)
+
+    if text.startswith("="):
+        text = text[1:].strip()
+    base = _parse_semver(text)
+    if base is None:
+        return False
+    return (parsed.major, parsed.minor, parsed.patch) == (
+        base.major, base.minor, base.patch
+    ) and parsed.prerelease == base.prerelease
+
+
+def _caret_allows(base: _Semver, version: _Semver) -> bool:
+    if _semver_sort_key(version) < _semver_sort_key(base):
+        return False
+    if base.major != 0:
+        return version.major == base.major
+    if base.minor != 0:
+        return version.major == 0 and version.minor == base.minor
+    if base.precision >= 3:
+        return (version.major == 0 and version.minor == 0
+                and version.patch == base.patch)
+    if base.precision == 2:
+        return version.major == 0 and version.minor == 0
+    return version.major == 0
+
+
+def _tilde_allows(base: _Semver, version: _Semver) -> bool:
+    if _semver_sort_key(version) < _semver_sort_key(base):
+        return False
+    if base.precision <= 1:
+        return version.major == base.major
+    return version.major == base.major and version.minor == base.minor
+
+
+def _resolve_npm_range(name: str, spec: str) -> str | None:
+    """
+    Pick the version a range would install: the newest release that satisfies
+    it. Returns None when the registry cannot be reached or nothing matches.
+    """
+    candidates = _npm_versions(name)
+    if not candidates:
+        return None
+
+    parsed = []
+    for raw in candidates:
+        version = _parse_semver(raw)
+        if version is None:
+            continue
+        parsed.append((raw, version))
+
+    spec_has_pre = False
+    for part in str(spec or "").split("||"):
+        token = _parse_semver(part.strip().lstrip("^~="))
+        if token is not None and token.prerelease:
+            spec_has_pre = True
+            break
+
+    def matching(allow_prerelease: bool) -> list:
+        found = []
+        for raw, version in parsed:
+            if version.prerelease and not allow_prerelease:
+                continue
+            if _npm_spec_matches(spec, raw):
+                found.append((raw, version))
+        return found
+
+    allowed = matching(spec_has_pre)
+    if not allowed:
+        allowed = matching(True)
+    if not allowed:
+        return None
+    return max(allowed, key=lambda item: _semver_sort_key(item[1]))[0]
+
+
+def _npm_dependencies(name: str, version: str) -> dict:
+    """
+    Runtime ``dependencies`` the registry records for one exact release.
+
+    Per-version, not per-project: a package's dependency list changes between
+    releases. Same role as PyPI ``requires_dist``.
+    """
+    key = ("__deps__", _normalize_npm_name(name), version)
+    if key in _REGISTRY_CACHE:
+        return _REGISTRY_CACHE[key]
+
+    try:
+        from urllib.parse import quote
+    except ImportError:                              # pragma: no cover
+        return {}
+
+    url = NPM_REGISTRY_VERSION_URL.format(
+        package=quote(name, safe=""),
+        version=quote(version, safe=""),
+    )
+    try:
+        response = _npm_session().get(url, timeout=NPM_TIMEOUT_SEC)
+        response.raise_for_status()
+        deps = response.json().get("dependencies") or {}
+    except Exception:                                # noqa: BLE001 - network
+        _REGISTRY_CACHE[key] = {}
+        return {}
+
+    if not isinstance(deps, dict):
+        deps = {}
+    cleaned = {}
+    for dep_name, dep_spec in deps.items():
+        if not isinstance(dep_name, str) or not dep_name.strip():
+            continue
+        cleaned[dep_name.strip()] = (
+            str(dep_spec).strip() if dep_spec is not None else ""
+        )
+    _REGISTRY_CACHE[key] = cleaned
+    return dict(cleaned)
+
+
+def _spec_is_exact(spec: str) -> bool:
+    normalized = normalize_npm_version(spec)
+    return bool(normalized and normalized[1])
+
+
+def expand_npm_transitive(
+    pinned: list,
+    *,
+    offline: bool = False,
+    max_depth: int = NPM_TRANSITIVE_MAX_DEPTH,
+) -> tuple[list, list]:
+    """
+    Walk the npm dependency tree and return every package that will be installed.
+
+    Returns (packages, unresolved). Resolved from registry ``dependencies``, so
+    nothing needs to be installed.
+
+    First occurrence of a name wins, so a direct pin is not replaced by a
+    dependency's range. Cycles stop at the seen set, not the depth cap.
+    """
+    if offline:
+        return list(pinned), []
+
+    packages = list(pinned)
+    unresolved: list = []
+    seen = {_normalize_npm_name(p.name) for p in pinned}
+    frontier = list(pinned)
+
+    for depth in range(1, max_depth + 1):
+        discovered = []
+        for parent in frontier:
+            deps = _npm_dependencies(parent.name, parent.version)
+            for req_name, req_spec in deps.items():
+                key = _normalize_npm_name(req_name)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                version = _resolve_npm_range(req_name, req_spec)
+                if version is None:
+                    unresolved.append(
+                        f"{req_name}@{req_spec}  (required by {parent.name})"
+                    )
+                    continue
+
+                child = NpmPackage(
+                    req_name,
+                    version,
+                    req_spec,
+                    parent.section,
+                    _spec_is_exact(req_spec),
+                    direct=False,
+                    depth=depth,
+                )
+                packages.append(child)
+                discovered.append(child)
+
+        if not discovered:
+            break
+        frontier = discovered
+
+    return packages, unresolved
 
 
 def _license_string(raw) -> str:
@@ -306,8 +595,8 @@ def _scan_one_package(entry: NpmPackage, *, offline: bool) -> dict:
         "version": entry.version,
         "requirement": entry.spec,
         "version_resolved": not entry.exact,
-        "direct": True,
-        "depth": 0,
+        "direct": entry.direct,
+        "depth": entry.depth,
         "line": 0,
         "ecosystem": "npm",
         "section": entry.section,
@@ -346,11 +635,13 @@ def run_npm_scan(
     explain: bool = False,
     report_path: str = "scan_report.json",
     verbose: bool = False,
+    transitive: bool = True,
 ) -> list:
     """
     Scan npm ``dependencies`` / ``devDependencies`` from ``package_json_path``.
 
     Returns a list of per-package report rows (same shape as ``run_scan``).
+    ``transitive`` also scans what those packages pull in from the registry.
     """
     from .scanner import ScanReport, explain_results
 
@@ -360,6 +651,18 @@ def run_npm_scan(
         if unscanned_lines:
             print(f"[INFO] {len(unscanned_lines)} entr(y/ies) could not be parsed.")
         return []
+
+    if transitive and not offline:
+        direct_count = len(packages)
+        packages, unresolved_deps = expand_npm_transitive(packages)
+        unscanned_lines = list(unscanned_lines) + unresolved_deps
+        pulled_in = len(packages) - direct_count
+        if pulled_in:
+            print(f"[INFO] {direct_count} direct + {pulled_in} transitive "
+                  f"= {len(packages)} packages to scan.")
+        if unresolved_deps:
+            print(f"[WARNING] {len(unresolved_deps)} dependency requirement(s) "
+                  f"could not be resolved; reported as unscanned.")
 
     set_offline(offline)
     if offline:

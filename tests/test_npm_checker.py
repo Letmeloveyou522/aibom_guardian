@@ -132,6 +132,7 @@ def test_run_npm_scan_wires_score_engine(package_json, tmp_path, monkeypatch):
         lambda name, version, ecosystem="npm": [],
     )
     monkeypatch.setattr(scanner, "explain_results", lambda r: "(stub)")
+    monkeypatch.setattr(npm_checker, "_npm_dependencies", lambda name, version: {})
 
     report = npm_checker.run_npm_scan(package_json, explain=False)
 
@@ -162,6 +163,7 @@ def test_scanner_cli_npm_option(tmp_path, monkeypatch):
         npm_checker, "query_vulnerabilities",
         lambda name, version, ecosystem="npm": [],
     )
+    monkeypatch.setattr(npm_checker, "_npm_dependencies", lambda name, version: {})
 
     code = scanner.main(["--npm", str(path), "--no-explain"])
     assert code == 0

@@ -458,7 +458,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="path to a requirements.txt (omit when using --npm)")
     parser.add_argument("--npm", dest="npm_path", metavar="PATH",
                         help="scan npm package.json dependencies/devDependencies "
-                             "(no transitive expansion)")
+                             "(follows registry dependencies unless --direct-only)")
     parser.add_argument("--supply-chain", action="store_true",
                         help="also run repository/supply-chain trust checks. "
                              "Slow: several network calls per package; set "
@@ -576,6 +576,7 @@ def main(argv=None) -> int:
                 explain=not args.no_explain,
                 report_path=args.report_path,
                 verbose=args.verbose,
+                transitive=not args.direct_only,
             )
         else:
             report = run_scan(
