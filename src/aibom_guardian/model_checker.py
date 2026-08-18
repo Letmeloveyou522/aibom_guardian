@@ -694,6 +694,7 @@ def check_model_card(model_id, revision, file_names, card, token, resolved=None)
         "completeness": 0,
         "placeholder_count": 0,
         "is_unedited_template": False,
+        "pii": [],
     }
 
     earned = total = 0
@@ -740,6 +741,9 @@ def check_model_card(model_id, revision, file_names, card, token, resolved=None)
     result["is_unedited_template"] = (result["placeholder_count"] >= 5
                                       and result["body_chars"] < 400)
 
+    from .security_classifiers import scan_text_for_pii
+
+    result["pii"] = scan_text_for_pii(text, source=card_name)
     result["detail"] = (
         f"Model card is the unedited Hugging Face template "
         f"({result['placeholder_count']} placeholders remain)."
@@ -984,6 +988,15 @@ def collect_issues(report):
         add("MEDIUM", "template_model_card",
             f"Model card is the unedited Hugging Face template "
             f"({card['placeholder_count']} placeholders remain).")
+    for finding in card.get("pii") or []:
+        detail = finding.get("detail") or "PII found in model card."
+        issues.append({
+            "severity": "MEDIUM",
+            "type": finding.get("type") or "pii",
+            "message": detail,
+            "detail": detail,
+            "pii_kind": finding.get("pii_kind"),
+        })
     if report["missing_model_card_fields"]:
         add("LOW", "incomplete_model_card",
             "Model card is missing required fields: " +

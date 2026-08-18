@@ -571,6 +571,57 @@ def test_unreadable_card_is_not_scored_as_complete(monkeypatch):
     assert "could not be read" in result["detail"]
 
 
+CARD_WITH_EMAIL = """---
+license: apache-2.0
+---
+
+# Tiny Instruct 1B
+
+Maintainer contact: leak@example.com
+"""
+
+
+def test_pii_in_fake_model_card_is_collected(monkeypatch):
+    """Hugging Face is not called; the card body is injected."""
+    monkeypatch.setattr(mc, "_download_text", lambda *a: (CARD_WITH_EMAIL, None))
+    model_card, _ = mc.check_model_card(
+        "org/m", "sha", {"README.md"}, {"license": "apache-2.0"}, None)
+
+    assert any(f["type"] == "pii" and f["pii_kind"] == "email"
+               for f in model_card["pii"])
+    assert "leak@example.com" in model_card["pii"][0]["detail"]
+
+    issues = mc.collect_issues(_report(
+        model_card=model_card, missing_model_card_fields=[]))
+    pii = [i for i in issues if i["type"] == "pii"]
+    assert len(pii) == 1
+    assert pii[0]["severity"] == "MEDIUM"
+    assert pii[0]["pii_kind"] == "email"
+
+
+def test_pii_in_fake_model_card_scores_as_provenance(monkeypatch):
+    """type=pii stays pii until score_engine aliases it onto provenance."""
+    from aibom_guardian._scanner_models import _model_issues
+    from aibom_guardian.score_engine import calculate_trust_score
+
+    monkeypatch.setattr(mc, "_download_text", lambda *a: (CARD_WITH_EMAIL, None))
+    model_card, _ = mc.check_model_card(
+        "org/m", "sha", {"README.md"}, {"license": "apache-2.0"}, None)
+    issues = mc.collect_issues(_report(
+        model_card=model_card, missing_model_card_fields=[]))
+
+    scored = calculate_trust_score({
+        "type": "model",
+        "license_status": "ALLOWED",
+        "issues": _model_issues({"issues": issues}),
+        "model_info": {},
+        "repository_info": None,
+    })
+    assert scored["breakdown"]["provenance"]["issues"] >= 1
+    assert scored["breakdown"]["provenance"]["deduction"] > 0
+    assert scored["trust_score"] < 100
+
+
 # ---------------------------------------------------------------------------
 # 7) collect_issues
 # ---------------------------------------------------------------------------

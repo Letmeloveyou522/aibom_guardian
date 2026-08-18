@@ -37,18 +37,26 @@ def _model_issues(report: dict) -> list:
         "no_license": "license",
         "gated": "license",
         "unverified": "provenance",
+        # Kept as ``pii`` so score_engine.CATEGORY_ALIASES folds it into
+        # provenance. Mapping it to provenance here would hide that alias.
+        "pii": "pii",
     }
     severity_map = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}
 
     issues = []
     for issue in report.get("issues") or []:
-        issues.append({
+        detail = issue.get("message") or issue.get("detail")
+        mapped = {
             "type": type_map.get(issue.get("type"), issue.get("type")),
             "id": issue.get("type"),
-            "severity": severity_map.get(issue.get("severity"), "unknown"),
-            "detail": issue.get("message"),
-            "summary": issue.get("message"),
-        })
+            "severity": severity_map.get(issue.get("severity"),
+                                         str(issue.get("severity") or "unknown").lower()),
+            "detail": detail,
+            "summary": detail,
+        }
+        if issue.get("pii_kind"):
+            mapped["pii_kind"] = issue["pii_kind"]
+        issues.append(mapped)
     return issues
 
 
