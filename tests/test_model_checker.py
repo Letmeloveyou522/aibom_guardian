@@ -569,6 +569,8 @@ def test_unreadable_card_is_not_scored_as_complete(monkeypatch):
     monkeypatch.setattr(mc, "_download_text", lambda *a: ("", "network down"))
     result, _ = mc.check_model_card("org/m", "sha", {"README.md"}, {}, None)
     assert "could not be read" in result["detail"]
+    assert result["pii"] is None
+    assert result["pii_scan_unverified"] is True
 
 
 CARD_WITH_EMAIL = """---
@@ -622,6 +624,23 @@ def test_pii_in_fake_model_card_scores_as_provenance(monkeypatch):
     assert scored["trust_score"] < 100
 
 
+def test_empty_model_card_text_is_pii_unverified(monkeypatch):
+    """A present card with no body is unverified PII, not a clean scan."""
+    monkeypatch.setattr(mc, "_download_text", lambda *a: ("", None))
+    model_card, _ = mc.check_model_card(
+        "org/m", "sha", {"README.md"}, {"license": "apache-2.0"}, None)
+    assert model_card["pii"] is None
+    assert model_card["pii_scan_unverified"] is True
+
+    issues = mc.collect_issues(_report(
+        model_card=model_card, missing_model_card_fields=[]))
+    assert any(
+        i["type"] == "unverified" and "PII scan did not run" in i["message"]
+        for i in issues
+    )
+    assert not any(i["type"] == "pii" for i in issues)
+
+
 # ---------------------------------------------------------------------------
 # 7) collect_issues
 # ---------------------------------------------------------------------------
@@ -638,7 +657,8 @@ def _report(**overrides):
         "config_errors": [],
         "missing_model_card_fields": [],
         "model_card": {"present": True, "is_unedited_template": False,
-                       "placeholder_count": 0},
+                       "placeholder_count": 0, "pii": [],
+                       "pii_scan_unverified": False},
         "file_formats": {"pickle": [], "pickle_only": False, "python_files": []},
         "pickle_scan": {"status": "NOT_APPLICABLE", "malicious": [], "suspicious": [],
                         "skipped": [], "detail": ""},

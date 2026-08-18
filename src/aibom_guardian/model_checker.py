@@ -694,7 +694,9 @@ def check_model_card(model_id, revision, file_names, card, token, resolved=None)
         "completeness": 0,
         "placeholder_count": 0,
         "is_unedited_template": False,
-        "pii": [],
+        # None = PII scan did not run; [] = scanned and clean.
+        "pii": None,
+        "pii_scan_unverified": True,
     }
 
     earned = total = 0
@@ -744,6 +746,7 @@ def check_model_card(model_id, revision, file_names, card, token, resolved=None)
     from .security_classifiers import scan_text_for_pii
 
     result["pii"] = scan_text_for_pii(text, source=card_name)
+    result["pii_scan_unverified"] = result["pii"] is None
     result["detail"] = (
         f"Model card is the unedited Hugging Face template "
         f"({result['placeholder_count']} placeholders remain)."
@@ -988,6 +991,10 @@ def collect_issues(report):
         add("MEDIUM", "template_model_card",
             f"Model card is the unedited Hugging Face template "
             f"({card['placeholder_count']} placeholders remain).")
+    if card.get("present") and card.get("pii_scan_unverified"):
+        add("MEDIUM", "unverified",
+            "PII scan did not run: model card text was empty or could not "
+            "be read.")
     for finding in card.get("pii") or []:
         detail = finding.get("detail") or "PII found in model card."
         issues.append({

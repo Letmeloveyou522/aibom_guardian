@@ -7,6 +7,9 @@ Text classifiers that do not belong to license, OSV, or picklescan.
 PANs in free text (a model card, a README). Findings use ``type: pii`` so
 ``score_engine.CATEGORY_ALIASES`` folds them into provenance — this module
 does not score.
+
+``None`` vs ``[]`` follows the same contract as ``query_vulnerabilities``:
+``None`` means the check did not run, ``[]`` means it ran and found nothing.
 """
 
 from __future__ import annotations
@@ -49,15 +52,22 @@ def _finding(pii_kind: str, detail: str) -> dict:
     }
 
 
-def scan_text_for_pii(text, source="") -> list[dict]:
+def scan_text_for_pii(text, source="") -> list[dict] | None:
     """
     Return PII findings in ``text``.
+
+    Return contract (same as ``osv_client.query_vulnerabilities``):
+
+      * ``list`` (possibly empty) — the text was scanned.
+        ``[]`` means "checked, no PII found", NOT a skipped scan.
+      * ``None`` — there was no text to scan (``None`` or ``""``). Treat as
+        **unverified**: do not score this as a clean card.
 
     ``source`` is a label for the detail string (for example ``README.md``),
     not a filesystem path that is opened here.
     """
-    if not text:
-        return []
+    if text is None or text == "":
+        return None
 
     blob = str(text)
     where = f" in {source}" if source else ""

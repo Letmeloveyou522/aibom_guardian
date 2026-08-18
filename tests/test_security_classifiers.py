@@ -45,3 +45,9 @@ def test_clean_prose_is_silent():
 def test_duplicate_matches_are_reported_once():
     findings = scan_text_for_pii("a@example.com and a@example.com")
     assert len(findings) == 1
+
+
+def test_empty_card_text_returns_none_not_empty_list():
+    """No text means the check did not run, not that the card is clean."""
+    assert scan_text_for_pii("") is None
+    assert scan_text_for_pii(None) is None
