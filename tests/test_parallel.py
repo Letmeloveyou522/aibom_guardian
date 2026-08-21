@@ -145,7 +145,7 @@ class TestOfflineAndSupplyChain:
                             lambda n, v: pytest.fail("OSV called while offline"))
         fetched = _prefetch(PACKAGES, engine_factory=lambda: object(),
                             offline=True, supply_chain=False, jobs=4)
-        assert all(f["vulns"] == [] and f["issues"] is None
+        assert all(f["vulns"] is None and f["issues"] is None
                    for f in fetched.values())
 
     def test_supply_chain_off_leaves_repository_info_none(self, lookups):

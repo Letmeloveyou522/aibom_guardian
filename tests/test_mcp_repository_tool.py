@@ -165,6 +165,7 @@ class TestCheckRepoTrustMCP(unittest.TestCase):
         mocked.assert_called_once()
         self.assertTrue(result["success"])
         self.assertEqual(result["tool"], "check_repo_trust")
+        self.assertEqual(result["scoring_model"], "repository_trust")
         self.assertEqual(result["trust_score"], 65)
         self.assertEqual(result["verdict"], "WARNING")
         self.assertIn("summary", result)

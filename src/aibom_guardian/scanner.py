@@ -315,6 +315,9 @@ def run_scan(
         vulns = found["vulns"]
         issues = found["issues"]
         alternatives = found["alternatives"]
+        # Offline also leaves vulns=None (never looked); osv_unverified is
+        # reserved for a failed online lookup so the report can show the
+        # "OSV lookup failed" issue without mislabeling an intentional skip.
         osv_unverified = not offline and vulns is None
         if osv_unverified:
             print(f"  [WARNING] OSV lookup failed for {name}=={version} — "

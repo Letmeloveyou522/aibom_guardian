@@ -337,6 +337,10 @@ def test_offline_does_not_report_a_clean_allow(reqs, no_side_effects, monkeypatc
     assert report[0]["verdict"] == "WARNING"
     assert report[0]["scanned"] is False
     assert report[0]["confidence"] < 0.7
+    # Offline never queried OSV — null, not [] ("looked, zero CVEs").
+    assert report[0]["vulnerabilities"] is None
+    # Skip is intentional, not a failed lookup (no "OSV lookup failed" issue).
+    assert report[0]["osv_unverified"] is False
 
 
 def test_online_scan_with_no_findings_is_allowed(reqs, no_side_effects, monkeypatch):

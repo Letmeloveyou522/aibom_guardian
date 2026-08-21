@@ -400,6 +400,7 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
         "license_unverified": lic["unverified"],
         "vulnerabilities": vulns,
         "osv_unverified": osv_unverified,
+        "scoring_model": "score_engine",
         "trust_score": score_result["trust_score"],
         "verdict": score_result["verdict"],
         "hard_block": score_result["hard_block"],
@@ -634,6 +635,8 @@ def check_repo_trust(
     response = {
         **result,
         "summary": summary,
+        # Distinct from check_package's score_engine trust_score.
+        "scoring_model": "repository_trust",
     }
     # Preserve checker fields; only set MCP metadata if absent.
     if "success" not in response:

@@ -574,7 +574,8 @@ def _scan_one_package(entry: NpmPackage, *, offline: bool) -> dict:
         license_issue = dict(LICENSE_UNVERIFIED_ISSUE, detail=detail)
 
     if offline:
-        vulns, issues = [], None
+        # None, not [] — offline never queried OSV (same contract as scanner).
+        vulns, issues = None, None
     else:
         vulns = query_vulnerabilities(entry.name, entry.version, OSV_ECOSYSTEM)
         issues = _vulns_to_issues(vulns)

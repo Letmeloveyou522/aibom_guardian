@@ -93,7 +93,9 @@ def _gather(entry, *, engine_for_thread, offline, supply_chain, min_release_age)
     lic = sc.resolve_license(name, version, offline=offline)
 
     if offline:
-        vulns, issues, alternatives = [], None, []
+        # None, not [] — empty list means "OSV looked and found nothing".
+        # Offline never queried OSV, so keep the unverified/null contract.
+        vulns, issues, alternatives = None, None, []
     else:
         vulns = sc.query_vulnerabilities(name, version)
         if vulns is None:

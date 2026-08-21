@@ -185,6 +185,7 @@ class TestCheckPackageOsvNone(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertIsNone(result["vulnerabilities"])
         self.assertTrue(result["osv_unverified"])
+        self.assertEqual(result["scoring_model"], "score_engine")
         self.assertEqual(result["verdict"], "WARNING")
         self.assertLess(result["confidence"], 0.5)
         self.assertEqual(result["license_status"], "ALLOWED")
