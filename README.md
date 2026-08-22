@@ -44,30 +44,8 @@ English: [README.en.md](README.en.md) ·
 에이전트(판단)와 MCP 도구(실행)를 나누고, 점수는 `score_engine` 한곳에서만
 매깁니다. CLI와 MCP가 같은 답을 내는 근거입니다.
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  판단 계층 — Supply Chain Guardian / Orchestrator                 │
-│  scanner.py · mcp_server.py · score_engine (Trust Score)        │
-│  ALLOW / WARNING / BLOCK · confidence · hard_block              │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ Data Protocol (issues[])
-┌────────────────────────────▼────────────────────────────────────┐
-│  실행 계층 — AIBOM Security MCP Server (+ CLI collectors)        │
-│                                                                 │
-│  OSV ……………… CVE / GHSA / PYSEC 조회 · alias 병합 · CVSS 파싱   │
-│  OpenSSF ………… Scorecard · 저장소 활동 (--supply-chain)           │
-│  Sigstore …… cosign verify-blob (로컬 바이너리, 선택)           │
-│  Hub/picklescan  모델 메타 · pickle 위험 전역 · safetensors     │
-│  SPDX / Blue Oak  라이선스 식별 · 의무사항 안내                   │
-│  recommendation  환각 · 타이포스쿼팅 · yanked · 쿨다운 · 대안    │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│  출력 계층                                                      │
-│  AI Trust Score (0–100) · CycloneDX AIBOM/ML-BOM · SARIF        │
-│  안전한 대안 추천 · Ollama 로컬 설명 (선택) · GitHub Action 게이트 │
-└─────────────────────────────────────────────────────────────────┘
-```
+<img width="795" height="891" alt="image" src="https://github.com/user-attachments/assets/ca58ee8f-e1e9-4eb1-88af-1dc6ffc5da66" />
+
 
 MCP 도구 4종: `check_package` · `check_license` · `check_repo_trust` ·
 `check_model`. 에이전트는 도구를 호출하고, 배치 CI·SBOM 파일 출력은
@@ -141,36 +119,20 @@ Composite Action이 SBOM·SARIF·JSON 리포트를 남기고, 종료 코드로 C
 ---
 
 ## 실행 결과 예시
-
 ```text
 $ aibom-guardian examples/sample-requirements.txt
-
-[INFO] 3 direct + 4 transitive = 7 packages to scan.
-
-+--------------------+-----------+----------------+-------+-------------+---------+
-|      Package       |  Version  | License Status | Vulns | Trust Score | Verdict |
-+--------------------+-----------+----------------+-------+-------------+---------+
-|      requests      |   2.28.0  |    ALLOWED     |   4   |      75     | WARNING |
-|       numpy        |   1.24.0  |    ALLOWED     |   0   |     100     |  ALLOW  |
-|       pyyaml       |   5.3.1   |    ALLOWED     |   1   |      49     |  BLOCK  |
-|      urllib3       |  1.26.20  |    ALLOWED     |   5   |      75     | WARNING |
-+--------------------+-----------+----------------+-------+-------------+---------+
-
-- pyyaml==5.3.1 (BLOCK, score 49)
-    [HARD BLOCK] Critical severity cve finding: GHSA-8q59-q68h-6hv4
-    -> suggested: PyYAML==6.0.3 (confirmed) - Upgrade to latest safe release
-
-[EXIT 2]
 ```
+
+<img width="1151" height="750" alt="image" src="https://github.com/user-attachments/assets/efae65e0-afce-4652-832d-f6afe71ca9ef" />
+
 
 `urllib3`은 requirements에 없어도 `requests`의 **전이 의존성**으로 잡힙니다.
 
 ```text
 $ aibom-guardian requirements.txt --model CompVis/stable-diffusion-v1-4
-
-| Model                         | License               | Weights              | Verdict |
-| CompVis/stable-diffusion-v1-4 | creativeml-openrail-m | safetensors + pickle | BLOCK   |
 ```
+<img width="1452" height="295" alt="image" src="https://github.com/user-attachments/assets/7e714399-0f2f-4014-9f27-d4a1e084cef7" />
+
 
 ### 종료 코드
 
