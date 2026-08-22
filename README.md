@@ -1,10 +1,10 @@
 # AIBOM-Guardian
 
-[![CI](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
-[![MCP](https://img.shields.io/badge/MCP-4%20tools-purple)](src/aibom_guardian/mcp_server.py)
+[CI](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml)
+[Python](pyproject.toml)
+[License](LICENSE)
+[CycloneDX](https://cyclonedx.org/)
+[MCP](src/aibom_guardian/mcp_server.py)
 
 > **Vibe Coding 시대, 개발자를 위한 AI 공급망 메인테이너 에이전트**
 
@@ -14,19 +14,23 @@ LLM이 추천하고, 문서에서 복사하고, `pip install` / `npm install` �
 AIBOM-Guardian는 **PyPI · npm · Hugging Face**를 한 파이프라인으로 검사해
 두 가지를 남깁니다.
 
-| 산출물 | 의미 |
-|---|---|
-| **CycloneDX 1.6 SBOM / ML-BOM** (`sbom.json`) | 무엇이 들어 있는가 |
+
+| 산출물                                                            | 의미         |
+| -------------------------------------------------------------- | ---------- |
+| **CycloneDX 1.6 SBOM / ML-BOM** (`sbom.json`)                  | 무엇이 들어 있는가 |
 | **Trust Score + ALLOW / WARNING / BLOCK** (`scan_report.json`) | 그것을 써도 되는가 |
+
 
 검사하지 못한 것을 통과시키지 않습니다. 아래 **데이터 계약**을 CLI·MCP·
 `score_engine`이 공유합니다.
 
-| 필드 / 이슈 | `[]` 또는 `false` | `null` 또는 `true` |
-|---|---|---|
-| `vulnerabilities` | OSV 응답, 알려진 CVE 없음 | OSV/네트워크 실패 → `WARNING` |
-| `license_unverified` | 고정 버전 PyPI/npm 메타에서 라이선스 확인 | 설치 사본 폴백 등 → confidence↓ |
-| `pii_scan_unverified` | 모델 카드 텍스트 PII 스캔 완료 | 카드 미읽기/빈 본문 → provenance 미검증 |
+
+| 필드 / 이슈               | `[]` 또는 `false`             | `null` 또는 `true`             |
+| --------------------- | --------------------------- | ---------------------------- |
+| `vulnerabilities`     | OSV 응답, 알려진 CVE 없음          | OSV/네트워크 실패 → `WARNING`      |
+| `license_unverified`  | 고정 버전 PyPI/npm 메타에서 라이선스 확인 | 설치 사본 폴백 등 → confidence↓     |
+| `pii_scan_unverified` | 모델 카드 텍스트 PII 스캔 완료         | 카드 미읽기/빈 본문 → provenance 미검증 |
+
 
 English: [README.en.md](README.en.md) ·
 기여: [CONTRIBUTING.md](CONTRIBUTING.md) ·
@@ -79,17 +83,20 @@ MCP 도구 4종: `check_package` · `check_license` · `check_repo_trust` ·
 ## 주요 기능
 
 ### 모델 직렬화 검사 (Pickle vs Safetensors)
+
 `.bin` / `.pkl`은 pickle입니다. `torch.load()`가 그 안의 코드를 실행할 수
 있습니다. safetensors 대안 존재 여부, pickle-only 저장소, picklescan
 위험 전역을 이슈로 올립니다. 기본은 메타데이터만 보고,
 `--model-pickle-scan MB`로 다운로드 검사를 켭니다.
 
 ### 원격 코드 실행 신호 (`trust_remote_code`)
+
 `config.json`의 `auto_map` / `trust_remote_code`와 외부 코드 저장소 참조를
 수집해 `malicious`·`provenance` 이슈로 점수에 반영합니다.
 (정적 메타데이터 기반 — 임의 Python AST 전수 분석기는 아닙니다.)
 
 ### npm 생태계 (`--npm`)
+
 `package.json`의 `dependencies` / `devDependencies`를 스캔합니다.
 npm registry에서 릴리스별 `dependencies` 체인을 전개(최대 깊이 12)하고,
 OSV `ecosystem=npm`·registry 라이선스 필드를 PyPI와 같은 `license_checker`
@@ -102,21 +109,25 @@ aibom-guardian --npm package.json --direct-only --offline
 ```
 
 ### 환각 패키지 · 타이포스쿼팅
+
 PyPI/npm에 없는 이름, 인기 패키지와 편집 거리가 가까운 이름, yanked 릴리스,
 너무 젊은 릴리스(쿨다운)를 탐지하고 대안을 제안합니다.
 
 ### 라이선스 — 패키지와 모델 동일 게이트
+
 SPDX License List + Blue Oak Council로 식별하고, OpenRAIL / Llama / Gemma
 등 SPDX id가 없는 **AI 모델 라이선스**도 `BLOCKED` / `REVIEW`로 분류합니다.
 `Apache-2.0 WITH Commons Clause`처럼 `WITH` 예외는 나누지 않고 함께 판정합니다.
 
 ### 모델 카드 PII (provenance)
+
 Model Card/README 본문에서 **이메일**, **한국 휴대폰 번호**, **Luhn 검증
 신용카드 PAN**을 찾습니다(`security_classifiers`). 발견은 `type: pii` 이슈로
 올라가 `score_engine` provenance 카테고리에 반영됩니다. 카드를 읽지 못하면
 `pii_scan_unverified: true` — **“PII 없음”이 아닙니다.**
 
 ### GitHub Actions 보안 게이트
+
 ```yaml
 - uses: Letmeloveyou522/aibom_guardian@v1
   with:
@@ -163,12 +174,14 @@ $ aibom-guardian requirements.txt --model CompVis/stable-diffusion-v1-4
 
 ### 종료 코드
 
-| 코드 | 의미 |
-|---|---|
-| `0` | 전부 ALLOW, 미검사 줄 없음 |
-| `1` | 입력 오류 |
-| `2` | BLOCK 존재 |
+
+| 코드  | 의미                                              |
+| --- | ----------------------------------------------- |
+| `0` | 전부 ALLOW, 미검사 줄 없음                              |
+| `1` | 입력 오류                                           |
+| `2` | BLOCK 존재                                        |
 | `3` | WARNING 또는 unscanned 줄 (`--fail-on warning` 기본) |
+
 
 BLOCK만 막으려면 `--fail-on block`을 사용하십시오.
 
@@ -222,6 +235,7 @@ aibom_guardian/
 ## 설치 및 빠른 시작
 
 ### 요구 사항
+
 - Python **3.10+**
 - (선택) `GITHUB_TOKEN` — `--supply-chain` rate limit
 - (선택) `HF_TOKEN` — gated 모델
@@ -288,12 +302,14 @@ Claude Desktop / Cursor 예시:
 }
 ```
 
-| 도구 | 역할 |
-|---|---|
-| `check_package` | OSV CVE + 라이선스 + Trust Score (단건) |
-| `check_license` | 라이선스 문자열 → `{status, spdx_id, family, ...}` |
-| `check_repo_trust` | OpenSSF · provenance · cosign · HF 데이터셋 문서 |
-| `check_model` | HF 모델 스캔 — `scan_report.json`의 `models[]`와 동일 스키마 |
+
+| 도구                 | 역할                                                |
+| ------------------ | ------------------------------------------------- |
+| `check_package`    | OSV CVE + 라이선스 + Trust Score (단건)                 |
+| `check_license`    | 라이선스 문자열 → `{status, spdx_id, family, ...}`       |
+| `check_repo_trust` | OpenSSF · provenance · cosign · HF 데이터셋 문서        |
+| `check_model`      | HF 모델 스캔 — `scan_report.json`의 `models[]`와 동일 스키마 |
+
 
 `scan_report.json` 스키마:
 
@@ -307,14 +323,16 @@ Claude Desktop / Cursor 예시:
 
 ### Trust Score (요약)
 
-| 카테고리 | 가중치 |
-|---|---|
-| malicious | 28 |
-| cve | 25 |
-| license | 15 |
-| typosquatting | 12 |
-| hallucination | 10 |
-| provenance | 10 |
+
+| 카테고리          | 가중치 |
+| ------------- | --- |
+| malicious     | 28  |
+| cve           | 25  |
+| license       | 15  |
+| typosquatting | 12  |
+| hallucination | 10  |
+| provenance    | 10  |
+
 
 - **≥ 80** + 충분한 confidence → `ALLOW`
 - **< 50** 또는 hard block → `BLOCK`
@@ -327,10 +345,12 @@ Claude Desktop / Cursor 예시:
 
 ## CI / CD
 
-| 워크플로 | 트리거 | 내용 |
-|---|---|---|
+
+| 워크플로                       | 트리거                    | 내용                                                          |
+| -------------------------- | ---------------------- | ----------------------------------------------------------- |
 | `.github/workflows/ci.yml` | `main` / `dev` push·PR | Python 3.10–3.13 `pytest`, pyflakes, wheel 빌드, 오프라인·라이브 스모크 |
-| `.github/workflows/cd.yml` | `v*.*.*` 태그 | 검증 후 GitHub Release (wheel/sdist + 데모 SBOM) |
+| `.github/workflows/cd.yml` | `v*.*.*` 태그            | 검증 후 GitHub Release (wheel/sdist + 데모 SBOM)                 |
+
 
 로컬에서 CI와 같게 확인:
 
@@ -344,20 +364,22 @@ python -m build
 
 ## 다른 도구와의 차이
 
-| | pip-audit | safety | syft · trivy | **AIBOM-Guardian** |
-|---|:---:|:---:|:---:|:---:|
-| 취약점 (OSV 등) | ✅ | ✅ | ✅ | ✅ |
-| PyPI + **npm** | PyPI | ❌ | ✅ | ✅ |
-| 전이 의존성 | ✅ | ✅ | ✅ | ✅ |
-| CycloneDX SBOM | ❌ | ❌ | ✅ | ✅ 1.6 |
-| **AI 모델 라이선스** | ❌ | ❌ | ❌ | ✅ OpenRAIL·Llama |
-| **모델 가중치 안전성** | ❌ | ❌ | ❌ | ✅ pickle / safetensors |
-| ML-BOM | ❌ | ❌ | 부분 | ✅ |
-| 릴리스 쿨다운 | ❌ | ❌ | ❌ | ✅ |
-| SARIF | ✅ | ✅ | ✅ | ✅ |
-| **미검증을 통과시키지 않음** | ❌ | ❌ | ❌ | ✅ |
-| 모델 카드 PII 신호 | ❌ | ❌ | ❌ | ✅ |
-| LLM 에이전트 (MCP) | ❌ | ❌ | ❌ | ✅ 도구 4종 |
+
+|                   | pip-audit | safety | syft · trivy | **AIBOM-Guardian**     |
+| ----------------- | --------- | ------ | ------------ | ---------------------- |
+| 취약점 (OSV 등)       | ✅         | ✅      | ✅            | ✅                      |
+| PyPI + **npm**    | PyPI      | ❌      | ✅            | ✅                      |
+| 전이 의존성            | ✅         | ✅      | ✅            | ✅                      |
+| CycloneDX SBOM    | ❌         | ❌      | ✅            | ✅ 1.6                  |
+| **AI 모델 라이선스**    | ❌         | ❌      | ❌            | ✅ OpenRAIL·Llama       |
+| **모델 가중치 안전성**    | ❌         | ❌      | ❌            | ✅ pickle / safetensors |
+| ML-BOM            | ❌         | ❌      | 부분           | ✅                      |
+| 릴리스 쿨다운           | ❌         | ❌      | ❌            | ✅                      |
+| SARIF             | ✅         | ✅      | ✅            | ✅                      |
+| **미검증을 통과시키지 않음** | ❌         | ❌      | ❌            | ✅                      |
+| 모델 카드 PII 신호      | ❌         | ❌      | ❌            | ✅                      |
+| LLM 에이전트 (MCP)    | ❌         | ❌      | ❌            | ✅ 도구 4종                |
+
 
 패키지 CVE만 필요하면 `pip-audit`이 더 가볍습니다. **모델까지 같은
 기준으로 판정하고 하나의 AIBOM에 담을 때** 이 도구의 자리입니다.
@@ -369,14 +391,16 @@ python -m build
 식별 근거: **SPDX License List** + **Blue Oak Council**. AI 전용 규칙은
 별도 패턴(OpenRAIL → `BLOCKED`, Llama/Gemma → `REVIEW`).
 
-| 조건 | 결과 |
-|---|---|
-| 비상업 · Commons Clause · BUSL · SSPL 등 | `BLOCKED` |
-| OpenRAIL 계열 | `BLOCKED` |
-| Llama · Gemma 등 커뮤니티 라이선스 | `REVIEW` |
-| 카피레프트 (GPL/AGPL/MPL…) | `REVIEW` + 의무 안내 |
-| Blue Oak / OSI 승인 관대 라이선스 | `ALLOWED` |
-| 식별 실패 | `UNKNOWN` (통과 아님) |
+
+| 조건                                   | 결과                |
+| ------------------------------------ | ----------------- |
+| 비상업 · Commons Clause · BUSL · SSPL 등 | `BLOCKED`         |
+| OpenRAIL 계열                          | `BLOCKED`         |
+| Llama · Gemma 등 커뮤니티 라이선스            | `REVIEW`          |
+| 카피레프트 (GPL/AGPL/MPL…)                | `REVIEW` + 의무 안내  |
+| Blue Oak / OSI 승인 관대 라이선스            | `ALLOWED`         |
+| 식별 실패                                | `UNKNOWN` (통과 아님) |
+
 
 캐시: `~/.cache/aibom-guardian/registries` (`AIBOM_GUARDIAN_CACHE`로 변경 가능).
 `--offline`이고 캐시가 없으면 내장 규칙만 남으며, 이 경우 **ALLOWED로
@@ -390,8 +414,9 @@ python -m build
 ## 기여 가이드 & 라이선스
 
 ### Contributing
+
 1. [CONTRIBUTING.md](CONTRIBUTING.md)의 **None ≠ []** · `license_unverified` ·
-   `pii_scan_unverified` 계약을 지키십시오.
+  `pii_scan_unverified` 계약을 지키십시오.
 2. 점수는 `score_engine`만, CLI/MCP 입력은 `_adapters`만 사용하십시오.
 3. `pytest`는 네트워크를 쓰지 않습니다. 새 테스트도 mock 하십시오.
 4. PR 전에 `pytest` + `pyflakes`가 통과해야 합니다.
@@ -400,6 +425,7 @@ python -m build
 행동 강령: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ### License
+
 본 프로젝트는 **[Apache License 2.0](LICENSE)** 입니다.
 
 런타임 의존성과 그 라이선스는 [DEPENDENCIES.md](DEPENDENCIES.md)에
@@ -407,20 +433,4 @@ python -m build
 
 ---
 
-## 한계 (솔직한 목록)
-
-- 라이선스는 **고정 버전 PyPI 메타**가 기준입니다. 오프라인·조회 실패 시
-  설치 사본 폴백 + `license_unverified`.
-- MCP `check_package`는 **PyPI 단건 OSV+라이선스**입니다. npm·타이포/환각/전이/
-  공급망은 CLI(`--npm`) 또는 `check_repo_trust` / `check_model`을 쓰십시오.
-- PII 탐지는 **모델 카드 정적 텍스트**입니다. 런타임 마스킹·차단은 없습니다.
-- 모델 pickle 내부 검사는 기본 비활성. 미검사는 `unverified`로 보고합니다.
-- picklescan은 알려진 패턴만 탐지합니다. “탐지 없음 = 안전”이 아닙니다.
-- gated 모델은 `HF_TOKEN`과 Hub 라이선스 동의가 필요합니다.
-- cosign 검증은 로컬 `cosign` 바이너리가 있어야 합니다.
-
----
-
-<p align="center">
-  <b>AIBOM-Guardian</b> — ship AI dependencies you can still explain tomorrow.
-</p>
+**AIBOM-Guardian** — ship AI dependencies you can still explain tomorrow.
