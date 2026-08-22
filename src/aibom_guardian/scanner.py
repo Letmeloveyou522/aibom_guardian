@@ -65,40 +65,41 @@ __all__ = [
     "main",
 ]
 from . import __version__
-from ._adapters import ( # noqa: F401
-    LICENSE_UNVERIFIED_ISSUE,
-    _build_check_result,
-    _vulns_to_issues,
-    attach_license_unverified,
-)
-from ._cli_report import ( # noqa: F401
-    HAS_PRETTYTABLE,
-    _MAX_VULNS_SHOWN,
-    _SEVERITY_ORDER,
-    _VULN_SUMMARY_CHARS,
-    _first_sentence,
-    _print_vulnerabilities,
-    _vuln_count_label,
-    print_model_report,
-    print_report,
-    print_unscanned_lines,
-    save_report,
-)
-from ._requirements import (  # noqa: F401 - re-export for scanner.* callers/tests
-    PYPI_TIMEOUT_SEC,
-    Pinned,
-    TRANSITIVE_MAX_DEPTH,
-    _DIRECTIVE_PREFIXES,
-    _PYPI_SESSION,
-    _RELEASE_CACHE,
-    _normalize_name,
-    _pypi_session,
-    _pypi_versions,
-    _requires_dist,
-    _resolve_specifier,
-    expand_transitive,
-    parse_requirements,
-)
+from . import _adapters
+from . import _cli_report
+from . import _requirements
+
+LICENSE_UNVERIFIED_ISSUE = _adapters.LICENSE_UNVERIFIED_ISSUE
+_build_check_result = _adapters._build_check_result
+_vulns_to_issues = _adapters._vulns_to_issues
+attach_license_unverified = _adapters.attach_license_unverified
+
+# Back-compat re-exports — tests and monkeypatches reach these via scanner.*
+HAS_PRETTYTABLE = _cli_report.HAS_PRETTYTABLE
+_MAX_VULNS_SHOWN = _cli_report._MAX_VULNS_SHOWN
+_SEVERITY_ORDER = _cli_report._SEVERITY_ORDER
+_VULN_SUMMARY_CHARS = _cli_report._VULN_SUMMARY_CHARS
+_first_sentence = _cli_report._first_sentence
+_print_vulnerabilities = _cli_report._print_vulnerabilities
+_vuln_count_label = _cli_report._vuln_count_label
+print_model_report = _cli_report.print_model_report
+print_report = _cli_report.print_report
+print_unscanned_lines = _cli_report.print_unscanned_lines
+save_report = _cli_report.save_report
+
+Pinned = _requirements.Pinned
+PYPI_TIMEOUT_SEC = _requirements.PYPI_TIMEOUT_SEC
+TRANSITIVE_MAX_DEPTH = _requirements.TRANSITIVE_MAX_DEPTH
+_DIRECTIVE_PREFIXES = _requirements._DIRECTIVE_PREFIXES
+_PYPI_SESSION = _requirements._PYPI_SESSION
+_RELEASE_CACHE = _requirements._RELEASE_CACHE
+_normalize_name = _requirements._normalize_name
+_pypi_session = _requirements._pypi_session
+_pypi_versions = _requirements._pypi_versions
+_requires_dist = _requirements._requires_dist
+_resolve_specifier = _requirements._resolve_specifier
+parse_requirements = _requirements.parse_requirements
+expand_transitive = _requirements.expand_transitive
 from .osv_client import query_vulnerabilities
 from .license_checker import classify_license_detailed, set_offline
 from .sarif import write_sarif
