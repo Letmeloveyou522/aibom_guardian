@@ -75,7 +75,6 @@ class NpmPackage(NamedTuple):
 
 
 def _npm_session():
-    global _NPM_SESSION
     if _NPM_SESSION is not None:
         return _NPM_SESSION
     session = getattr(_THREAD_LOCAL, "npm", None)
