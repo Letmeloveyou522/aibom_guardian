@@ -14,7 +14,7 @@ The "Used by" column names modules under `src/aibom_guardian/`.
 
 | Library | Purpose | Used by | GitHub | License |
 |---|---|---|---|---|
-| requests | HTTP calls to the OSV, PyPI and GitHub APIs | `osv_client.py`, `repository_checker.py`, `recommendation.py`, `ai_explainer.py` | https://github.com/psf/requests | Apache-2.0 |
+| requests | HTTP calls to the OSV, PyPI, npm registry and GitHub APIs | `osv_client.py`, `repository_checker.py`, `recommendation.py`, `npm_checker.py`, `ai_explainer.py` | https://github.com/psf/requests | Apache-2.0 |
 | prettytable | Print result tables in the terminal | `scanner.py` | https://github.com/prettytable/prettytable | BSD-3-Clause |
 | cyclonedx-bom / cyclonedx-python-lib | Generate the base CycloneDX SBOM (`cyclonedx-py` CLI) | `sbom_generator.py` | https://github.com/CycloneDX/cyclonedx-python | Apache-2.0 |
 | mcp (pinned `==1.28.1`) | Expose tools to Claude Desktop / Cursor via Model Context Protocol | `mcp_server.py` | https://github.com/modelcontextprotocol/python-sdk | MIT |
@@ -37,6 +37,7 @@ The "Used by" column names modules under `src/aibom_guardian/`.
 |---|---|---|
 | OSV API (api.osv.dev) | Known vulnerabilities (CVE/GHSA/PYSEC) | Run by Google, free public API, no key required |
 | PyPI JSON API (pypi.org) | Package existence, yanked releases, latest version | Free public API, no key required |
+| npm registry (registry.npmjs.org) | npm package versions, dependencies, license fields | Free public API, no key required |
 | GitHub REST API (api.github.com) | Repository activity, maintainers, releases | Free; `GITHUB_TOKEN` recommended to avoid rate limits |
 | OpenSSF Scorecard API (api.securityscorecards.dev) | Repository security posture score | Run by OpenSSF, free public API |
 | Hugging Face Hub API (huggingface.co/api) | Model metadata, file lists, model files | Free public API; gated repos need `HF_TOKEN` and license acceptance |
@@ -49,6 +50,9 @@ The "Used by" column names modules under `src/aibom_guardian/`.
 > them, and neither SPDX data repository declares a license for the list
 > itself. Both are fetched on first use and cached under
 > `~/.cache/aibom-guardian/registries` (`%LOCALAPPDATA%` on Windows).
+
+> Model-card PII detection (`security_classifiers.py`) uses only the Python
+> standard library (`re`); it adds no extra runtime dependency.
 
 > Whenever you add a new library, add its name / purpose / GitHub link /
 > license to the tables above and to `requirements.txt`.

@@ -8,18 +8,25 @@
 
 > **Vibe Coding 시대, 개발자를 위한 AI 공급망 메인테이너 에이전트**
 
-LLM이 추천하고, 문서에서 복사하고, `pip install` 한 줄로 들어오는
-의존성 — 그 안에 **없는 패키지**, **쓸 수 없는 라이선스**, **실행되는
-pickle 가중치**가 섞여 있습니다. AIBOM-Guardian는 Python 패키지와 Hugging Face
-모델을 한 번에 검사해 두 가지를 남깁니다.
+LLM이 추천하고, 문서에서 복사하고, `pip install` / `npm install` 한 줄로
+들어오는 의존성 — 그 안에 **없는 패키지**, **쓸 수 없는 라이선스**,
+**실행되는 pickle 가중치**, **모델 카드에 남은 PII**가 섞여 있습니다.
+AIBOM-Guardian는 **PyPI · npm · Hugging Face**를 한 파이프라인으로 검사해
+두 가지를 남깁니다.
 
 | 산출물 | 의미 |
 |---|---|
 | **CycloneDX 1.6 SBOM / ML-BOM** (`sbom.json`) | 무엇이 들어 있는가 |
 | **Trust Score + ALLOW / WARNING / BLOCK** (`scan_report.json`) | 그것을 써도 되는가 |
 
-검사하지 못한 것을 통과시키지 않습니다. OSV가 죽으면 “CVE 0건”이 아니라
-`vulnerabilities: null` + `WARNING`입니다.
+검사하지 못한 것을 통과시키지 않습니다. 아래 **데이터 계약**을 CLI·MCP·
+`score_engine`이 공유합니다.
+
+| 필드 / 이슈 | `[]` 또는 `false` | `null` 또는 `true` |
+|---|---|---|
+| `vulnerabilities` | OSV 응답, 알려진 CVE 없음 | OSV/네트워크 실패 → `WARNING` |
+| `license_unverified` | 고정 버전 PyPI/npm 메타에서 라이선스 확인 | 설치 사본 폴백 등 → confidence↓ |
+| `pii_scan_unverified` | 모델 카드 텍스트 PII 스캔 완료 | 카드 미읽기/빈 본문 → provenance 미검증 |
 
 English: [README.en.md](README.en.md) ·
 기여: [CONTRIBUTING.md](CONTRIBUTING.md) ·
@@ -82,8 +89,20 @@ MCP 도구 4종: `check_package` · `check_license` · `check_repo_trust` ·
 수집해 `malicious`·`provenance` 이슈로 점수에 반영합니다.
 (정적 메타데이터 기반 — 임의 Python AST 전수 분석기는 아닙니다.)
 
+### npm 생태계 (`--npm`)
+`package.json`의 `dependencies` / `devDependencies`를 스캔합니다.
+npm registry에서 릴리스별 `dependencies` 체인을 전개(최대 깊이 12)하고,
+OSV `ecosystem=npm`·registry 라이선스 필드를 PyPI와 같은 `license_checker`
+게이트로 판정합니다. 대형 manifest(예: `express`) live 스캔 시 **170+**
+전이 패키지까지 추적할 수 있습니다.
+
+```bash
+aibom-guardian --npm examples/sample-package.json
+aibom-guardian --npm package.json --direct-only --offline
+```
+
 ### 환각 패키지 · 타이포스쿼팅
-PyPI에 없는 이름, 인기 패키지와 편집 거리가 가까운 이름, yanked 릴리스,
+PyPI/npm에 없는 이름, 인기 패키지와 편집 거리가 가까운 이름, yanked 릴리스,
 너무 젊은 릴리스(쿨다운)를 탐지하고 대안을 제안합니다.
 
 ### 라이선스 — 패키지와 모델 동일 게이트
@@ -91,11 +110,11 @@ SPDX License List + Blue Oak Council로 식별하고, OpenRAIL / Llama / Gemma
 등 SPDX id가 없는 **AI 모델 라이선스**도 `BLOCKED` / `REVIEW`로 분류합니다.
 `Apache-2.0 WITH Commons Clause`처럼 `WITH` 예외는 나누지 않고 함께 판정합니다.
 
-### “미검증 ≠ 안전” 계약
-| 값 | 의미 |
-|---|---|
-| `vulnerabilities: []` | OSV가 응답했고, 알려진 CVE 없음 |
-| `vulnerabilities: null` | OSV/네트워크 실패 → confidence↓ → `WARNING` |
+### 모델 카드 PII (provenance)
+Model Card/README 본문에서 **이메일**, **한국 휴대폰 번호**, **Luhn 검증
+신용카드 PAN**을 찾습니다(`security_classifiers`). 발견은 `type: pii` 이슈로
+올라가 `score_engine` provenance 카테고리에 반영됩니다. 카드를 읽지 못하면
+`pii_scan_unverified: true` — **“PII 없음”이 아닙니다.**
 
 ### GitHub Actions 보안 게이트
 ```yaml
@@ -161,8 +180,13 @@ BLOCK만 막으려면 `--fail-on block`을 사용하십시오.
 aibom_guardian/
 ├── src/aibom_guardian/
 │   ├── scanner.py              # CLI 오케스트레이터 (run_scan / main)
-│   ├── _requirements.py        # requirements 파싱 · 전이 의존성
+│   ├── _requirements.py        # requirements 파싱 · PyPI 전이 의존성
+│   ├── _scanner_license.py     # PyPI/npm 릴리스 라이선스 해석
+│   ├── _scanner_collect.py     # 병렬 OSV · recommendation · supply chain
+│   ├── _scanner_models.py      # HF 모델 스캔 · 이슈 번역
 │   ├── _cli_report.py          # 터미널 리포트 · save_report
+│   ├── npm_checker.py          # package.json · npm 전이 · run_npm_scan
+│   ├── security_classifiers.py # 모델 카드 PII (이메일·휴대폰·카드)
 │   ├── mcp_server.py           # MCP 서버 (도구 4종)
 │   ├── score_engine.py         # Trust Score / 판정 (유일 채점기)
 │   ├── _adapters.py            # CLI↔MCP 공통 이슈 스키마
@@ -174,8 +198,9 @@ aibom_guardian/
 │   ├── sbom_generator.py       # CycloneDX 1.6 / ML-BOM
 │   ├── sarif.py                # GitHub Code Scanning용 SARIF
 │   └── ai_explainer.py         # 로컬 Ollama 설명 (선택)
-├── tests/                      # ~790 오프라인 단위 테스트
-├── examples/                   # sample-requirements, 샘플 SBOM/리포트
+├── tests/                      # ~840 오프라인 단위 테스트
+├── examples/                   # sample-requirements · sample-package.json
+│                               # demo_scenarios · demo_recommendation
 ├── .github/workflows/          # ci.yml · cd.yml
 ├── action.yml                  # GitHub Marketplace composite action
 ├── CONTRIBUTING.md · SECURITY.md · CODE_OF_CONDUCT.md
@@ -219,8 +244,14 @@ pytest                             # 네트워크 없이 수 초 내 통과해�
 ### CLI
 
 ```bash
-# 기본 스캔 (전이 의존성 포함) + SBOM
+# PyPI — 기본 스캔 (전이 의존성 포함) + SBOM
 aibom-guardian examples/sample-requirements.txt
+
+# npm — package.json (전이 + OSV npm + registry 라이선스)
+aibom-guardian --npm examples/sample-package.json
+
+# 시연 — 정상 모델 / 악성 pickle / 타이포 / 환각 (오프라인)
+python examples/demo_scenarios.py
 
 # AI 모델 포함 → ML-BOM
 aibom-guardian requirements.txt --model CompVis/stable-diffusion-v1-4
@@ -316,6 +347,7 @@ python -m build
 | | pip-audit | safety | syft · trivy | **AIBOM-Guardian** |
 |---|:---:|:---:|:---:|:---:|
 | 취약점 (OSV 등) | ✅ | ✅ | ✅ | ✅ |
+| PyPI + **npm** | PyPI | ❌ | ✅ | ✅ |
 | 전이 의존성 | ✅ | ✅ | ✅ | ✅ |
 | CycloneDX SBOM | ❌ | ❌ | ✅ | ✅ 1.6 |
 | **AI 모델 라이선스** | ❌ | ❌ | ❌ | ✅ OpenRAIL·Llama |
@@ -324,6 +356,7 @@ python -m build
 | 릴리스 쿨다운 | ❌ | ❌ | ❌ | ✅ |
 | SARIF | ✅ | ✅ | ✅ | ✅ |
 | **미검증을 통과시키지 않음** | ❌ | ❌ | ❌ | ✅ |
+| 모델 카드 PII 신호 | ❌ | ❌ | ❌ | ✅ |
 | LLM 에이전트 (MCP) | ❌ | ❌ | ❌ | ✅ 도구 4종 |
 
 패키지 CVE만 필요하면 `pip-audit`이 더 가볍습니다. **모델까지 같은
@@ -357,7 +390,8 @@ python -m build
 ## 기여 가이드 & 라이선스
 
 ### Contributing
-1. [CONTRIBUTING.md](CONTRIBUTING.md)의 **None ≠ []** 계약을 지키십시오.
+1. [CONTRIBUTING.md](CONTRIBUTING.md)의 **None ≠ []** · `license_unverified` ·
+   `pii_scan_unverified` 계약을 지키십시오.
 2. 점수는 `score_engine`만, CLI/MCP 입력은 `_adapters`만 사용하십시오.
 3. `pytest`는 네트워크를 쓰지 않습니다. 새 테스트도 mock 하십시오.
 4. PR 전에 `pytest` + `pyflakes`가 통과해야 합니다.
@@ -377,8 +411,9 @@ python -m build
 
 - 라이선스는 **고정 버전 PyPI 메타**가 기준입니다. 오프라인·조회 실패 시
   설치 사본 폴백 + `license_unverified`.
-- MCP `check_package`는 **단건 OSV+라이선스**입니다. 타이포/환각/전이/
-  공급망은 CLI 또는 `check_repo_trust` / `check_model`을 쓰십시오.
+- MCP `check_package`는 **PyPI 단건 OSV+라이선스**입니다. npm·타이포/환각/전이/
+  공급망은 CLI(`--npm`) 또는 `check_repo_trust` / `check_model`을 쓰십시오.
+- PII 탐지는 **모델 카드 정적 텍스트**입니다. 런타임 마스킹·차단은 없습니다.
 - 모델 pickle 내부 검사는 기본 비활성. 미검사는 `unverified`로 보고합니다.
 - picklescan은 알려진 패턴만 탐지합니다. “탐지 없음 = 안전”이 아닙니다.
 - gated 모델은 `HF_TOKEN`과 Hub 라이선스 동의가 필요합니다.
