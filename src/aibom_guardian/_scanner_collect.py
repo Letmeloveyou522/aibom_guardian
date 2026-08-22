@@ -10,7 +10,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from ._adapters import _vulns_to_issues
-from .osv_client import query_vulnerabilities
 
 logger = logging.getLogger(__name__)
 
