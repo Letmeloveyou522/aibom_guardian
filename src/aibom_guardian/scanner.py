@@ -65,13 +65,13 @@ __all__ = [
     "main",
 ]
 from . import __version__
-from ._adapters import (
+from ._adapters import ( # noqa: F401
     LICENSE_UNVERIFIED_ISSUE,
     _build_check_result,
     _vulns_to_issues,
     attach_license_unverified,
 )
-from ._cli_report import (
+from ._cli_report import ( # noqa: F401
     HAS_PRETTYTABLE,
     _MAX_VULNS_SHOWN,
     _SEVERITY_ORDER,
