@@ -10,3 +10,4 @@ requests==2.28.0    # several CVEs incl. Proxy-Authorization leak
 numpy==1.24.0       # clean: exercises the ALLOW path
 pyyaml==5.3.1       # CVE-2020-14343, critical - exercises the hard block
 # CI aibom-scan job scans this file; the pyyaml pin above is expected to fail the gate.
+# Push this branch so GitHub Actions actually runs the scan.
