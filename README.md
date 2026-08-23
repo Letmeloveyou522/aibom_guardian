@@ -9,7 +9,7 @@
 > **Vibe Coding 시대, 개발자를 위한 AI 공급망 메인테이너 에이전트**
 
 LLM이 추천하고, 문서에서 복사하고, `pip install` / `npm install` 한 줄로
-들어오는 의존성 — 그 안에 **없는 패키지**, **쓸 수 없는 라이선스**,
+들어오는 의존성 - 그 안에 **없는 패키지**, **쓸 수 없는 라이선스**,
 **실행되는 pickle 가중치**, **모델 카드에 남은 PII**가 섞여 있습니다.
 AIBOM-Guardian는 **PyPI · npm · Hugging Face**를 한 파이프라인으로 검사해
 두 가지를 남깁니다.
@@ -44,7 +44,7 @@ English: [README.en.md](README.en.md) ·
 에이전트(판단)와 MCP 도구(실행)를 나누고, 점수는 `score_engine` 한곳에서만
 매깁니다. CLI와 MCP가 같은 답을 내는 근거입니다.
 
-<img width="795" height="891" alt="image" src="https://github.com/user-attachments/assets/ca58ee8f-e1e9-4eb1-88af-1dc6ffc5da66" />
+<img width="461" height="533" alt="image" src="https://github.com/user-attachments/assets/51df1991-dd68-4c79-85aa-b05875caa11c" />
 
 
 MCP 도구 4종: `check_package` · `check_license` · `check_repo_trust` ·
@@ -71,7 +71,7 @@ MCP 도구 4종: `check_package` · `check_license` · `check_repo_trust` ·
 
 `config.json`의 `auto_map` / `trust_remote_code`와 외부 코드 저장소 참조를
 수집해 `malicious`·`provenance` 이슈로 점수에 반영합니다.
-(정적 메타데이터 기반 — 임의 Python AST 전수 분석기는 아닙니다.)
+(정적 메타데이터 기반 - 임의 Python AST 전수 분석기는 아닙니다.)
 
 ### npm 생태계 (`--npm`)
 
@@ -91,7 +91,7 @@ aibom-guardian --npm package.json --direct-only --offline
 PyPI/npm에 없는 이름, 인기 패키지와 편집 거리가 가까운 이름, yanked 릴리스,
 너무 젊은 릴리스(쿨다운)를 탐지하고 대안을 제안합니다.
 
-### 라이선스 — 패키지와 모델 동일 게이트
+### 라이선스 - 패키지와 모델 동일 게이트
 
 SPDX License List + Blue Oak Council로 식별하고, OpenRAIL / Llama / Gemma
 등 SPDX id가 없는 **AI 모델 라이선스**도 `BLOCKED` / `REVIEW`로 분류합니다.
@@ -102,7 +102,7 @@ SPDX License List + Blue Oak Council로 식별하고, OpenRAIL / Llama / Gemma
 Model Card/README 본문에서 **이메일**, **한국 휴대폰 번호**, **Luhn 검증
 신용카드 PAN**을 찾습니다(`security_classifiers`). 발견은 `type: pii` 이슈로
 올라가 `score_engine` provenance 카테고리에 반영됩니다. 카드를 읽지 못하면
-`pii_scan_unverified: true` — **“PII 없음”이 아닙니다.**
+`pii_scan_unverified: true` - **“PII 없음”이 아닙니다.**
 
 ### GitHub Actions 보안 게이트
 
@@ -199,10 +199,10 @@ aibom_guardian/
 ### 요구 사항
 
 - Python **3.10+**
-- (선택) `GITHUB_TOKEN` — `--supply-chain` rate limit
-- (선택) `HF_TOKEN` — gated 모델
-- (선택) `cosign` — 서명 검증
-- (선택) Ollama — 로컬 설명 (`--no-explain`으로 생략)
+- (선택) `GITHUB_TOKEN`: `--supply-chain` rate limit
+- (선택) `HF_TOKEN`: gated 모델
+- (선택) `cosign`: 서명 검증
+- (선택) Ollama: 로컬 설명 (`--no-explain`으로 생략)
 
 ### 설치
 
@@ -220,13 +220,13 @@ pytest                             # 네트워크 없이 수 초 내 통과해�
 ### CLI
 
 ```bash
-# PyPI — 기본 스캔 (전이 의존성 포함) + SBOM
+# PyPI : 기본 스캔 (전이 의존성 포함) + SBOM
 aibom-guardian examples/sample-requirements.txt
 
-# npm — package.json (전이 + OSV npm + registry 라이선스)
+# npm : package.json (전이 + OSV npm + registry 라이선스)
 aibom-guardian --npm examples/sample-package.json
 
-# 시연 — 정상 모델 / 악성 pickle / 타이포 / 환각 (오프라인)
+# 시연 : 정상 모델 / 악성 pickle / 타이포 / 환각 (오프라인)
 python examples/demo_scenarios.py
 
 # AI 모델 포함 → ML-BOM
@@ -270,7 +270,7 @@ Claude Desktop / Cursor 예시:
 | `check_package`    | OSV CVE + 라이선스 + Trust Score (단건)                 |
 | `check_license`    | 라이선스 문자열 → `{status, spdx_id, family, ...}`       |
 | `check_repo_trust` | OpenSSF · provenance · cosign · HF 데이터셋 문서        |
-| `check_model`      | HF 모델 스캔 — `scan_report.json`의 `models[]`와 동일 스키마 |
+| `check_model`      | HF 모델 스캔 - `scan_report.json`의 `models[]`와 동일 스키마 |
 
 
 `scan_report.json` 스키마:
