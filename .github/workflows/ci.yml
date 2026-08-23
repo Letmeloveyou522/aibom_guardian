@@ -179,6 +179,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install .
 
-      - name: Scan this project's own requirements.txt
+      - name: Scan the sample requirements (deliberately vulnerable)
         run: |
-          aibom-guardian requirements.txt --no-explain
+          aibom-guardian examples/sample-requirements.txt --no-explain
