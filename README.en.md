@@ -7,7 +7,7 @@
 
 ## Builds the bill of materials for an AI project, and judges what is in it
 
-One pass over your Python packages and Hugging Face models produces two
+One pass over your **PyPI, npm, and Hugging Face** dependencies produces two
 things:
 
 - **What is in there** → a CycloneDX ML-BOM (`sbom.json`)
@@ -82,9 +82,17 @@ with them.
   `torch.load()` runs the code inside it. Loading the model is arbitrary code
   execution.
 
-And **a check that did not run is not a check that passed.** If the
-vulnerability lookup fails the answer is "unknown", not "zero", and the
-verdict is `WARNING`.
+And **a check that did not run is not a check that passed.** The CLI, MCP,
+and `score_engine` share one contract:
+
+| Field / flag | Verified clean | Unverified |
+|---|---|---|
+| `vulnerabilities` | `[]` — OSV answered, no known CVEs | `null` — lookup failed → `WARNING` |
+| `license_unverified` | license read from pinned PyPI/npm metadata | fallback copy → lower confidence |
+| `pii_scan_unverified` | model card text was scanned for PII | card unread/empty → not “no PII” |
+
+Never coerce `null`/`None` to `[]` for vulnerabilities — that would report
+“zero CVEs” when nothing was checked.
 
 ---
 
@@ -93,6 +101,8 @@ verdict is `WARNING`.
 ```bash
 pip install -e .
 aibom-guardian requirements.txt
+aibom-guardian --npm package.json
+python examples/demo_scenarios.py   # offline threat demo
 ```
 
 In CI:
@@ -108,6 +118,7 @@ In CI:
 | | pip-audit | safety | syft · trivy | AIBOM-Guardian |
 |---|:---:|:---:|:---:|:---:|
 | Vulnerabilities | ✅ | ✅ | ✅ | ✅ |
+| PyPI + **npm** | PyPI | ❌ | ✅ | ✅ |
 | Transitive dependencies | ✅ | ✅ | ✅ | ✅ |
 | SBOM | ❌ | ❌ | ✅ | ✅ CycloneDX 1.6 |
 | Licence obligations | ❌ | partial | identify only | ✅ per licence |
@@ -117,6 +128,7 @@ In CI:
 | Release cooldown | ❌ | ❌ | ❌ | ✅ |
 | SARIF | ✅ | ✅ | ✅ | ✅ |
 | **Unverified never passes** | ❌ | ❌ | ❌ | ✅ |
+| Model card PII signals | ❌ | ❌ | ❌ | ✅ |
 | Callable by an LLM agent | ❌ | ❌ | ❌ | ✅ 4 MCP tools |
 
 If you only need package vulnerabilities, `pip-audit` is lighter. This tool
@@ -168,9 +180,14 @@ seconds, and works without installing the package (`pyproject.toml` puts
 
 ```bash
 aibom-guardian examples/sample-requirements.txt
+aibom-guardian --npm examples/sample-package.json
 ```
 
-`python -m aibom_guardian` does the same thing.
+`python -m aibom_guardian` does the same thing for requirements files.
+Use `--npm PATH` instead of a requirements path to scan `package.json`
+(`dependencies` and `devDependencies`). npm registry transitive resolution
+runs up to depth 12; large manifests such as `express` can expand to **170+**
+packages in a live scan.
 
 `examples/sample-requirements.txt` is scan *input*, pinned to deliberately
 vulnerable versions. It is not something to `pip install -r`. To scan your own
@@ -185,6 +202,7 @@ aibom-guardian examples/sample-requirements.txt \
 
 | Option | Description |
 |---|---|
+| `--npm PATH` | Scan npm `package.json` instead of a requirements file |
 | `--model REF` | Include a Hugging Face model. Repeatable. Turns the SBOM into an ML-BOM |
 | `--direct-only` | Scan only what the file lists. The default follows dependencies |
 | `--min-release-age DAYS` | Warn about versions published fewer than DAYS ago. Default 0 (off) |
@@ -433,6 +451,7 @@ copies live in
 | Remote code | `trust_remote_code`, `auto_map`. `owner/repo--module.Class` loads code from another repository |
 | License | OpenRAIL family `BLOCKED`, Llama / Gemma and similar `REVIEW` |
 | Model Card | Presence and completeness. Detects the HF default template (`[More Information Needed]`) |
+| PII in card | Email, Korean mobile numbers, Luhn-valid credit-card PANs in card text → `provenance` |
 | Provenance | Commit SHA, base model, training datasets, gated status |
 
 Every model file is fetched pinned to a commit SHA. A branch can move while
@@ -572,7 +591,14 @@ the same function object.
 
 ```
 src/aibom_guardian/
-    scanner.py              CLI entry point (aibom-guardian)
+    scanner.py              CLI entry point (aibom-guardian) — orchestrator only
+    _requirements.py        requirements parsing · PyPI transitive expand
+    _scanner_license.py     pinned-release license resolution (PyPI/npm)
+    _scanner_collect.py     parallel OSV · recommendation · supply chain
+    _scanner_models.py      HF model scan · issue translation
+    _cli_report.py          terminal tables · JSON save
+    npm_checker.py          package.json · npm transitive · run_npm_scan
+    security_classifiers.py model-card PII (email · KR mobile · card PAN)
     mcp_server.py           MCP entry point (aibom-guardian-mcp)
     _adapters.py            front end -> score_engine input (single copy)
     score_engine.py         Trust Score / final verdict  <- the only scorer
@@ -612,6 +638,7 @@ python -m aibom_guardian.repository_checker https://github.com/pallets/flask --j
 python -m aibom_guardian.license_checker
 python -m aibom_guardian.score_engine
 python examples/demo_recommendation.py reqeusts==1.0.0
+python examples/demo_scenarios.py
 ```
 
 Run `model_checker` on its own and it **downloads and inspects** pickle files
@@ -699,12 +726,16 @@ works from anywhere in the repository.
 
 ## Status
 
-Implemented: package CVE / license / typosquatting / hallucination detection,
-AI model scanning, supply-chain checks, Trust Score, SBOM and ML-BOM
-generation, four MCP tools (`check_package`, `check_license`,
-`check_repo_trust`, `check_model`), Ollama explanations.
+Implemented: PyPI and **npm** package scanning, CVE / license / typosquatting /
+hallucination detection, AI model scanning (pickle · remote code · **model-card
+PII**), supply-chain checks, Trust Score, SBOM and ML-BOM generation, four MCP
+tools (`check_package`, `check_license`, `check_repo_trust`, `check_model`),
+Ollama explanations, demo scripts.
 
 Known limits:
+
+- `check_package` (MCP) is **PyPI-only**; use the CLI `--npm` for npm.
+- PII detection is **static text in model cards**, not runtime masking.
 
 - Licenses are read from the pinned release on PyPI. On lookup failure or
   offline it falls back to the installed copy and marks

@@ -48,12 +48,16 @@ None    # OSV가 응답하지 않음                    → 알 수 없음
 ```
 
 `None`을 `[]`로 바꾸는 코드는 **"아무도 검사하지 않은 패키지를 안전하다고
-보고"**하게 만듭니다. 이 도구가 저지를 수 있는 최악의 버그입니다.
-[`src/aibom_guardian/_adapters.py`](src/aibom_guardian/_adapters.py)의 모듈
-docstring에 전체 계약이 적혀 있습니다.
+보고"**하게 만듭니다. [`src/aibom_guardian/_adapters.py`](src/aibom_guardian/_adapters.py)의
+모듈 docstring에 OSV·라이선스 계약이 적혀 있습니다.
 
-같은 이유로 라이선스를 읽지 못했을 때도 `ALLOWED`로 넘기지 않고
-`UNKNOWN` + `unverified` 이슈로 남깁니다.
+같은 이유로:
+
+- 라이선스를 읽지 못했을 때 → `UNKNOWN` + `license_unverified`
+- 모델 카드 PII 스캔이 돌지 않았을 때 → `pii_scan_unverified: true`
+  (`security_classifiers.scan_text_for_pii`가 `None`을 반환)
+
+`[]`/`false`는 “검사했고 깨끗함”, `null`/`None`/`true`는 “모름”입니다.
 
 ### 2. 점수는 `score_engine.py`만 매깁니다
 
@@ -178,7 +182,14 @@ docstring으로 올려 주십시오.
 
 ```
 src/aibom_guardian/
-    scanner.py              CLI 진입점 (aibom-guardian)
+    scanner.py              CLI 진입점 (aibom-guardian) — 오케스트레이션만
+    _requirements.py        requirements 파싱 · PyPI 전이 의존성
+    _scanner_license.py     고정 릴리스 라이선스 (PyPI / npm registry)
+    _scanner_collect.py     병렬 OSV · recommendation · supply chain
+    _scanner_models.py      HF 모델 스캔 · score_engine 이슈 번역
+    _cli_report.py          터미널 표 · JSON 저장
+    npm_checker.py          package.json · npm 전이 · run_npm_scan
+    security_classifiers.py 모델 카드 PII (이메일 · 휴대폰 · 카드 PAN)
     mcp_server.py           MCP 진입점 (aibom-guardian-mcp)
     _adapters.py            두 진입점 → score_engine 입력 변환 (단일 사본)
     score_engine.py         Trust Score / 최종 판정  ← 유일한 채점자
@@ -189,8 +200,8 @@ src/aibom_guardian/
     sbom_generator.py       CycloneDX SBOM / ML-BOM
     ai_explainer.py         Ollama 로컬 모델 설명
     repository_checker/     공급망 신뢰도 (대상별 분할)
-examples/                   예시 입력, 데모, 출력 샘플
-tests/                      단위 테스트 (네트워크 미사용)
+examples/                   예시 입력, demo_scenarios, 출력 샘플
+tests/                      단위 테스트 (~840, 네트워크 미사용)
 ```
 
 `repository_checker/`는 검사 대상별로 나뉘어 있습니다. GitHub 관련 수정은

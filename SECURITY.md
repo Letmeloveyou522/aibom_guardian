@@ -53,6 +53,9 @@ are welcome.
 리다이렉트 홉마다 재검증이 들어 있고 `tests/test_repository_ssrf.py`가
 회귀를 막습니다. **이 방어를 우회하는 입력**은 높은 심각도로 봅니다.
 
+`npm_checker`는 `registry.npmjs.org`만 호출합니다(사용자 `package.json` 경로는
+로컬 파일 읽기만).
+
 알려진 한계: 검증과 실제 연결 사이에 `requests`가 DNS를 다시 조회하므로
 TOCTOU 창이 남아 있습니다. 이를 닫으려면 검증한 주소로 연결을 고정하는
 커스텀 어댑터가 필요하며 아직 구현하지 않았습니다. 다만 이 창에 도달하려면
@@ -82,9 +85,12 @@ pickle 검사는 기본 비활성(`--model-pickle-scan 0`)이며, picklescan은
 
 - 라이선스 제한 조항을 우회해 `ALLOWED`가 나오게 하는 문자열
 - CVE가 있는데 `vulnerabilities: []`(검증된 안전)로 보고되는 경우
+- 모델 카드 PII가 있는데 `pii_scan_unverified: false`로 보고되는 경우
 - 타이포스쿼팅 탐지를 빠져나가는 이름
 
 `None`(미검증)이 `[]`(검증된 안전)로 바뀌는 모든 경로가 여기 해당합니다.
+`_adapters._vulns_to_issues`와 `attach_license_unverified`를 건드릴 때는
+회귀 테스트를 반드시 돌리십시오.
 
 ## 범위 밖
 
