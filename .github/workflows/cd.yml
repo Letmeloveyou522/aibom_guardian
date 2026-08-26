@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'   # v1.0.0, v0.1.0 - pushing one of these publishes a release
+      - 'v*.*.*'   # A version tag publishes a release.
   workflow_dispatch:
 
 jobs:
@@ -64,9 +64,7 @@ jobs:
         run: python -m twine check dist/*
 
       - name: Verify the tag matches the packaged version
-        # Nothing stops someone tagging v0.2.0 while __version__ still says
-        # 0.1.0; the mismatch would otherwise only be found by whoever
-        # downloaded the wrong file.
+        # Reject a tag that does not match the version built into the package.
         run: |
           tag="${GITHUB_REF_NAME#v}"
           built=$(ls dist/*.whl | sed -E 's/.*aibom_guardian-([^-]+)-.*/\1/')
