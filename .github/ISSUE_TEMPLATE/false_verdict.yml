@@ -1,20 +1,18 @@
-name: 판정 오류 (오탐 / 미탐)
-description: 라이선스·취약점·타이포스쿼팅 판정이 틀렸을 때
+name: 판정 오류 제보
+description: 정상 항목이 위험하다고 표시된 경우
 labels: ["verdict"]
 body:
   - type: markdown
     attributes:
       value: |
-        판정 정확도는 이 도구의 존재 이유라서 별도 양식으로 받습니다.
-
-        **위험한 것을 안전하다고 보고하는 경우(미탐)는 보안 문제로 취급합니다.**
-        공개 이슈 대신 [SECURITY.md](../blob/main/SECURITY.md)를 따라 주십시오.
-        안전한 것을 위험하다고 보고하는 경우(오탐)는 여기가 맞습니다.
+        실제 위험을 발견하지 못한 경우에는 공개 이슈를 작성하지 말고
+        [SECURITY.md](../blob/main/SECURITY.md)의 비공개 신고 절차를 이용해 주세요.
+        정상 항목이 위험하다고 표시된 경우에는 이 양식으로 제보해 주세요.
 
   - type: dropdown
     id: kind
     attributes:
-      label: 어느 판정인가요
+      label: 오류가 발생한 항목
       options:
         - 라이선스 (ALLOWED / REVIEW / BLOCKED / UNKNOWN)
         - 취약점 (CVE 개수, 심각도, 중복 계산)
@@ -29,7 +27,7 @@ body:
     id: target
     attributes:
       label: 검사 대상
-      description: 패키지 또는 모델을 버전까지 정확히
+      description: 패키지 또는 모델의 이름과 버전을 입력해 주세요.
       placeholder: "chardet==5.2.0 또는 CompVis/stable-diffusion-v1-4"
     validations:
       required: true
@@ -37,18 +35,17 @@ body:
   - type: input
     id: actual
     attributes:
-      label: 이 도구가 낸 판정
-      placeholder: "ALLOWED / spdx=MIT"
+      label: 현재 검사 결과
+      placeholder: "라이선스 상태: ALLOWED / SPDX: MIT"
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: 올바른 판정과 근거
+      label: 예상 결과와 근거
       description: |
-        **근거 링크를 함께 주십시오.** 이 도구는 추측하지 않고 출처를 근거로
-        판정하므로, 수정도 출처가 있어야 합니다.
+        올바른 판정을 확인할 수 있는 근거 링크를 함께 적어 주세요.
 
         - 라이선스: PyPI 페이지, 저장소의 LICENSE 파일, SPDX 식별자
         - 취약점: OSV / GHSA / CVE 링크
@@ -63,6 +60,6 @@ body:
     attributes:
       label: scan_report.json의 해당 항목
       description: |
-        `license_source`, `score_breakdown`, `confidence` 필드가 원인을
-        바로 보여줄 때가 많습니다.
+        원인 확인을 위해 `license_source`, `score_breakdown`,
+        `confidence` 필드가 포함된 항목을 붙여 주세요.
       render: json
