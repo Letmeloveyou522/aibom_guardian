@@ -84,10 +84,14 @@ registry를 통해 간접 의존성을 확장합니다. 각 패키지의 라이�
 `--model-pickle-scan MB` 옵션으로 활성화할 수 있습니다.
 
 ## 실행 결과 예시
+<p align="center">
+  <img width="413" height="244" alt="python 패키지 검사 결과" src="https://github.com/user-attachments/assets/04687cd8-a9d0-4e9a-ab9d-227aa1933746" />
+  <img width="410" height="295" alt="ai 모델 검사 결과" src="https://github.com/user-attachments/assets/bb46e442-a08f-4857-99f2-758f0134d9b0" />
+</p>
 
-<img width="413" height="244" alt="image" src="https://github.com/user-attachments/assets/04687cd8-a9d0-4e9a-ab9d-227aa1933746" />
-<img width="410" height="295" alt="image" src="https://github.com/user-attachments/assets/bb46e442-a08f-4857-99f2-758f0134d9b0" />
-
+<p align="center">
+  <sub>Python 패키지 검사 결과와 AI 모델 검사 결과</sub>
+</p>
 
 간접 의존성 여부는 JSON 보고서와 SBOM에 함께 기록됩니다. 상세 결과에는
 심각도, 근거, 확인 가능한 대안이 포함됩니다.
@@ -124,7 +128,7 @@ registry를 통해 간접 의존성을 확장합니다. 각 패키지의 라이�
 네트워크나 메타데이터 조회 실패가 정상 결과로 표시되지 않도록 하기 위한
 처리입니다.
 
-## 실행 예시
+## CLI 활용 예시
 
 ```bash
 # Python 패키지 기본 검사
@@ -234,7 +238,17 @@ MCP 서버는 대상 한 건에 대한 JSON을 반환합니다. 의존성 파일
 
 ## 구조
 
-<img width="461" height="533" alt="image" src="https://github.com/user-attachments/assets/b395cf4d-fdc9-4a32-af0e-e93c23c2edef" />
+<p align="center">
+  <img
+    src="https://github.com/user-attachments/assets/b395cf4d-fdc9-4a32-af0e-e93c23c2edef"
+    width="520"
+    alt="AIBOM-Guardian 시스템 구조"
+  />
+</p>
+
+<p align="center">
+  <sub>시스템 구조</sub>
+</p>
 
 수집 모듈은 검사 근거를 만들고 최종 판정은 하지 않습니다. CLI와 MCP는
 `_adapters.py`에서 결과를 같은 형식으로 바꾼 뒤 `score_engine.py`로
