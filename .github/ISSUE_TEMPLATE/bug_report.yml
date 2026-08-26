@@ -1,13 +1,13 @@
 name: 버그 제보
-description: 스캐너가 죽거나, 틀린 결과를 내거나, 문서와 다르게 동작할 때
+description: 실행 오류, 잘못된 결과, 문서와 다른 동작 제보
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
         보안 취약점은 여기가 아니라 [SECURITY.md](../blob/main/SECURITY.md)의
-        비공개 절차를 따라 주십시오. **위험한 패키지를 안전하다고 보고하게
-        만드는 입력**도 보안 문제로 취급합니다.
+        비공개 신고 절차를 이용해 주세요. 위험한 대상을 안전하다고 판정하게
+        만드는 입력도 보안 문제에 포함됩니다.
 
   - type: textarea
     id: what-happened
@@ -25,7 +25,7 @@ body:
       label: 재현 방법
       description: |
         실행한 명령과 입력 파일 내용을 그대로 붙여 주세요.
-        `--offline`을 붙여도 재현되는지 알려주시면 원인 범위가 크게 좁혀집니다.
+        `--offline`에서도 재현되는지 함께 확인해 주세요.
       value: |
         ```bash
         aibom-guardian requirements.txt
@@ -43,8 +43,8 @@ body:
     attributes:
       label: 출력
       description: |
-        터미널 출력 전체를 붙여 주세요. 오류라면 traceback을 잘라내지 말아 주세요.
-        `scan_report.json`의 해당 패키지 항목이 있으면 특히 도움이 됩니다.
+        터미널 출력과 traceback을 붙여 주세요. `scan_report.json`에 해당
+        패키지 항목이 있으면 함께 첨부해 주세요.
       render: shell
 
   - type: input
@@ -52,7 +52,7 @@ body:
     attributes:
       label: 버전
       description: "`aibom-guardian --version` 또는 커밋 해시"
-      placeholder: "0.1.0 / 3e37fae"
+      placeholder: "1.0.0 / 3e37fae"
     validations:
       required: true
 

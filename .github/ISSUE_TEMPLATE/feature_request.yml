@@ -1,50 +1,47 @@
 name: 기능 제안
-description: 새로운 검사 항목, 출력 형식, 옵션 등
+description: 새로운 검사 기능이나 사용 방식 제안
 labels: ["enhancement"]
+
 body:
   - type: textarea
     id: problem
     attributes:
-      label: 어떤 문제를 겪고 계신가요
-      description: |
-        원하는 기능이 아니라 **막힌 상황**을 적어 주세요. 같은 문제에
-        더 나은 해법이 있을 수 있습니다.
+      label: 해결하려는 문제
+      description: 현재 불편한 점이나 지원이 필요한 상황을 적어 주세요.
       placeholder: |
-        사내 미러에서 설치하는데 PyPI를 직접 조회해서 결과가 실제 설치본과 다릅니다.
+        사내 패키지 미러를 사용하는 경우 실제 설치 버전과 검사 결과가 다르게 나옵니다.
     validations:
       required: true
 
   - type: textarea
     id: proposal
     attributes:
-      label: 제안하는 방식
-      description: 생각해 두신 동작이 있으면 적어 주세요. 없으면 비워 두셔도 됩니다.
+      label: 원하는 동작
+      description: 기대하는 동작이나 사용 방식을 적어 주세요.
+    validations:
+      required: true
 
   - type: dropdown
     id: area
     attributes:
-      label: 어느 부분인가요
+      label: 관련 기능
       options:
-        - 패키지 검사 (CVE / 타이포스쿼팅 / 환각)
+        - 패키지 검사
         - 라이선스 판정
         - AI 모델 검사
-        - 공급망 / 저장소 신뢰도
-        - Trust Score / 판정 기준
-        - SBOM / ML-BOM 출력
-        - CLI 사용성
-        - MCP 도구
+        - 저장소 및 출처 검사
+        - Trust Score
+        - SBOM 및 ML-BOM
+        - CLI
+        - MCP
         - 기타
     validations:
       required: true
 
   - type: checkboxes
-    id: constraints
+    id: checks
     attributes:
-      label: 아래를 확인해 주세요
-      description: |
-        제안이 이 규칙과 부딪히면 그대로 반영하기 어렵습니다.
-        [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md)에 이유가 있습니다.
+      label: 확인
       options:
-        - label: 검사하지 못한 항목을 통과 처리하도록 만드는 제안이 아닙니다
-        - label: 점수 판정을 score_engine 밖으로 옮기는 제안이 아닙니다
-        - label: 테스트가 네트워크를 쓰게 만드는 제안이 아닙니다
+        - label: 같은 내용의 이슈가 이미 있는지 확인했습니다
+          required: true
