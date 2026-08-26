@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'   # A version tag publishes a release.
+      - 'v*.*.*'   # A version tag builds a GitHub release.
   workflow_dispatch:
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
         run: pytest -q
 
   publish:
-    name: Build and publish release
+    name: Build GitHub release
     runs-on: ubuntu-latest
     needs: test
 
@@ -75,6 +75,9 @@ jobs:
           fi
 
       - name: Publish to PyPI
+        # Disabled for the competition submission. Remove this condition after
+        # PyPI authentication has been configured.
+        if: ${{ false }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
