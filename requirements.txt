@@ -1,30 +1,15 @@
-# AIBOM-Guardian runtime dependencies.
-#
-# This file is what the project itself needs to run:
-#     pip install -r requirements.txt
-#
-# pyproject.toml's [project].dependencies is the canonical list - that is what
-# `pip install aibom-guardian` resolves. This file mirrors it with the reasoning
-# attached, for people installing from a clone. tests/test_packaging.py fails
-# if the two ever drift apart.
-#
-# It is NOT the scan input. The example packages that used to live here
-# (requests==2.28.0, numpy==1.24.0, pyyaml==5.3.1) are pinned to deliberately
-# vulnerable versions so the scanner has something to find - installing them
-# was never the intent. They now live in examples/sample-requirements.txt:
-#     aibom-guardian examples/sample-requirements.txt
+# Dependencies for development from a source checkout.
+# Installation metadata is maintained in pyproject.toml.
+# Scanner sample input is in examples/sample-requirements.txt.
 
-requests>=2.32            # HTTP for the OSV, PyPI and GitHub APIs
-prettytable>=3.0          # result table in the terminal
-cyclonedx-bom>=4.0        # provides the cyclonedx-py CLI used for the SBOM
-mcp==1.28.1               # MCP server. Pinned: mcp 2.x removed
-                          # mcp.server.fastmcp and mcp_server.py will not start.
+requests>=2.32
+prettytable>=3.0
+cyclonedx-bom>=4.0
+mcp==1.28.1
 
-# AI model scanning (module 1, model_checker.py)
-huggingface_hub>=0.24,<2.0   # Hub metadata + model file download
-picklescan>=0.0.21           # dangerous opcodes inside pickle weight files
+huggingface_hub>=0.24,<2.0
+picklescan>=0.0.21
 
-# Development / tests
+# Development and tests
 pytest>=8.0
-pyflakes>=3.0            # CI lint. Undefined names only, not style - see
-                         # CONTRIBUTING.md for why this one and not a full linter.
+pyflakes>=3.0

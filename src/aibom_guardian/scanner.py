@@ -533,9 +533,11 @@ def decide_exit_code(report: list, unscanned: list, fail_on: str = "warning") ->
     get a pass, and it is the failure mode that matters most, because a gate
     that reports success while checking nothing is worse than no gate.
     """
+    if fail_on == "never":
+        return EXIT_CLEAN
     if any(item.get("verdict") == "BLOCK" for item in report):
         return EXIT_BLOCK
-    if fail_on in ("block", "never"):
+    if fail_on == "block":
         return EXIT_CLEAN
     if unscanned:
         return EXIT_NOT_CLEAN

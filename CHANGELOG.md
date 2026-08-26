@@ -12,78 +12,97 @@
 
 ## [Unreleased]
 
-(아직 태그되지 않은 변경은 여기에 적습니다.)
+---
+
+## [1.0.0] - 2026-08-27
+
+오픈소스 개발자대회 제출을 위한 첫 정식 릴리스입니다.
+
+### Changed
+
+- 한국어와 영어 README의 구성과 내용을 통일하고 설치, 검사 범위, 출력,
+  제한 사항을 실제 구현에 맞게 정리했습니다.
+- 기여 가이드, 보안 정책, 이슈 양식, PR 템플릿을 외부 기여자가 사용하기
+  쉬운 형태로 정리했습니다.
+- npm 검사에서 공유하던 세션 상태를 제거해 실행 간 영향을 받지 않도록
+  수정했습니다.
+- `--fail-on never`가 발견된 문제를 보고하되 종료 코드 0을 반환하도록
+  동작을 명확히 했습니다.
+
+### Fixed
+
+- 정적 검사에서 발견된 사용하지 않는 import와 모듈 참조를 정리했습니다.
+- GitHub Action의 지원 범위와 종료 정책 설명을 실제 동작에 맞췄습니다.
 
 ---
 
 ## [0.1.0] - 2026-08-22
 
-**AIBOM-Guardian** 첫 공개 후보 릴리스. PyPI·npm·Hugging Face를 한 파이프라인으로
-검사하고 CycloneDX SBOM/ML-BOM과 Trust Score를 남깁니다. (Git 태그·PyPI 업로드는
-아직 — 코드·휠 버전만 `0.1.0`.)
+**AIBOM-Guardian** 첫 공개 후보 릴리스입니다. PyPI, npm, Hugging Face를
+검사하고 CycloneDX SBOM 또는 ML-BOM과 Trust Score를 생성합니다.
 
 ### Added
 
-**패키지 · npm**
+**패키지 검사**
 
-- PyPI `requirements.txt` 스캔 — OSV CVE, SPDX/Blue Oak 라이선스, 환각·타이포,
-  yanked·쿨다운, 전이 의존성(`_requirements.expand_transitive`).
-- **npm 생태계** — `aibom-guardian --npm package.json`. `dependencies` /
-  `devDependencies` 파싱, npm registry 기반 전이 트리(`expand_npm_transitive`,
-  최대 깊이 12), OSV `ecosystem=npm`, registry 라이선스 필드 → `license_checker`.
+- PyPI `requirements.txt` 스캔: OSV CVE, SPDX/Blue Oak 라이선스, 환각 및
+  타이포스쿼팅, yanked 릴리스, 쿨다운, 전이 의존성(`_requirements.expand_transitive`).
+- npm `package.json` 검사: `dependencies`와 `devDependencies` 파싱, npm
+  registry 기반 간접 의존성 확장, OSV 취약점 조회, 라이선스 판정.
 - `examples/sample-package.json` npm 데모 입력.
 
 **AI 모델**
 
-- Hugging Face 모델 스캔 — pickle/safetensors, picklescan, `trust_remote_code` /
-  `auto_map`, Model Card 완성도.
-- **모델 카드 PII 탐지** (`security_classifiers.scan_text_for_pii`) — 이메일,
-  한국 휴대폰(010 등), Luhn 검증 신용카드 PAN. `type: pii` → `score_engine`
-  provenance 가중치. 카드를 읽지 못하면 `pii_scan_unverified: true`.
+- Hugging Face 모델 검사: pickle과 safetensors 형식, picklescan,
+  `trust_remote_code`, `auto_map`, 모델 카드 완성도.
+- 모델 카드 PII 탐지: 이메일, 한국 휴대폰 번호, Luhn 검증 신용카드 번호.
+  카드를 읽지 못하면 `pii_scan_unverified: true`로 기록.
 
-**판정 · 출력**
+**판정과 출력**
 
 - Trust Score 6카테고리(malicious 28, cve 25, license 15, typosquatting 12,
   hallucination 10, provenance 10).
 - CycloneDX **1.6** SBOM / ML-BOM, SARIF 2.1.0, `scan_report.json`.
-- MCP 도구 4종 — `check_package`, `check_license`(dict envelope),
+- MCP 도구 4종: `check_package`, `check_license`,
   `check_repo_trust`, `check_model`.
 - GitHub Composite Action (`action.yml`), CI 게이트(`--fail-on`).
 - Ollama 로컬 설명(선택), `examples/demo_recommendation.py`,
   `examples/demo_scenarios.py`(정상 모델 / 악성 pickle / 타이포 / 환각 시연).
 
-**공급망 · 인프라**
+**공급망과 인프라**
 
-- `repository_checker/` — OpenSSF Scorecard, cosign, SSRF 방어.
-- `pip install` 패키징 — `aibom-guardian`, `aibom-guardian-mcp` console scripts.
-- ~840 오프라인 단위 테스트, `tests/test_packaging.py` 의존성 동기화 검사.
+- `repository_checker/`: OpenSSF Scorecard, cosign, SSRF 방어.
+- `pip install` 패키징과 `aibom-guardian`, `aibom-guardian-mcp` 실행 명령.
+- 네트워크를 사용하지 않는 단위 테스트와 `tests/test_packaging.py` 의존성
+  동기화 검사.
 
 ### Changed
 
-- 프로젝트·패키지명 **AIBOM-Guardian** / CLI **`aibom-guardian`** /
-  **`aibom-guardian-mcp`** / 모듈 **`aibom_guardian`** 으로 통일.
-- `scanner.py` 오케스트레이터 분할 — `_requirements.py`, `_cli_report.py`,
+- 프로젝트명과 패키지명을 **AIBOM-Guardian**, CLI를 `aibom-guardian`과
+  `aibom-guardian-mcp`, 모듈을 `aibom_guardian`으로 통일.
+- `scanner.py` 기능 분리: `_requirements.py`, `_cli_report.py`,
   `_scanner_license.py`, `_scanner_collect.py`, `_scanner_models.py`.
-- CLI/MCP 공통 이슈 스키마를 `_adapters.py` 단일 사본으로 통합.
-- `score_engine`에서 미사용 `pii` 가중치 슬롯 제거(legacy `type: pii`는
-  provenance alias).
-- README·CONTRIBUTING 가중치표를 코드와 일치(6카테고리 / 100점 합).
+- CLI와 MCP의 공통 이슈 스키마를 `_adapters.py`로 통합.
+- `score_engine`에서 사용하지 않는 `pii` 가중치 항목 제거. 기존
+  `type: pii`는 provenance 항목으로 처리.
+- README와 CONTRIBUTING의 가중치표를 코드와 일치(6카테고리 / 100점 합).
 
-### Fixed (P0–P2)
+### Fixed
 
-- **P0** — OSV/`license_unverified`: `None`을 `[]`로 coalesce하지 않음.
-  미검증은 confidence↓ + `WARNING`.
-- **P0** — MCP `check_package` PyPI 전용, non-PyPI → `unsupported_ecosystem`.
-- **P1** — MCP stdout JSON-RPC 오염 제거(`test_mcp_stdout_is_clean.py`).
-- **P1** — `check_model` ↔ `scan_report.json` `models[]` 스키마 정합.
-- **P2** — `check_license` str → `{success, tool, status, spdx_id, family, …}`.
-- **P2** — SSRF 잘못된 포트가 크래시 대신 거부.
-- OSV alias 병합·CVSS 파싱, SBOM tool 버전 `__version__` 연동.
+- OSV와 `license_unverified`: `None`을 `[]`로 변환하지 않고 미검증 상태의
+  신뢰도를 낮춰 `WARNING`으로 판정.
+- MCP `check_package` PyPI 전용 처리와 `unsupported_ecosystem` 응답 추가.
+- MCP stdout의 JSON-RPC 외 출력 제거(`test_mcp_stdout_is_clean.py`).
+- `check_model`과 `scan_report.json`의 `models[]` 스키마 통일.
+- `check_license` 응답을 구조화된 객체로 변경.
+- 잘못된 SSRF 포트를 오류 없이 거부하도록 수정.
+- OSV alias 병합과 CVSS 파싱, SBOM tool 버전 `__version__` 연동.
 
 ### Security
 
-- SSRF: 허용 호스트·포트, DNS 재검증(`repository_checker/_http.py`).
-- pickle 검사 기본 비활성 — 미검사는 `unverified`로 보고.
+- SSRF 방어를 위해 허용 호스트와 포트를 제한하고 DNS를 재검증.
+- pickle 내부 검사는 기본적으로 비활성화하며 미검사 항목은 `unverified`로 기록.
 
-[Unreleased]: https://github.com/Letmeloveyou522/aibom_guardian/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Letmeloveyou522/aibom_guardian/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Letmeloveyou522/aibom_guardian/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/Letmeloveyou522/aibom_guardian/releases/tag/v0.1.0
