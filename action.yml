@@ -1,8 +1,7 @@
 name: AIBOM-Guardian
 description: >-
-  Scan Python requirements and Hugging Face models for vulnerabilities,
-  license restrictions and supply-chain risk. Emits a CycloneDX SBOM and
-  optional SARIF.
+  Scan Python requirements for vulnerabilities, license issues, and
+  supply-chain risks. Generate CycloneDX SBOM, JSON, and optional SARIF reports.
 author: AIBOM-Guardian contributors
 
 branding:
@@ -16,8 +15,8 @@ inputs:
     default: requirements.txt
   fail-on:
     description: >-
-      When to fail the step: block (only hard blocks), warning (default,
-      also fails on unverified findings), or never.
+      Failure policy: warning fails on WARNING or BLOCK, block fails only on
+      BLOCK, and never reports findings without failing the scan.
     required: false
     default: warning
   direct-only:
@@ -25,13 +24,13 @@ inputs:
     required: false
     default: 'false'
   supply-chain:
-    description: Also check repository trust. Slow; set GITHUB_TOKEN.
+    description: Also check repository trust. GITHUB_TOKEN is recommended.
     required: false
     default: 'false'
   min-release-age:
     description: >-
       Warn about versions published fewer than this many days ago.
-      0 disables. A compromised release is usually pulled within hours.
+      Set to 0 to disable this check.
     required: false
     default: '0'
   jobs:
@@ -57,7 +56,7 @@ inputs:
 
 outputs:
   exit-code:
-    description: 0 clean, 2 a BLOCK was found, 3 warnings or unscanned lines.
+    description: "Scanner exit code: 0 clean, 1 input error, 2 block, 3 warning or unscanned input."
     value: ${{ steps.scan.outputs.exit-code }}
   sarif-file:
     description: Path to the SARIF file, when one was written.

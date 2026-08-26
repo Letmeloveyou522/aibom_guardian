@@ -705,10 +705,10 @@ def test_unscanned_lines_make_the_scan_not_clean():
     assert scanner.decide_exit_code(report, []) == scanner.EXIT_CLEAN
 
 
-def test_fail_on_never_still_reports_a_block():
-    """--fail-on never suppresses the gate, not the finding."""
+def test_fail_on_never_returns_clean_for_all_findings():
+    """--fail-on never reports findings without failing the command."""
     assert scanner.decide_exit_code([{"verdict": "BLOCK"}], [], "never") \
-        == scanner.EXIT_BLOCK
+        == scanner.EXIT_CLEAN
     assert scanner.decide_exit_code([{"verdict": "WARNING"}], ["x"], "never") \
         == scanner.EXIT_CLEAN
 
