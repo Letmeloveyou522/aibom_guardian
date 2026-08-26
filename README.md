@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
 
-## 패키지와 AI 모델을 한 번에 검사
+## 소프트웨어 공급망과 AI 모델 보안 검사
 
 AIBOM-Guardian은 Python과 npm 의존성을 검사하고, 필요한 경우 Hugging Face
 모델까지 확인해 CycloneDX 1.6 SBOM 또는 ML-BOM으로 기록합니다. 로컬 개발
@@ -85,21 +85,9 @@ registry를 통해 간접 의존성을 확장합니다. 각 패키지의 라이�
 
 ## 실행 결과 예시
 
-```text
-[INFO] 3 direct + 4 transitive = 7 packages to scan.
+<img width="413" height="244" alt="image" src="https://github.com/user-attachments/assets/04687cd8-a9d0-4e9a-ab9d-227aa1933746" />
+<img width="410" height="295" alt="image" src="https://github.com/user-attachments/assets/bb46e442-a08f-4857-99f2-758f0134d9b0" />
 
-+----------+---------+----------------+-------+-------------+---------+
-| Package  | Version | License Status | Vulns | Trust Score | Verdict |
-+----------+---------+----------------+-------+-------------+---------+
-| requests |  2.28.0 |    ALLOWED     |   4   |      75     | WARNING |
-| numpy    |  1.24.0 |    ALLOWED     |   0   |     100     | ALLOW   |
-| pyyaml   |  5.3.1  |    ALLOWED     |   1   |      49     | BLOCK   |
-+----------+---------+----------------+-------+-------------+---------+
-
-- pyyaml==5.3.1 (BLOCK, score 49)
-    [HARD BLOCK] Critical severity cve finding: GHSA-8q59-q68h-6hv4
-    -> suggested: PyYAML==6.0.3 (confirmed) - Upgrade to latest safe release
-```
 
 간접 의존성 여부는 JSON 보고서와 SBOM에 함께 기록됩니다. 상세 결과에는
 심각도, 근거, 확인 가능한 대안이 포함됩니다.
@@ -135,6 +123,31 @@ registry를 통해 간접 의존성을 확장합니다. 각 패키지의 라이�
 미검증 항목은 신뢰도를 낮추며 일반적으로 `WARNING`으로 이어집니다.
 네트워크나 메타데이터 조회 실패가 정상 결과로 표시되지 않도록 하기 위한
 처리입니다.
+
+## 실행 예시
+
+```bash
+# Python 패키지 기본 검사
+aibom-guardian examples/sample-requirements.txt
+
+# npm 프로젝트 검사
+aibom-guardian --npm examples/sample-package.json
+
+# 데모 시나리오 실행
+python examples/demo_scenarios.py
+
+# AI 모델을 포함한 검사
+aibom-guardian requirements.txt --model CompVis/stable-diffusion-v1-4
+
+# 저장소와 공급망 검사
+aibom-guardian requirements.txt --supply-chain
+
+# SARIF 생성 및 CI 판정
+aibom-guardian requirements.txt --no-explain --sarif out.sarif --fail-on warning
+
+# 오프라인 검사
+aibom-guardian requirements.txt --offline --fail-on never
+```
 
 ## 주요 옵션
 
@@ -180,20 +193,6 @@ registry를 통해 간접 의존성을 확장합니다. 각 패키지의 라이�
 `--fail-on block`은 차단 항목이 있을 때만 CI를 실패시키고,
 `--fail-on never`는 결과만 기록합니다.
 
-## GitHub Actions
-
-```yaml
-- uses: Letmeloveyou522/aibom_guardian@v1
-  with:
-    requirements: requirements.txt
-    min-release-age: 1
-
-- uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: aibom-guardian.sarif
-```
-
-지원하는 입력은 [`action.yml`](action.yml)에 정리되어 있습니다.
 
 ## 선택 연동
 
@@ -235,24 +234,7 @@ MCP 서버는 대상 한 건에 대한 JSON을 반환합니다. 의존성 파일
 
 ## 구조
 
-```text
-requirements.txt / package.json / model reference
-                         |
-                         v
-                  입력 해석과 확장
-                         |
-                         v
-       라이선스, 취약점, 위험 신호, 출처 수집
-                         |
-                         v
-                   공통 어댑터
-                         |
-                         v
-                  score_engine
-                         |
-                         v
-       터미널 / JSON / CycloneDX / SARIF / 종료 코드
-```
+<img width="461" height="533" alt="image" src="https://github.com/user-attachments/assets/b395cf4d-fdc9-4a32-af0e-e93c23c2edef" />
 
 수집 모듈은 검사 근거를 만들고 최종 판정은 하지 않습니다. CLI와 MCP는
 `_adapters.py`에서 결과를 같은 형식으로 바꾼 뒤 `score_engine.py`로
