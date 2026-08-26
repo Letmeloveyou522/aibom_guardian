@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
 
-## 소프트웨어 공급망과 AI 모델 보안 검사
+## 소프트웨어 의존성과 AI 모델을 검사하는 공급망 보안 도구
 
 AIBOM-Guardian은 Python과 npm 의존성을 검사하고, 필요한 경우 Hugging Face
 모델까지 확인해 CycloneDX 1.6 SBOM 또는 ML-BOM으로 기록합니다. 로컬 개발
