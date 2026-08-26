@@ -18,7 +18,7 @@ first, so the submodule would already be in sys.modules and runpy would then
 run a second copy of it as __main__.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 _LAZY = {
     "calculate_trust_score": "score_engine",
