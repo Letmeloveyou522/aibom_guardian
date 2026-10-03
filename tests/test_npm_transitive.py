@@ -94,8 +94,9 @@ class TestTreeWalk:
     def test_depth_is_capped(self, deps):
         deps({chr(ord("a") + i): {chr(ord("a") + i + 1): "1.0.0"}
               for i in range(20)})
-        packages, _ = expand_npm_transitive([direct("a")], max_depth=3)
+        packages, unresolved = expand_npm_transitive([direct("a")], max_depth=3)
         assert len(packages) == 4
+        assert any("maximum dependency depth 3" in line for line in unresolved)
 
     def test_default_depth_cap_matches_python(self):
         assert NPM_TRANSITIVE_MAX_DEPTH == 12
@@ -132,9 +133,11 @@ class TestVersionSelection:
         deps({"a": {"b": "^2.0.0"}})
         packages, _ = expand_npm_transitive([direct("a"), direct("b", "1.0.0")])
         b = [p for p in packages if p.name.lower() == "b"]
-        assert len(b) == 1
+        assert len(b) == 2
         assert b[0].version == "1.0.0"
         assert b[0].direct is True
+        assert b[1].version == "2.5.0"
+        assert b[1].required_by == ("a@1.0.0",)
 
     def test_an_unresolvable_dependency_is_reported_not_dropped(self, deps):
         deps({"a": {"b": "^99.0.0"}})
@@ -149,6 +152,66 @@ class TestNameNormalisation:
         deps({"a": {"Debug": "1.0.0"}})
         packages, _ = expand_npm_transitive([direct("a"), direct("debug")])
         assert len(packages) == 2
+
+
+def test_all_parents_are_kept_for_shared_child(deps):
+    deps({"a": {"c": "1.0.0"}, "b": {"c": "1.0.0"}})
+    packages, unresolved = expand_npm_transitive([direct("a"), direct("b")])
+    child = next(p for p in packages if p.name == "c")
+    assert child.required_by == ("a@1.0.0", "b@1.0.0")
+    assert not unresolved
+
+
+def test_runtime_and_dev_origins_are_both_retained(deps):
+    deps({"a": {"c": "1.0.0"}, "b": {"c": "1.0.0"}})
+    packages, _ = expand_npm_transitive([
+        direct("a"), direct("b")._replace(section="devDependencies")])
+    assert {(p.name, p.section) for p in packages if p.name == "c"} == {
+        ("c", "dependencies"), ("c", "devDependencies")}
+
+
+def test_dependency_lookup_failure_is_unscanned(monkeypatch):
+    monkeypatch.setattr(npm_checker, "_npm_dependencies", lambda *args: None)
+    packages, unresolved = expand_npm_transitive([direct("a")])
+    assert len(packages) == 1
+    assert unresolved == ["a@1.0.0: dependency lookup failed"]
+
+
+def test_zero_depth_reports_uninspected_dependency(deps):
+    deps({"a": {"b": "1.0.0"}})
+    packages, unresolved = expand_npm_transitive([direct("a")], max_depth=0)
+    assert len(packages) == 1
+    assert "maximum dependency depth 0" in unresolved[0]
+
+
+def test_cycle_at_depth_limit_is_complete(deps):
+    deps({"a": {"b": "1.0.0"}, "b": {"a": "1.0.0"}})
+    packages, unresolved = expand_npm_transitive([direct("a")], max_depth=1)
+    assert len(packages) == 2
+    assert not unresolved
+
+
+@pytest.mark.parametrize("invalid", [None, [], "invalid"])
+def test_invalid_dependency_metadata_is_not_empty(monkeypatch, invalid):
+    from unittest.mock import Mock
+    response = Mock()
+    response.json.return_value = {"dependencies": invalid}
+    session = Mock()
+    session.get.return_value = response
+    monkeypatch.setattr(npm_checker, "_npm_session", lambda: session)
+    assert npm_checker._npm_dependencies("a", "1.0.0") is None
+
+
+def test_failed_dependency_request_can_be_retried(monkeypatch):
+    from unittest.mock import Mock
+    import requests
+    response = Mock()
+    response.json.return_value = {"dependencies": {"b": "1.0.0"}}
+    session = Mock()
+    session.get.side_effect = [requests.ConnectionError("reset"), response]
+    monkeypatch.setattr(npm_checker, "_npm_session", lambda: session)
+    assert npm_checker._npm_dependencies("a", "1.0.0") is None
+    assert npm_checker._npm_dependencies("a", "1.0.0") == {"b": "1.0.0"}
 
 
 class TestOffline:

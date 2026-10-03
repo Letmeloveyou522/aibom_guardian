@@ -1,0 +1,12 @@
+{
+  "name": "aibom-live-verification",
+  "private": true,
+  "dependencies": {
+    "lodash": "4.18.1",
+    "debug": "4.4.3",
+    "ms": "2.1.3"
+  },
+  "devDependencies": {
+    "semver": "7.8.5"
+  }
+}
