@@ -71,6 +71,9 @@ def _install_mcp_stub_if_needed() -> bool:
     sys.modules["mcp"] = mcp_mod
     sys.modules["mcp.server"] = server_mod
     sys.modules["mcp.server.fastmcp"] = fastmcp_mod
+    settings_mod = types.ModuleType("mcp.server.fastmcp.server")
+    settings_mod.Settings = type("Settings", (), {"model_rebuild": staticmethod(lambda: None)})
+    sys.modules["mcp.server.fastmcp.server"] = settings_mod
     return True
 
 

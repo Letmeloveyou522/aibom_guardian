@@ -532,8 +532,37 @@ def test_offline_skips_models(reqs, no_side_effects, monkeypatch, capsys):
         raise AssertionError("offline must not fetch a model")
 
     monkeypatch.setattr(scanner, "check_model", fail)
-    scanner.run_scan(reqs, offline=True, explain=False, models=["org/model"])
+    result = scanner.run_scan(reqs, offline=True, explain=False, models=["org/model"])
+    assert any('model org/model: offline' in item for item in result.unscanned)
     assert "Offline" in capsys.readouterr().out
+
+
+def test_failed_model_cannot_pass_with_clean_package(reqs, no_side_effects, monkeypatch):
+    monkeypatch.setattr(scanner, 'scan_model', lambda *a: None)
+    monkeypatch.setattr(scanner, 'query_vulnerabilities', lambda *a: [])
+    monkeypatch.setattr(scanner, 'RecommendationEngine', lambda *a, **k: FakeEngine())
+    assert scanner.main([reqs, '--no-explain', '--model', 'org/model']) == 3
+    data = json.loads(open('scan_report.json', encoding='utf-8').read())
+    assert data['models'] == []
+    assert any('model scan failed' in item for item in data['unscanned'])
+
+
+def test_empty_requirements_still_scans_model(tmp_path, no_side_effects, monkeypatch):
+    path = tmp_path / 'empty.txt'
+    path.write_text('')
+    monkeypatch.setattr(scanner, 'check_model', lambda *a, **k: dict(MODEL_REPORT))
+    assert scanner.main([str(path), '--no-explain', '--model', 'org/model']) == 2
+    data = json.loads(open('scan_report.json', encoding='utf-8').read())
+    assert data['packages'] == [] and len(data['models']) == 1
+
+
+def test_model_only_failure_preserves_report(tmp_path, no_side_effects, monkeypatch):
+    path = tmp_path / 'empty.txt'
+    path.write_text('')
+    monkeypatch.setattr(scanner, 'scan_model', lambda *a: None)
+    assert scanner.main([str(path), '--no-explain', '--model', 'org/model']) == 1
+    data = json.loads(open('scan_report.json', encoding='utf-8').read())
+    assert len(data['unscanned']) == 1
 
 
 def test_model_findings_are_not_double_counted(monkeypatch):

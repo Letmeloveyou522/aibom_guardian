@@ -32,6 +32,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--certificate-oidc-issuer", default=None)
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--json", action="store_true", help="print full JSON result")
+    parser.add_argument("--fail-on", choices=["warning", "block", "never"], default="warning",
+                        help="exit policy (default: warning); never keeps report-only behavior")
     return parser
 
 
@@ -65,4 +67,6 @@ def main(argv: list[str] | None = None) -> int:
             print("issues :")
             for issue in result["issues"][:10]:
                 print(f"  - [{issue['severity']}] {issue['detail']}")
-    return 0
+    from ..scanner import decide_exit_code
+
+    return decide_exit_code([result], result.get("errors") or [], args.fail_on)

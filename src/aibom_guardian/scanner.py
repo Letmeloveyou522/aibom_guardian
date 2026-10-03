@@ -224,7 +224,7 @@ def run_scan(
     """
     packages, unscanned_lines = parse_requirements(requirements_path,
                                                    offline=offline)
-    if not packages:
+    if not packages and not models:
         print("No packages found to scan. Check your requirements.txt format.")
         if unscanned_lines:
             print(f"[INFO] {len(unscanned_lines)} line(s) were not in name==version format.")
@@ -349,6 +349,7 @@ def run_scan(
             "version_resolved": entry.resolved,
             "direct": entry.direct,
             "depth": entry.depth,
+            "extras": list(entry.extras),
             "line": entry.line,
             "license_raw": lic_raw,
             "license_status": lic_status,
@@ -394,11 +395,14 @@ def run_scan(
     for model_ref in (models or []):
         if offline:
             print(f"[INFO] Offline: skipping model {model_ref}")
+            unscanned_lines.append(f'model {model_ref}: offline; model checks not performed')
             continue
         print(f"[Scanning model] {model_ref} ...")
         model_report = scan_model(model_ref, model_pickle_size_mb)
         if model_report:
             model_reports.append(model_report)
+        else:
+            unscanned_lines.append(f'model {model_ref}: model scan failed or unavailable; see error log')
 
     print_report(report, verbose=verbose)
     if model_reports:

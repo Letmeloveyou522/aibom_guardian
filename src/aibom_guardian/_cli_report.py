@@ -178,7 +178,7 @@ def print_model_report(model_reports: list[dict]):
             formats = model.get("file_formats") or {}
             weights = "safetensors" if formats.get("has_safetensors") else "-"
             if formats.get("pickle_only"):
-                weights = "PICKLE ONLY"
+                weights = "pickle; no safetensors"
             elif formats.get("pickle"):
                 weights += " + pickle"
             table.add_row([
@@ -229,6 +229,8 @@ def save_report(report_document: dict, out_path: str):
         "models": report_document.get("models") or [],
         "unscanned": report_document.get("unscanned") or [],
     }
+    if "dependency_source" in report_document:
+        payload["dependency_source"] = report_document["dependency_source"]
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     print(f"\n[Saved] {out_path}")

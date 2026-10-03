@@ -117,6 +117,7 @@ def test_query_vulnerabilities_accepts_npm_ecosystem(monkeypatch):
 
 def test_run_npm_scan_wires_score_engine(package_json, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(npm_checker, "_npm_versions", lambda name: ["4.18.2", "4.19.0"])
     monkeypatch.setattr(
         npm_checker, "fetch_npm_license",
         lambda name, version, offline=False: {

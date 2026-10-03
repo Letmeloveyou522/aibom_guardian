@@ -34,6 +34,7 @@ import logging
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import Settings as FastMCPSettings
 
 from ._adapters import (
     _build_check_result,
@@ -49,6 +50,9 @@ from .score_engine import calculate_trust_score
 logger = logging.getLogger(__name__)
 
 # "aibom-guardian" is the name the MCP client will show for this server
+# MCP 1.28.1 defines Settings before FastMCP; resolve its lifespan forward ref
+# after both classes exist. Do not hide warnings or change dependency versions.
+FastMCPSettings.model_rebuild()
 mcp = FastMCP("aibom-guardian")
 
 ALLOWED_TARGET_TYPES = frozenset({

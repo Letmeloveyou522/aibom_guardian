@@ -28,24 +28,33 @@ cd aibom_guardian
 python -m venv .venv
 ```
 
-Activate the environment and install the project:
+Activate the environment using the command for your shell:
 
 ```bash
-# Windows
-.venv\Scripts\activate
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+
+# Windows Command Prompt (cmd)
+.venv\Scripts\activate.bat
 
 # macOS or Linux
 source .venv/bin/activate
 
-pip install -e .
 ```
 
-Run a scan:
+Install the project. Run this command again after updating the repository:
 
 ```bash
-aibom-guardian requirements.txt
-aibom-guardian --npm package.json
-aibom-guardian requirements.txt --model CompVis/stable-diffusion-v1-4
+python -m pip install .
+```
+
+Replace the input paths below with files from your own project.
+You do not need to install the packages being scanned into the scanner's environment.
+
+```bash
+aibom-guardian ../my-project/requirements.txt --no-explain
+aibom-guardian --npm ../my-project/package.json --no-explain
+aibom-guardian ../my-project/requirements.txt --model sshleifer/tiny-gpt2 --no-explain
 ```
 
 The files under [`examples/`](examples/) contain deliberately vulnerable
@@ -61,13 +70,26 @@ versions for demonstration. Do not install them in production.
 - Nonexistent names, typosquatting signals, yanked releases, and release age
 - Optional repository, signature, and OpenSSF checks
 
-Ranges such as `>=` and `~=` are resolved against PyPI. Extras and environment
-markers are supported. Includes, URLs, VCS requirements, and unresolved lines
-are reported under `unscanned`.
+Ranges such as `>=` and `~=` are resolved against PyPI. Environment markers are
+evaluated and dependencies requested by extras are expanded. JSON records
+requested options in `extras`. Includes, URLs, VCS requirements, and unresolved lines are
+reported under `unscanned`. Transitive conflicts, metadata lookup failures and
+depth limits are also reported there. This is not pip's full dependency solver
+and does not guarantee an installable set.
 
 ### npm packages
 
-The npm path reads `dependencies` and `devDependencies` from `package.json`,
+A sibling `package-lock.json` v2/v3 supplies pinned versions and installation
+paths. JSON records `dependency_source`, `resolution_source`, `installation_path`
+and `required_by_paths`. This does not inspect installed files or verify integrity.
+Mismatched root dependency declarations, v1 locks and npm-shrinkwrap cause an error.
+Local links, aliases and private registry entries are reported as `unscanned`.
+
+Without a lockfile, supported direct ranges such as `^` and `~` select the highest
+matching registry version. JSON preserves the original range and `resolution_source`.
+Unresolved ranges are recorded as `unscanned`, rather than scanning their lower bounds.
+
+Without a lockfile, the npm path reads `dependencies` and `devDependencies` from `package.json`,
 resolves indirect dependencies through the npm registry, and checks licenses
 and known vulnerabilities.
 
@@ -163,6 +185,11 @@ so later analysis can use earlier results. Report order follows input order.
 
 ## Output files and exit codes
 
+The standalone `python -m aibom_guardian.repository_checker` also accepts
+`--fail-on warning|block|never`. With the default `warning` policy, WARNING or
+reported collection errors return 3, and BLOCK returns 2. Use `--fail-on never`
+for the previous report-only behavior that returned 0 regardless of findings.
+
 | File | Contents |
 |---|---|
 | `scan_report.json` | Results, findings, confidence, and score breakdown |
@@ -210,6 +237,21 @@ See [`action.yml`](action.yml) for the supported inputs.
 The base package scan does not require these integrations.
 
 ## MCP server
+
+Generate Claude Desktop, Cursor, and VS Code configuration fragments with the installed environment's Python:
+`python examples/mcp_setup.py --output mcp-client-configs --check`.
+This probes each configured command with the MCP SDK; it does not modify client settings.
+Use a new output directory. Merge the generated `aibom-guardian` entry into the existing configuration:
+
+| Client | Generated file | Configuration destination |
+|---|---|---|
+| Claude Desktop | claude-desktop.json | Windows: `%APPDATA%\Claude\claude_desktop_config.json`, under `mcpServers` |
+| Cursor | cursor.json | Project `.cursor/mcp.json`, under `mcpServers` |
+| VS Code | vscode.json | Project `.vscode/mcp.json`, under `servers` |
+
+Start the server, enable its tools in chat, and call `check_license` with MIT to check the connection.
+Regenerate the configuration if you move the Python environment: it uses an absolute interpreter path.
+The SDK check covers initialization, tool discovery, and calls; it does not validate client UI settings or permissions.
 
 `aibom-guardian-mcp` exposes four tools over stdio.
 

@@ -8,6 +8,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+/mc-test-*/
+/pytest-of-*/
 
 # Virtual environments
 .venv/
@@ -24,6 +26,7 @@ build/
 # IDE / OS
 .idea/
 .vscode/
+.cursor/mcp.json
 .DS_Store
 Thumbs.db
 
@@ -44,3 +47,6 @@ artifacts/
 
 # Accidental sdist unpack leftovers
 aibom_guardian-*/
+
+# Private team notes and Notion export.
+/.internal-review/

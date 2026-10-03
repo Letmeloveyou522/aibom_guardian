@@ -72,6 +72,11 @@ class NpmPackage(NamedTuple):
     exact: bool           # True when spec is an exact pin, not a range prefix
     direct: bool = True   # False when pulled in by another package
     depth: int = 0        # 0 = named in package.json
+    required_by: tuple[str, ...] = ()  # Immediate parents, as name@version.
+    resolution_source: str = "exact"
+    installation_path: str | None = None
+    required_by_paths: tuple[str, ...] = ()
+    dependency_paths: tuple[str, ...] = ()
 
 
 def _npm_session():
@@ -88,10 +93,10 @@ def _npm_session():
 
 def normalize_npm_version(spec: str) -> tuple[str, bool] | None:
     """
-    Turn an npm version range into a concrete version for OSV / registry lookup.
+    Parse an exact version or a range's base; the base is not a scan target.
 
     Exact pins (``4.18.2``) are trusted. Common prefixes (``^``, ``~``, ``>=``)
-    strip to the stated version — a best-effort lookup, not a lockfile resolve.
+    strip to the stated version for parsing. The scan resolves ranges separately.
     Wildcards (``*``, ``latest``) and compound ranges (``||``) return ``None``.
     """
     text = str(spec or "").strip()
@@ -104,7 +109,8 @@ def normalize_npm_version(spec: str) -> tuple[str, bool] | None:
     exact = not token.startswith(("^", "~", ">", "<", "="))
     stripped = re.sub(r"^[\^~<>=v]+", "", token)
     if _VERSION_TOKEN.match(stripped):
-        return stripped, exact and stripped == token
+        parsed = _parse_semver(stripped)
+        return stripped, exact and stripped == text and parsed.precision == 3
     return None
 
 
@@ -146,10 +152,27 @@ def parse_package_json(path: str) -> tuple[list[NpmPackage], list[str]]:
                     spec=spec_text,
                     section=section,
                     exact=exact,
+                    resolution_source="exact" if exact else "unresolved",
                 )
             )
 
     return packages, unscanned
+
+
+def resolve_direct_versions(packages: list, *, offline: bool = False) -> tuple[list, list]:
+    """Resolve direct ranges without silently scanning their lower bounds."""
+    resolved, unscanned = [], []
+    for entry in packages:
+        if entry.exact:
+            resolved.append(entry)
+            continue
+        version = None if offline else _resolve_npm_range(entry.name, entry.spec)
+        if version is None:
+            reason = "offline" if offline else "unsupported range, lookup failed or no matching version"
+            unscanned.append(f"{entry.section}.{entry.name}@{entry.spec}: {reason}")
+            continue
+        resolved.append(entry._replace(version=version, resolution_source="registry-range"))
+    return resolved, unscanned
 
 
 def _normalize_npm_name(name: str) -> str:
@@ -241,19 +264,32 @@ def _npm_spec_matches(spec: str, version: str) -> bool:
 
     if text.startswith("^"):
         base = _parse_semver(text[1:].strip())
-        return base is not None and _caret_allows(base, parsed)
+        return base is not None and _prerelease_allows(base, parsed) and _caret_allows(base, parsed)
     if text.startswith("~"):
         base = _parse_semver(text[1:].strip())
-        return base is not None and _tilde_allows(base, parsed)
+        return base is not None and _prerelease_allows(base, parsed) and _tilde_allows(base, parsed)
 
     if text.startswith("="):
         text = text[1:].strip()
     base = _parse_semver(text)
     if base is None:
         return False
+    if not _prerelease_allows(base, parsed):
+        return False
+    if base.precision == 1:
+        return parsed.major == base.major
+    if base.precision == 2:
+        return (parsed.major, parsed.minor) == (base.major, base.minor)
     return (parsed.major, parsed.minor, parsed.patch) == (
         base.major, base.minor, base.patch
     ) and parsed.prerelease == base.prerelease
+
+
+def _prerelease_allows(base: _Semver, version: _Semver) -> bool:
+    # npm ranges only opt into prereleases with the same major/minor/patch.
+    return not version.prerelease or bool(base.prerelease) and (
+        base.major, base.minor, base.patch
+    ) == (version.major, version.minor, version.patch)
 
 
 def _caret_allows(base: _Semver, version: _Semver) -> bool:
@@ -281,8 +317,8 @@ def _tilde_allows(base: _Semver, version: _Semver) -> bool:
 
 def _resolve_npm_range(name: str, spec: str) -> str | None:
     """
-    Pick the version a range would install: the newest release that satisfies
-    it. Returns None when the registry cannot be reached or nothing matches.
+    Pick the newest published version matching the supported range grammar.
+    This does not reproduce a lockfile or npm's dependency conflict resolution.
     """
     candidates = _npm_versions(name)
     if not candidates:
@@ -313,13 +349,11 @@ def _resolve_npm_range(name: str, spec: str) -> str | None:
 
     allowed = matching(spec_has_pre)
     if not allowed:
-        allowed = matching(True)
-    if not allowed:
         return None
     return max(allowed, key=lambda item: _semver_sort_key(item[1]))[0]
 
 
-def _npm_dependencies(name: str, version: str) -> dict:
+def _npm_dependencies(name: str, version: str) -> dict | None:
     """
     Runtime ``dependencies`` the registry records for one exact release.
 
@@ -342,13 +376,13 @@ def _npm_dependencies(name: str, version: str) -> dict:
     try:
         response = _npm_session().get(url, timeout=NPM_TIMEOUT_SEC)
         response.raise_for_status()
-        deps = response.json().get("dependencies") or {}
+        deps = response.json().get("dependencies", {})
     except Exception:                                # noqa: BLE001 - network
-        _REGISTRY_CACHE[key] = {}
-        return {}
+        # A failed lookup does not prove that a release has no dependencies.
+        return None
 
     if not isinstance(deps, dict):
-        deps = {}
+        return None
     cleaned = {}
     for dep_name, dep_spec in deps.items():
         if not isinstance(dep_name, str) or not dep_name.strip():
@@ -372,32 +406,36 @@ def expand_npm_transitive(
     max_depth: int = NPM_TRANSITIVE_MAX_DEPTH,
 ) -> tuple[list, list]:
     """
-    Walk the npm dependency tree and return every package that will be installed.
+    Expand registry dependencies, retaining distinct versions and origins.
 
     Returns (packages, unresolved). Resolved from registry ``dependencies``, so
     nothing needs to be installed.
 
-    First occurrence of a name wins, so a direct pin is not replaced by a
-    dependency's range. Cycles stop at the seen set, not the depth cap.
+    This is a registry-derived inventory, not npm's lockfile/install resolver.
+    Direct pins remain present even when a child requires another version.
+    Cycles stop at the name/version/section key, not the depth cap.
     """
     if offline:
         return list(pinned), []
 
     packages = list(pinned)
     unresolved: list = []
-    seen = {_normalize_npm_name(p.name) for p in pinned}
+    def key_for(package):
+        return (_normalize_npm_name(package.name), package.version, package.section)
+
+    seen = {key_for(p): i for i, p in enumerate(packages)}
     frontier = list(pinned)
 
-    for depth in range(1, max_depth + 1):
+    for depth in range(1, max_depth + 2):
         discovered = []
         for parent in frontier:
             deps = _npm_dependencies(parent.name, parent.version)
+            if deps is None:
+                unresolved.append(
+                    f"{parent.name}@{parent.version}: dependency lookup failed"
+                )
+                continue
             for req_name, req_spec in deps.items():
-                key = _normalize_npm_name(req_name)
-                if key in seen:
-                    continue
-                seen.add(key)
-
                 version = _resolve_npm_range(req_name, req_spec)
                 if version is None:
                     unresolved.append(
@@ -405,6 +443,22 @@ def expand_npm_transitive(
                     )
                     continue
 
+                key = (_normalize_npm_name(req_name), version, parent.section)
+                parent_ref = f"{parent.name}@{parent.version}"
+                if key in seen:
+                    index = seen[key]
+                    existing = packages[index]
+                    if parent_ref not in existing.required_by:
+                        packages[index] = existing._replace(
+                            required_by=existing.required_by + (parent_ref,)
+                        )
+                    continue
+                if depth > max_depth:
+                    unresolved.append(
+                        f"{req_name}@{version} (required by {parent_ref}): "
+                        f"maximum dependency depth {max_depth} reached"
+                    )
+                    continue
                 child = NpmPackage(
                     req_name,
                     version,
@@ -413,7 +467,10 @@ def expand_npm_transitive(
                     _spec_is_exact(req_spec),
                     direct=False,
                     depth=depth,
+                    required_by=(parent_ref,),
+                    resolution_source="exact" if _spec_is_exact(req_spec) else "registry-range",
                 )
+                seen[key] = len(packages)
                 packages.append(child)
                 discovered.append(child)
 
@@ -595,8 +652,13 @@ def _scan_one_package(entry: NpmPackage, *, offline: bool) -> dict:
         "version": entry.version,
         "requirement": entry.spec,
         "version_resolved": not entry.exact,
+        "resolution_source": entry.resolution_source,
+        "installation_path": entry.installation_path,
+        "required_by_paths": list(entry.required_by_paths),
+        "dependency_paths": list(entry.dependency_paths),
         "direct": entry.direct,
         "depth": entry.depth,
+        "required_by": list(entry.required_by),
         "line": 0,
         "ecosystem": "npm",
         "section": entry.section,
@@ -645,14 +707,29 @@ def run_npm_scan(
     """
     from .scanner import ScanReport, explain_results
 
-    packages, unscanned_lines = parse_package_json(package_json_path)
+    from ._npm_lockfile import load_lockfile
+
+    locked = load_lockfile(package_json_path, direct_only=not transitive)
+    if locked is not None:
+        packages, unscanned_lines, dependency_source = locked
+        print(f"[INFO] Using package-lock.json v{dependency_source['lockfile_version']}; "
+              "locked versions will not be re-resolved.")
+    else:
+        packages, unscanned_lines = parse_package_json(package_json_path)
+        packages, unresolved_versions = resolve_direct_versions(packages, offline=offline)
+        unscanned_lines.extend(unresolved_versions)
+        dependency_source = {"kind": "registry", "path": package_json_path}
     if not packages:
         print("No npm packages found to scan. Check your package.json.")
         if unscanned_lines:
             print(f"[INFO] {len(unscanned_lines)} entr(y/ies) could not be parsed.")
-        return []
+        save_report({"packages": [], "models": [], "unscanned": unscanned_lines,
+                     "dependency_source": dependency_source}, report_path)
+        result = ScanReport([])
+        result.unscanned = unscanned_lines
+        return result
 
-    if transitive and not offline:
+    if locked is None and transitive and not offline:
         direct_count = len(packages)
         packages, unresolved_deps = expand_npm_transitive(packages)
         unscanned_lines = list(unscanned_lines) + unresolved_deps
@@ -688,7 +765,8 @@ def run_npm_scan(
     if unscanned_lines:
         print_unscanned_lines(unscanned_lines)
 
-    document = {"packages": report, "models": [], "unscanned": unscanned_lines}
+    document = {"packages": report, "models": [], "unscanned": unscanned_lines,
+                "dependency_source": dependency_source}
     save_report(document, report_path)
 
     if explain:

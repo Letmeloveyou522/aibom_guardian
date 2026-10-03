@@ -1,0 +1,12 @@
+{
+  "name": "aibom-lock-live",
+  "private": true,
+  "dependencies": {
+    "lodash": "^4.17.20",
+    "debug": "4.3.4",
+    "ms": "0.7.1"
+  },
+  "devDependencies": {
+    "semver": "7.5.1"
+  }
+}
