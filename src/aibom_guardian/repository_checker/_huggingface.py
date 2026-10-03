@@ -4,6 +4,8 @@ Hugging Face model and dataset checks, as a mixin on RepositoryChecker.
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from ._constants import (
     HF_API,
     INVALID_LICENSE_VALUES,
@@ -37,15 +39,14 @@ class HuggingFaceMixin:
         errors: list[dict] = []
         headers = self._hf_headers()
         api_type = "datasets" if repo_type == "dataset" else "models"
-        url = f"{HF_API}/api/{api_type}/{repo_id}"
-        params = {}
+        encoded_id = quote(repo_id, safe='/')
+        url = f"{HF_API}/api/{api_type}/{encoded_id}"
         if revision:
-            params["revision"] = revision
+            url += f"/revision/{quote(revision, safe='')}"
 
         data, response, err = self.http.get_json(
             url,
             headers=headers,
-            params=params or None,
             cache_key=f"hf:{api_type}:{repo_id}:{revision or ''}",
             allow_statuses=(200, 401, 403, 404),
         )
@@ -55,7 +56,8 @@ class HuggingFaceMixin:
 
         assert response is not None
         if response.status_code == 404:
-            errors.append(_error("huggingface", "not_found", f"{repo_type} {repo_id} not found", False))
+            label = f"{repo_type} {repo_id}" + (f" at revision {revision}" if revision else "")
+            errors.append(_error("huggingface", "not_found", f"{label} not found", False))
             return {"available": False, "issues": issues, "errors": errors}
         if response.status_code in (401, 403):
             if self.hf_token:
@@ -77,8 +79,15 @@ class HuggingFaceMixin:
 
         requested = revision or "main"
         # sha / siblings may include resolved commit
-        resolved = data.get("sha") or data.get("rdfs:label") or None
+        resolved = data.get("sha")
         rev_type, rev_pinned = _classify_revision(revision)
+        verified = (isinstance(resolved, str) and _classify_revision(resolved)[1]
+                    and (not rev_pinned or resolved.lower() == revision.lower()))
+        if not verified:
+            resolved = None
+            errors.append(_error('huggingface_revision', 'unverified',
+                                 'Hub response did not verify the requested revision', False))
+        rev_pinned = rev_pinned and verified
         if revision is None:
             rev_type, rev_pinned = "branch", False
 
@@ -97,15 +106,16 @@ class HuggingFaceMixin:
 
         # README
         readme_text = None
-        readme_url = f"{HF_API}/{repo_id}/raw/{requested}/README.md"
+        read_revision = quote(resolved or requested, safe='')
+        readme_url = f"{HF_API}/{encoded_id}/raw/{read_revision}/README.md"
         if repo_type == "dataset":
-            readme_url = f"{HF_API}/datasets/{repo_id}/raw/{requested}/README.md"
+            readme_url = f"{HF_API}/datasets/{encoded_id}/raw/{read_revision}/README.md"
         try:
             validate_public_url(readme_url)
             text, rresp, rerr = self.http.get_text(
                 readme_url,
                 headers=headers,
-                cache_key=f"hf:readme:{repo_type}:{repo_id}:{requested}",
+                cache_key=f"hf:readme:{repo_type}:{repo_id}:{read_revision}",
             )
             if rerr:
                 errors.append({**rerr, "source": "huggingface_readme"})
@@ -180,6 +190,7 @@ class HuggingFaceMixin:
                 "resolved_revision": resolved,
                 "revision_type": rev_type,
                 "revision_pinned": rev_pinned,
+                "revision_verified": verified,
                 "files": files_summary,
             },
             "dataset": dataset_doc,

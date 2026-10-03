@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import quote
 from typing import Any
 
 from ._constants import (
@@ -154,6 +155,26 @@ class GitHubMixin:
         issues.extend(maint_issues)
 
         rev_type, rev_pinned = _classify_revision(revision)
+        resolved_revision = None
+        revision_verified = False
+        if revision:
+            commit, response, err = self.http.get_json(
+                f"{GITHUB_API}/repos/{owner}/{repo}/commits/{quote(revision, safe='')}",
+                headers=headers, cache_key=f"github:revision:{owner}/{repo}:{revision}",
+                allow_statuses=(200, 404, 422),
+            )
+            sha = commit.get('sha') if isinstance(commit, dict) else None
+            if (not err and response is not None and response.status_code == 200
+                    and isinstance(sha, str) and _classify_revision(sha)[1]
+                    and (not rev_pinned or sha.lower() == revision.lower())):
+                resolved_revision = sha
+                revision_verified = True
+            else:
+                errors.append({**err, 'source': 'github_revision'} if err else _error(
+                    'github_revision', 'unverified', 'requested revision could not be verified', False))
+                issues.append(_issue('revision', 'medium', 'requested GitHub revision is unverified',
+                                     evidence=revision, recommendation='verify the revision in this repository'))
+        rev_pinned = rev_pinned and revision_verified
 
         out.update({
             "available": True,
@@ -184,6 +205,8 @@ class GitHubMixin:
             "revision": revision,
             "revision_type": rev_type,
             "revision_pinned": rev_pinned,
+            "revision_verified": revision_verified,
+            "resolved_revision": resolved_revision,
             "release_assets": release_assets,
             "has_description": bool(data.get("description")),
         })
@@ -400,6 +423,10 @@ class GitHubMixin:
 
     def _merge_github(self, result: dict, owner: str, repo: str, revision: str | None) -> None:
         gh = self.check_github_repository(owner, repo, revision=revision)
+        result['_github_revision'] = {
+            'verified': gh.get('revision_verified', False),
+            'resolved': gh.get('resolved_revision'),
+        }
         result["issues"].extend(gh.get("issues") or [])
         result["errors"].extend(gh.get("errors") or [])
         if not gh.get("available"):
@@ -423,6 +450,6 @@ class GitHubMixin:
         result["_published_hashes"] = hashes
         if revision:
             result["provenance_detail"]["requested_revision"] = revision
-            rtype, pinned = _classify_revision(revision)
+            rtype, _ = _classify_revision(revision)
             result["provenance_detail"]["revision_type"] = rtype
-            result["provenance_detail"]["revision_pinned"] = pinned
+            result["provenance_detail"]["revision_pinned"] = gh.get('revision_pinned', False)

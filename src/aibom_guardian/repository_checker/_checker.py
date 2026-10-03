@@ -130,6 +130,11 @@ class RepositoryChecker(
             result["target"]["type"] = "local"
 
         # Provenance / hash / signature (shared)
+        revision_evidence = result.pop('_github_revision', {})
+        if dtype in ('hf_model', 'hf_dataset'):
+            hf = result.get('huggingface') or {}
+            revision_evidence = {'verified': hf.get('revision_verified', False),
+                               'resolved': hf.get('resolved_revision')}
         prov = self.check_provenance(
             revision=effective_revision,
             local_file=local_file,
@@ -144,7 +149,12 @@ class RepositoryChecker(
             release_assets=result.get("_release_assets") or [],
             version_pinned=bool(detected.get("version_pinned")),
             pypi_version=detected.get("version"),
+            revision_verified=bool(revision_evidence.get('verified'))
+            if dtype in ('github', 'hf_model', 'hf_dataset') else None,
         )
+        if dtype in ('github', 'hf_model', 'hf_dataset'):
+            prov['provenance_detail']['revision_verified'] = bool(revision_evidence.get('verified'))
+            prov['provenance_detail']['resolved_revision'] = revision_evidence.get('resolved')
         result.pop("_published_hashes", None)
         result.pop("_release_assets", None)
 

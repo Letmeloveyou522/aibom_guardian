@@ -43,6 +43,7 @@ class ProvenanceMixin:
         release_assets: list | None = None,
         version_pinned: bool = False,
         pypi_version: str | None = None,
+        revision_verified: bool | None = None,
     ) -> dict:
         issues: list[dict] = []
         errors: list[dict] = []
@@ -50,6 +51,8 @@ class ProvenanceMixin:
         release_assets = list(release_assets or [])
 
         rev_type, rev_pinned = _classify_revision(revision)
+        if revision_verified is False:
+            rev_pinned = False
         if revision and not rev_pinned and rev_type in ("branch", "tag", "ref", "short_sha"):
             issues.append(_issue(
                 "revision", "medium",
