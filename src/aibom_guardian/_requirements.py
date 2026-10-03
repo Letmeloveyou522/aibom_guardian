@@ -41,12 +41,12 @@ def _pypi_session():
 
 class Pinned(NamedTuple):
     """
-    One requirement resolved to the single version that will be installed.
+    One pinned or independently resolved requirement selected for inspection.
 
     `resolved` is False when the file named the version outright and True when
     a range was narrowed down here, because those are different claims: an
-    exact pin is what the project ships, a resolved range is what it would get
-    if installed today.
+    exact pin is the user's input, while a range produces a candidate version.
+    Neither proves that pip can install the complete set together.
     """
 
     name: str
@@ -56,6 +56,7 @@ class Pinned(NamedTuple):
     direct: bool = True   # False when pulled in by another package
     depth: int = 0        # 0 = named in the file
     line: int = 0         # line in the requirements file, 0 when transitive
+    extras: tuple[str, ...] = ()
 
 
 # Lines that are directives rather than requirements. Following them would
@@ -165,7 +166,7 @@ def _normalize_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _requires_dist(name: str, version: str) -> list:
+def _requires_dist(name: str, version: str) -> list | None:
     """
     Dependencies PyPI records for one exact release.
 
@@ -186,10 +187,14 @@ def _requires_dist(name: str, version: str) -> list:
     try:
         response = _pypi_session().get(url, timeout=PYPI_TIMEOUT_SEC)
         response.raise_for_status()
-        requires = response.json().get("info", {}).get("requires_dist") or []
+        info = response.json()['info']
+        requires = info.get("requires_dist")
+        if requires is None:
+            requires = []
+        if not isinstance(requires, list) or any(not isinstance(r, str) for r in requires):
+            return None
     except Exception:                                # noqa: BLE001 - network
-        _RELEASE_CACHE[key] = []
-        return []
+        return None
 
     _RELEASE_CACHE[key] = list(requires)
     return list(requires)
@@ -202,14 +207,14 @@ def expand_transitive(
     max_depth: int = TRANSITIVE_MAX_DEPTH,
 ) -> tuple[list, list]:
     """
-    Walk the dependency tree and return every package that will be installed.
+    Walk PyPI dependencies to produce a candidate inventory, not a pip solution.
 
     Returns (packages, unresolved). Resolved from PyPI ``requires_dist``, so
     nothing needs to be installed.
 
-    Markers are evaluated against this interpreter with an empty ``extra``,
-    matching an install that requested no extras. First occurrence of a name
-    wins, so a direct pin is not replaced by a dependency's range.
+    Markers are evaluated for the base package and requested extras. First occurrence of a name
+    wins, so a direct pin is not replaced by a dependency's range. Conflicting
+    constraints and incomplete expansion are reported, never silently ignored.
     """
     if offline:
         return list(pinned), []
@@ -221,29 +226,61 @@ def expand_transitive(
 
     packages = list(pinned)
     unresolved: list = []
-    seen = {_normalize_name(p.name) for p in pinned}
+    selected = {_normalize_name(p.name): p for p in pinned}
+    extras = {}
+    for p in pinned:
+        extras.setdefault(_normalize_name(p.name), set()).update(p.extras)
+    for p in pinned:
+        other = selected[_normalize_name(p.name)]
+        if p.version != other.version:
+            unresolved.append(f'{p.name}: conflicting input pins {p.version} and {other.version}')
     frontier = list(pinned)
 
-    for depth in range(1, max_depth + 1):
+    for depth in range(1, max_depth + 2):
         discovered = []
         for parent in frontier:
-            for raw in _requires_dist(parent.name, parent.version):
+            requirements = _requires_dist(parent.name, parent.version)
+            if requirements is None:
+                unresolved.append(f'{parent.name}=={parent.version}: dependency metadata lookup failed')
+                continue
+            for raw in requirements:
                 try:
                     req = Requirement(raw)
                 except InvalidRequirement:
+                    unresolved.append(f'{raw} (invalid dependency required by {parent.name})')
                     continue
 
                 if req.marker is not None:
                     try:
-                        if not req.marker.evaluate({"extra": ""}):
+                        contexts = {"", *extras.get(_normalize_name(parent.name), ())}
+                        if not any(req.marker.evaluate({"extra": extra}) for extra in contexts):
                             continue
                     except Exception:                # noqa: BLE001 - odd marker
+                        unresolved.append(f'{raw} (marker evaluation failed; required by {parent.name})')
                         continue
 
                 key = _normalize_name(req.name)
-                if key in seen:
+                if req.url:
+                    unresolved.append(f'{raw} (unsupported URL dependency; required by {parent.name})')
                     continue
-                seen.add(key)
+                if key in selected:
+                    existing = selected[key]
+                    if not req.specifier.contains(existing.version, prereleases=True):
+                        unresolved.append(
+                            f'{raw} (dependency conflict: selected {existing.name}=={existing.version}; '
+                            f'required by {parent.name}=={parent.version})')
+                    new_extras = {_normalize_name(e) for e in req.extras} - extras.get(key, set())
+                    if new_extras:
+                        if depth >= max_depth:
+                            unresolved.append(f'{raw} (extras expansion depth limit {max_depth}; required by {parent.name})')
+                        else:
+                            extras.setdefault(key, set()).update(new_extras)
+                            if existing not in discovered:
+                                discovered.append(existing)
+                    continue
+                if depth > max_depth:
+                    unresolved.append(f'{raw} (depth limit {max_depth}; required by {parent.name})')
+                    continue
 
                 version = _resolve_specifier(req.name, str(req.specifier))
                 if version is None:
@@ -253,13 +290,16 @@ def expand_transitive(
                 child = Pinned(req.name, version, raw, True,
                                direct=False, depth=depth)
                 packages.append(child)
+                selected[key] = child
+                extras[key] = {_normalize_name(e) for e in req.extras}
                 discovered.append(child)
 
         if not discovered:
             break
         frontier = discovered
 
-    return packages, unresolved
+    return [p._replace(extras=tuple(sorted(extras.get(_normalize_name(p.name), ()))))
+            for p in packages], list(dict.fromkeys(unresolved))
 
 
 def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
@@ -294,14 +334,19 @@ def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
         unscanned.append(line)
         print(f"[INFO] Not scanned ({reason}): {line}")
 
-    def add(name: str, version: str, spec: str, resolved: bool) -> None:
+    def add(name: str, version: str, spec: str, resolved: bool, extras=()) -> None:
         # PEP 503: names differing only in case or in -/_/. are one project.
         # Reporting Django and django as two rows would double every finding.
         key = (re.sub(r"[-_.]+", "-", name).lower(), version)
+        requested = {_normalize_name(e) for e in extras}
         if key in seen:
+            index = seen[key]
+            packages[index] = packages[index]._replace(
+                extras=tuple(sorted(set(packages[index].extras) | requested)))
             return
-        seen[key] = True
-        packages.append(Pinned(name, version, spec, resolved, line=lineno[0]))
+        seen[key] = len(packages)
+        packages.append(Pinned(name, version, spec, resolved, line=lineno[0],
+                               extras=tuple(sorted(requested))))
 
     lineno = [0]
 
@@ -351,7 +396,7 @@ def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
             spec = str(requirement.specifier)
             exact = [s for s in requirement.specifier if s.operator in ("==", "===")]
             if len(exact) == 1 and "*" not in exact[0].version:
-                add(requirement.name, exact[0].version, spec, False)
+                add(requirement.name, exact[0].version, spec, False, requirement.extras)
                 continue
 
             if offline:
@@ -364,6 +409,6 @@ def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
                 continue
 
             print(f"[INFO] Resolved {line} -> {requirement.name}=={version}")
-            add(requirement.name, version, spec, True)
+            add(requirement.name, version, spec, True, requirement.extras)
 
     return packages, unscanned

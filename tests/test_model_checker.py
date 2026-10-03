@@ -12,7 +12,6 @@ nothing here unpickles it; this is how you test a pickle scanner.
 
 import os
 import pickle
-import tempfile
 
 import pytest
 
@@ -33,7 +32,7 @@ BENIGN_PICKLE = pickle.dumps({"weights": [1.0, 2.0], "name": "layer0"})
 
 
 @pytest.fixture
-def fake_downloads(monkeypatch):
+def fake_downloads(monkeypatch, tmp_path):
     """
     Replace hf_hub_download with a dict-backed fake.
 
@@ -41,7 +40,7 @@ def fake_downloads(monkeypatch):
     is absent raises, mirroring a 404 from the Hub.
     """
     files = {}
-    tempdir = tempfile.mkdtemp(prefix="mc-test-")
+    tempdir = tmp_path
     calls = []
 
     def fake_hf_hub_download(repo_id, filename, revision=None, token=None, **kwargs):

@@ -80,6 +80,9 @@ UNKNOWN = "UNKNOWN"
 # both publishers clearly allow, and a tool that grades other people's
 # licensing should not ship files whose own terms it cannot state.
 _SPDX_URL = "https://spdx.org/licenses/licenses.json"
+_SPDX_FALLBACK_URL = (
+    "https://raw.githubusercontent.com/spdx/license-list-data/main/json/licenses.json"
+)
 _BLUEOAK_URL = "https://blueoakcouncil.org/list.json"
 
 # SPDX ships roughly quarterly; a month keeps the copy current without asking
@@ -148,11 +151,11 @@ def _load_json(path: Path):
         return None
 
 
-def _fetch_registry(filename: str, url: str) -> tuple:
+def _fetch_registry(filename: str, url: str, *, fallback_urls: tuple = ()) -> tuple:
     """
     Return (payload, source) for one registry.
 
-    Order: a fresh cache, then a download, then a stale cache. Falling back to
+    Order: fresh cache, primary/fallback downloads, then stale cache. Falling back to
     a stale copy matters more than being current - an out-of-date list still
     identifies MIT, and no list at all grades everything UNKNOWN.
     """
@@ -166,20 +169,25 @@ def _fetch_registry(filename: str, url: str) -> tuple:
                 return payload, "cache"
 
     if not _OFFLINE:
-        try:
-            import requests
+        import requests
 
-            response = requests.get(url, timeout=_FETCH_TIMEOUT_SEC)
-            response.raise_for_status()
-            payload = response.json()
+        for candidate in (url, *fallback_urls):
+            try:
+                response = requests.get(candidate, timeout=_FETCH_TIMEOUT_SEC)
+                response.raise_for_status()
+                payload = response.json()
+            except (requests.RequestException, ValueError) as exc:
+                logger.debug("Registry download failed for %s (%s)",
+                             candidate, type(exc).__name__)
+                continue
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(payload), encoding="utf-8")
             except OSError:
                 pass            # an unwritable cache is not a reason to fail
+            if candidate != url:
+                logger.info("Registry downloaded from fallback %s", candidate)
             return payload, "download"
-        except Exception:       # noqa: BLE001 - network, DNS, TLS, bad JSON
-            pass
 
     if path.exists():
         payload = _load_json(path)
@@ -201,7 +209,9 @@ def _registry() -> dict:
     to the rules that live in code - use restrictions and copyleft families.
     That degrades toward REVIEW and UNKNOWN, never toward ALLOWED.
     """
-    spdx, spdx_source = _fetch_registry("spdx-licenses.json", _SPDX_URL)
+    spdx, spdx_source = _fetch_registry(
+        "spdx-licenses.json", _SPDX_URL, fallback_urls=(_SPDX_FALLBACK_URL,)
+    )
     blueoak, blueoak_source = _fetch_registry("blueoak-list.json", _BLUEOAK_URL)
 
     if spdx is None:

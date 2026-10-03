@@ -37,6 +37,7 @@ import os
 import posixpath
 import re
 import sys
+import time
 from urllib.parse import unquote, urlsplit
 
 logger = logging.getLogger(__name__)
@@ -771,6 +772,23 @@ def _download_text(model_id, filename, revision, token):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
+def _model_info_with_retry(api, model_id, revision):
+    """Retry transport failures only; auth/not-found HTTP errors remain failures."""
+    import httpx
+    from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout
+
+    for attempt in range(3):
+        try:
+            return api.model_info(model_id, revision=revision, files_metadata=True, timeout=20)
+        except (ConnectionError, TimeoutError, httpx.TransportError,
+                RequestsConnectionError, Timeout) as exc:
+            if attempt == 2:
+                raise
+            logger.warning('Model metadata connection failed (%s); retry %d/2',
+                           type(exc).__name__, attempt + 1)
+            time.sleep(0.5 * (attempt + 1))
+
+
 def check_model(model_ref, revision=None, max_pickle_size_mb=DEFAULT_MAX_PICKLE_MB,
                 token=None):
     """
@@ -791,7 +809,7 @@ def check_model(model_ref, revision=None, max_pickle_size_mb=DEFAULT_MAX_PICKLE_
     api = HfApi(token=token)
     # files_metadata=True is what populates per-file sizes, which the pickle
     # scan needs for its size cap.
-    info = api.model_info(model_id, revision=revision, files_metadata=True)
+    info = _model_info_with_retry(api, model_id, revision)
 
     card = _card_dict(info)
     resolved_id = getattr(info, "id", None) or model_id
@@ -958,8 +976,9 @@ def collect_issues(report):
 
     if report["file_formats"]["pickle_only"]:
         add("HIGH", "pickle_only",
-            "No safetensors weights: loading this model requires unpickling, "
-            "which can execute arbitrary code.")
+            "Pickle weights are present and no safetensors weights were found. "
+            "Loading pickle files can execute arbitrary code; "
+            "other weight formats, if present, require separate assessment.")
     else:
         for entry in report["file_formats"]["pickle"]:
             if entry["risk"] == "HIGH":
@@ -1082,7 +1101,7 @@ def render(report):
                  f"pickle {len(formats['pickle'])} | "
                  f"other weights {len(formats['other_weights'])}")
     if formats["pickle_only"]:
-        lines.append("  [!] PICKLE ONLY - no safetensors alternative exists.")
+        lines.append("  [!] Pickle weights present; no safetensors weights found.")
     for entry in formats["pickle"]:
         alternative = entry["safetensors_alternative"]
         lines.append(f"    {entry['risk']:<6} {entry['path']}"

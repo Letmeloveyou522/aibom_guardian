@@ -1,0 +1,6 @@
+# Comparison input for sample-requirements.txt. Scan; installation is unnecessary.
+# Live OSV queries on 2026-10-03 returned no advisories for these versions.
+# Future vulnerability database updates may change the result.
+requests==2.34.2
+numpy==1.24.0
+pyyaml==6.0.3

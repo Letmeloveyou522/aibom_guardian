@@ -104,6 +104,45 @@ class TestVersionSelection:
 
 
 class TestMarkers:
+    def test_requested_extra_is_expanded(self, deps):
+        deps({'a': ['b; extra == "socks"', 'unused; extra == "test"']})
+        packages, missing = expand_transitive([direct('a')._replace(extras=('socks',))])
+        assert names(packages) == ['a', 'b']
+        assert not missing
+
+    def test_child_extras_are_propagated(self, deps):
+        deps({'a': ['b[socks]'], 'b': ['c; extra == "socks"']})
+        packages, missing = expand_transitive([direct('a')])
+        assert names(packages) == ['a', 'b', 'c']
+        assert next(p for p in packages if p.name == 'b').extras == ('socks',)
+        assert not missing
+
+    def test_late_extra_revisits_previously_seen_package(self, deps):
+        deps({'a': ['c'], 'b': ['d; extra == "socks"'], 'c': ['b[socks]']})
+        packages, missing = expand_transitive([direct('a'), direct('b')])
+        assert names(packages) == ['a', 'b', 'c', 'd']
+        assert not missing
+
+    def test_extras_cycle_terminates(self, deps):
+        deps({'a': ['b[socks]'], 'b': ['a[socks]']})
+        packages, missing = expand_transitive([direct('a')])
+        assert names(packages) == ['a', 'b']
+        assert not missing
+
+    def test_duplicate_input_extras_are_merged(self, tmp_path):
+        path = tmp_path / 'requirements.txt'
+        path.write_text('a[socks]==1.0.0\na[Test_Feature]==1.0.0\n')
+        packages, missing = _requirements.parse_requirements(str(path), offline=True)
+        assert len(packages) == 1
+        assert packages[0].extras == ('socks', 'test-feature')
+        assert not missing
+
+    def test_extras_at_depth_limit_are_reported(self, deps):
+        deps({'a': ['b[socks]'], 'b': ['c; extra == "socks"']})
+        packages, missing = expand_transitive([direct('a')], max_depth=1)
+        assert names(packages) == ['a', 'b']
+        assert any('depth limit' in m for m in missing)
+
     def test_optional_extras_are_skipped(self, deps):
         """An install that asked for no extras does not get them."""
         deps({"a": ["socks-helper ; extra == 'socks'", "b"]})
@@ -137,6 +176,56 @@ class TestNameNormalisation:
         deps({"a": [written]})
         packages, _ = expand_transitive([direct("a"), direct(pinned)])
         assert len(packages) == 2
+
+
+class TestIncompleteExpansion:
+    def test_conflict_is_reported_without_replacing_pin(self, deps):
+        deps({'a': ['b>=2']})
+        packages, missing = expand_transitive([direct('a'), direct('b')])
+        assert len(packages) == 2
+        assert len(missing) == 1 and 'dependency conflict' in missing[0]
+
+    def test_depth_boundary_is_reported(self, deps):
+        deps({'a': ['b'], 'b': ['c']})
+        packages, missing = expand_transitive([direct('a')], max_depth=1)
+        assert names(packages) == ['a', 'b']
+        assert len(missing) == 1 and 'depth limit' in missing[0]
+
+    def test_failed_metadata_is_reported(self, monkeypatch):
+        monkeypatch.setattr(_requirements, '_requires_dist', lambda *a: None)
+        _, missing = expand_transitive([direct('a')])
+        assert 'metadata lookup failed' in missing[0]
+
+    @pytest.mark.parametrize('spec', ['!!!invalid!!!', 'b @ https://example.com/b.whl'])
+    def test_unsupported_dependency_is_not_silently_dropped(self, deps, spec):
+        deps({'a': [spec]})
+        packages, missing = expand_transitive([direct('a')])
+        assert names(packages) == ['a']
+        assert len(missing) == 1 and spec in missing[0]
+
+    def test_conflicting_input_pins(self, deps):
+        deps({})
+        _, missing = expand_transitive([direct('a'), direct('a', '2.0.0')])
+        assert 'conflicting input pins' in missing[0]
+
+    @pytest.mark.parametrize('payload', [{'info': {'requires_dist': 'wrong'}}, {}, None])
+    def test_failed_metadata_is_not_cached_as_empty(self, monkeypatch, payload):
+        class Response:
+            def raise_for_status(self):
+                if payload is None:
+                    raise OSError('synthetic network failure')
+
+            def json(self):
+                return payload
+
+        class Session:
+            def get(self, *a, **kw):
+                return Response()
+
+        monkeypatch.setattr(_requirements, '_RELEASE_CACHE', {})
+        monkeypatch.setattr(_requirements, '_PYPI_SESSION', Session())
+        assert _requirements._requires_dist('a', '1.0.0') is None
+        assert not _requirements._RELEASE_CACHE
 
 
 class TestOffline:
