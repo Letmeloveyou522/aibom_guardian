@@ -46,17 +46,52 @@ source .venv/bin/activate
 python -m pip install .
 ```
 
-아래 경로를 검사할 프로젝트의 파일 경로로 바꿔 실행하세요.
-검사 대상 패키지를 이 가상 환경에 설치할 필요는 없습니다.
+AIBOM Guardian은 의존성 파일의 메타데이터를 기반으로 취약점을 분석하므로, 검사 대상 패키지를 현재 가상환경에 미리 설치(`pip install`, `npm install`)할 필요가 없습니다.
+
+> **주의 (시연용 예제 파일 관련)**  
+> `examples/` 디렉터리에 포함된 파일들에는 취약점 탐지 시연을 위해 보안 취약점이 존재하는 구버전 패키지가 기재되어 있습니다.  
+> 이 파일들은 AIBOM Guardian의 검사 입력용으로만 사용하시고, 절대 운영 환경에 직접 설치(`pip install -r ...`)하지 마세요.
+
+### 1. 기본 제공 예제로 바로 실행해보기 (Quick Start)
+
+저장소 루트 디렉터리에서 아래 명령어를 실행하여 도구 동작을 바로 확인할 수 있습니다.
 
 ```bash
-aibom-guardian ../my-project/requirements.txt --no-explain
-aibom-guardian --npm ../my-project/package.json --no-explain
-aibom-guardian ../my-project/requirements.txt --model sshleifer/tiny-gpt2 --no-explain
+# Python 의존성 취약점 검사 시연
+aibom-guardian examples/sample-requirements.txt --no-explain
+
+# npm 의존성 취약점 검사 시연
+aibom-guardian --npm examples/npm-live-before.json --no-explain
+
+# Python 의존성 + Hugging Face AI 모델 동시 진단 시연
+aibom-guardian examples/sample-requirements.txt --model sshleifer/tiny-gpt2 --no-explain
 ```
 
-[`examples/`](examples/)의 입력 파일에는 시연을 위해 취약한 버전이 포함되어
-있습니다. 운영 환경에 설치하지 마세요.
+### 2. 내 프로젝트에 적용하기 (Usage)
+
+본인의 프로젝트를 검사할 때는 `<경로>` 부분을 실제 파일 위치로 변경하여 실행하세요.
+
+- Python 프로젝트 검사(`requirements.txt`)
+
+```bash
+aibom-guardian <내_프로젝트_경로>/requirements.txt --no-explain
+```
+
+- Node.js/npm 프로젝트 검사(`package.json`)
+
+```bash
+aibom-guardian --npm <내_프로젝트_경로>/package.json --no-explain
+```
+
+- Python 의존성 및 Hugging Face 모델 동시 검사
+
+```bash
+aibom-guardian <내_프로젝트_경로>/requirements.txt --model <조직명/모델ID> --no-explain
+```
+
+**옵션 설명**
+`--no-explain`: 상세한 판정 사유 및 해설 출력을 생략하고, 검사 결과 요약(테이블 및 종료 코드) 위주로 간결하게 표시합니다.
+  
 
 ## 검사 범위
 
