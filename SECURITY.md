@@ -44,7 +44,7 @@ Security Advisory 확인 요청만 남겨 주세요.
 
 ## 주요 보안 영역
 
-### 외부에서 받은 URL로 요청을 보냅니다 (SSRF)
+### 외부에서 받은 URL로 요청을 전송 (SSRF)
 
 `repository_checker`는 사용자가 지정한 대상을 조회합니다. 허용 호스트
 목록(`ALLOWED_HOSTS`), 포트 제한(`ALLOWED_PORTS`), 사설 및 루프백 주소 거부,
@@ -60,7 +60,7 @@ TOCTOU 창이 남아 있습니다. 이를 닫으려면 검증한 주소로 연�
 `github.com`, `pypi.org`, `huggingface.co` 등 고정된 7개 호스트의 DNS를 이미
 장악해야 합니다. 자세한 내용은 `_http.py`의 모듈 docstring에 있습니다.
 
-### pickle 파일을 다룹니다
+### pickle 파일
 
 `model_checker.py`는 Hugging Face 모델 가중치를 내려받아 `picklescan`으로
 검사합니다. 검사 과정에서 pickle이 역직렬화되는 경로는 임의 코드 실행으로
@@ -69,7 +69,7 @@ TOCTOU 창이 남아 있습니다. 이를 닫으려면 검증한 주소로 연�
 pickle 검사는 기본 비활성(`--model-pickle-scan 0`)이며, picklescan은
 알려진 패턴만 탐지합니다. 탐지 없음이 안전을 보장하지 않습니다.
 
-### 외부 프로세스를 실행합니다
+### 외부 프로세스를 실행
 
 `cosign`(서명 검증)과 `cyclonedx-py`(SBOM 생성)를 하위 프로세스로
 호출합니다. 사용자 입력이 검증 없이 명령 인자로 전달되는 경로는 명령 주입
