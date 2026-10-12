@@ -291,35 +291,28 @@ AI Trust Score는 OWASP, CycloneDX ML-BOM, OpenChain 등의 공급망 표준과 
 
 향후에는 공식 CycloneDX JSON Schema 검증을 CI/CD 파이프라인에 직접 통합하고, 실제 오픈소스 AI 파이프라인 데이터셋을 기반으로 탐지 정확도와 판정 재현성을 지속적으로 고도화할 계획이다.
 
-References
-OWASP CycloneDX — BOM Specification
+## 9. 참고 문헌 및 표준 규격 (References)
 
-https://cyclonedx.org/specification/overview/
+- **[OWASP CycloneDX — BOM Specification](https://cyclonedx.org/specification/overview/)**  
+  머신러닝 구성요소(ML-BOM) 및 소프트웨어 부품 명세서 표준 아키텍처
 
-OpenChain Project — ISO/IEC 5230 및 ISO/IEC 18974
+- **[OpenChain Project — ISO/IEC 5230 & ISO/IEC 18974](https://openchainproject.org/)**  
+  오픈소스 라이선스 컴플라이언스 및 오픈소스 소프트웨어 보안 보증 국제 표준
 
-https://openchainproject.org/
+- **[OpenChain Korea Work Group — AI SBOM Compliance Guide](https://openchain-project.github.io/OpenChain-KWG/guide/ai-sbom_guide/2-ai-extension/)**  
+  국내 엔터프라이즈 환경을 위한 AI 확장 컴플라이언스 및 AI-BOM 거버넌스 가이드라인
 
-OpenChain Korea Work Group — AI SBOM Compliance Guide
+- **[OWASP Gen AI Security Project — LLM03:2025 Supply Chain](https://genai.owasp.org/llmrisk/llm032025-supply-chain/)**  
+  생성형 AI 및 LLM 시스템의 공급망 취약점·서드파티 모델 위험 분석 기준
 
-https://openchain-project.github.io/OpenChain-KWG/guide/ai-sbom_guide/2-ai-extension/
+- **[Open Source Vulnerabilities (OSV)](https://osv.dev/)**  
+  오픈소스 패키지 분산 취약점 데이터베이스 및 API 연동 규격
 
-OWASP Gen AI Security Project — LLM03:2025 Supply Chain
+- **[CVE Program](https://www.cve.org/)**  
+  국제 공통 보안 취약점 식별자 표준 체계
 
-https://genai.owasp.org/llmrisk/llm032025-supply-chain/
+- **[SLSA — Verifying Artifacts (v1.2)](https://slsa.dev/spec/v1.2/verifying-artifacts/)**  
+  소프트웨어 아티팩트 출처(Provenance) 검증 및 공급망 무결성 수준 표준
 
-Open Source Vulnerabilities (OSV)
-
-https://osv.dev/
-
-CVE Program
-
-https://www.cve.org/
-
-SLSA — Verifying Artifacts
-
-https://slsa.dev/spec/v1.2/verifying-artifacts/
-
-CycloneDX 1.6 JSON Schema
-
-https://github.com/CycloneDX/specification/blob/1.6/schema/bom-1.6.schema.json
+- **[CycloneDX 1.6 JSON Schema](https://github.com/CycloneDX/specification/blob/1.6/schema/bom-1.6.schema.json)**  
+  CycloneDX 공식 JSON Schema 정의 및 유효성 검증 명세
