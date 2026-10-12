@@ -348,6 +348,25 @@ def _summary_rank(item: dict) -> tuple[int, int, int]:
     return (1, 1 if item.get("is_title") else 0, len(text))
 
 
+class DisjointSet:
+    def __init__(self):
+        self._roots: dict[str, str] = {}
+
+    def get_root(self, identifier: str) -> str:
+        if identifier not in self._roots:
+            self._roots[identifier] = identifier
+            return identifier
+        if self._roots[identifier] != identifier:
+            self._roots[identifier] = self.get_root(self._roots[identifier])
+        return self._roots[identifier]
+
+    def merge_sets(self, item_a: str, item_b: str) -> None:
+        root_a = self.get_root(item_a)
+        root_b = self.get_root(item_b)
+        if root_a != root_b:
+            self._roots[root_b] = root_a
+
+
 def merge_aliased_vulnerabilities(items: list[dict]) -> list[dict]:
     """
     Collapse OSV entries that describe the same vulnerability.
@@ -373,29 +392,17 @@ def merge_aliased_vulnerabilities(items: list[dict]) -> list[dict]:
         return []
 
     # Union-find over identifiers.
-    parent: dict[str, str] = {}
-
-    def find(node: str) -> str:
-        parent.setdefault(node, node)
-        while parent[node] != node:
-            parent[node] = parent[parent[node]]
-            node = parent[node]
-        return node
-
-    def union(a: str, b: str) -> None:
-        root_a, root_b = find(a), find(b)
-        if root_a != root_b:
-            parent[root_b] = root_a
+    aliases = DisjointSet()
 
     for item in items:
         vuln_id = item["id"]
-        find(vuln_id)
+        aliases.get_root(vuln_id)
         for alias in item.get("aliases") or []:
-            union(vuln_id, alias)
+            aliases.merge_sets(vuln_id, alias)
 
     groups: dict[str, list[dict]] = {}
     for item in items:
-        groups.setdefault(find(item["id"]), []).append(item)
+        groups.setdefault(aliases.get_root(item["id"]), []).append(item)
 
     merged = []
     for members in groups.values():
