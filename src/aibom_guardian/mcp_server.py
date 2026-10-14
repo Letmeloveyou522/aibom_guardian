@@ -9,7 +9,7 @@ and getting back a real answer backed by OSV + license checks.
 No scanning logic lives here; it wraps license_checker, osv_client,
 repository_checker and scanner.scan_model as MCP tools.
 
-Scope: one target per call, JSON back. No requirements.txt parsing, no
+Scope: individual targets or a configured Python project, JSON back. No
 scan_report.json / sbom.json, no Ollama. Use ``aibom-guardian`` for those.
 
 OSV None contract (shared with scanner / score_engine)
@@ -31,23 +31,39 @@ Start the server with ``aibom-guardian-mcp`` or
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
+from functools import wraps
+from threading import RLock
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import Settings as FastMCPSettings
 
 from ._adapters import (
-    _build_check_result,
+    _build_check_result as _build_check_result,
     _vulns_to_issues,
-    attach_license_unverified,
+    attach_license_unverified as attach_license_unverified,
 )
 from .license_checker import classify_license_detailed
 from .osv_client import query_vulnerabilities
 from .repository_checker import check_repository
-from .scanner import resolve_license, scan_model
-from .score_engine import calculate_trust_score
+from .scanner import resolve_license, scan_model, collect_scan, collect_packages, Pinned
+
+
+__all__ = ["_build_check_result", "attach_license_unverified"]
 
 logger = logging.getLogger(__name__)
+_SCAN_LOCK = RLock()
+
+
+def _serialized(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _SCAN_LOCK:
+            return function(*args, **kwargs)
+    return wrapped
+
 
 # "aibom-guardian" is the name the MCP client will show for this server
 # MCP 1.28.1 defines Settings before FastMCP; resolve its lifespan forward ref
@@ -314,7 +330,54 @@ def build_repository_check_summary(result: dict) -> dict:
     }
 
 
+def _project_file(relative_path: str) -> Path:
+    configured = os.environ.get("AIBOM_GUARDIAN_PROJECT_ROOT")
+    if not configured:
+        raise ValueError("Set AIBOM_GUARDIAN_PROJECT_ROOT in the server environment first")
+    root = Path(configured).resolve(strict=True)
+    supplied = Path(relative_path)
+    if supplied.is_absolute() or supplied.drive or not relative_path.strip():
+        raise ValueError("Use a project-relative file path")
+    target = (root / supplied).resolve(strict=True)
+    if not target.is_relative_to(root) or not target.is_file():
+        raise ValueError("File must be inside the configured project root")
+    if target.stat().st_size > 1024 * 1024:
+        raise ValueError("Input exceeds the 1 MiB limit")
+    return target
+
+
+@mcp.tool(structured_output=False)
+@_serialized
+def scan_project(requirements_path: str, direct_only: bool = False,
+                 offline: bool = False) -> dict[str, Any]:
+    """Scan a Python requirements file inside AIBOM_GUARDIAN_PROJECT_ROOT.
+
+    Uses the CLI collector, including recommendations and optional transitive
+    dependencies. Returns JSON without writing reports or installing packages.
+    Package names/versions are sent to public registries during online scans.
+    Offline scans report unverified findings, not a clean result.
+    Read summary first; packages contains full evidence. Dependency conflict
+    entries are requirements, not distinct omitted packages.
+    Returns one JSON text block, without a duplicate structuredContent report.
+    """
+    try:
+        path = _project_file(requirements_path)
+        from . import license_checker
+        previous = license_checker._OFFLINE
+        try:
+            report = collect_scan(str(path), transitive=not direct_only, offline=offline)
+        finally:
+            license_checker.set_offline(previous)
+        from .reporting import project_summary
+        return {"success": True, "tool": "scan_project",
+                "summary": project_summary(report), **report}
+    except (OSError, ValueError) as exc:
+        logger.warning("Project scan rejected: %s", type(exc).__name__)
+        return _error_response("invalid_project_input", "Check the configured project root, relative path and input format.", tool="scan_project")
+
+
 @mcp.tool()
+@_serialized
 def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
     """
     Look up known CVEs/vulnerabilities and license status for one package version.
@@ -354,67 +417,19 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
         )
 
     vulns = query_vulnerabilities(name, version, "PyPI")
-    osv_unverified = vulns is None
-    # Never coerce None → [] — score_engine must see issues is None.
-    issues_for_score = _vulns_to_issues(vulns)
-
     lic = resolve_license(name, version)
-    lic_raw = lic["license"]
-    lic_detail = classify_license_detailed(lic_raw)
-    lic_status = lic_detail["status"]
+    pin = Pinned(name, version, "==" + version, False)
+    evidence = {id(pin): {"license": lic, "vulns": vulns,
+                         "issues": _vulns_to_issues(vulns), "alternatives": [],
+                         "repository_info": None}}
+    row = collect_packages([pin], evidence=evidence)[0]
+    return {**row, "success": True, "tool": TOOL_CHECK_PACKAGE,
+            "scoring_model": "score_engine"}
 
-    # Same path as scanner.run_scan: an unverified license must reach
-    # score_engine so confidence drops / WARNING is possible. Still never
-    # turns OSV None into a list.
-    detail = None
-    if lic.get("unverified"):
-        if lic.get("source") == "none":
-            detail = (
-                f"No license could be read for {name}=={version}: "
-                f"{lic.get('error')}, and it is not installed locally."
-            )
-        else:
-            seen = f" (version {lic['version']})" if lic.get("version") else ""
-            detail = (
-                f"License for {name}=={version} was read from "
-                f"{lic.get('source')}{seen} because {lic.get('error')}. A "
-                f"package can change license between releases, so these "
-                f"terms may not be the pinned release's."
-            )
-    issues_for_score = attach_license_unverified(
-        issues_for_score, lic, detail=detail,
-    )
-
-    score_result = calculate_trust_score(
-        _build_check_result(lic_status, issues_for_score)
-    )
-
-    return {
-        "success": True,
-        "tool": TOOL_CHECK_PACKAGE,
-        "package": name,
-        "version": version,
-        "license_status": lic_status,
-        "license_raw": lic_raw,
-        "license_spdx_id": lic_detail["spdx_id"],
-        "license_family": lic_detail["family"],
-        "license_obligations": lic_detail["obligations"],
-        "license_source": lic["source"],
-        "license_version": lic["version"],
-        "license_unverified": lic["unverified"],
-        "vulnerabilities": vulns,
-        "osv_unverified": osv_unverified,
-        "scoring_model": "score_engine",
-        "trust_score": score_result["trust_score"],
-        "verdict": score_result["verdict"],
-        "hard_block": score_result["hard_block"],
-        "hard_block_reasons": score_result["hard_block_reasons"],
-        "score_breakdown": score_result["breakdown"],
-        "confidence": score_result["confidence"],
-    }
 
 
 @mcp.tool()
+@_serialized
 def check_license(license_string: str) -> dict:
     """
     Classify a license string as ALLOWED, REVIEW, BLOCKED, or UNKNOWN,
@@ -451,6 +466,7 @@ def check_license(license_string: str) -> dict:
 
 
 @mcp.tool()
+@_serialized
 def check_model(
     model_ref: str,
     max_pickle_size_mb: int = 0,
@@ -537,6 +553,7 @@ def check_model(
 
 
 @mcp.tool()
+@_serialized
 def check_repo_trust(
     target: str,
     target_type: str = "auto",

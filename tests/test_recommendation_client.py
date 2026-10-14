@@ -323,16 +323,18 @@ class TestEngineOrchestration(unittest.TestCase):
         self.assertEqual(len(cves), 1)
         self.assertEqual(cves[0]["id"], "GHSA-x")
 
-    def test_a_cve_produces_a_confirmed_upgrade_target(self):
+    def test_a_cve_produces_an_unverified_upgrade_candidate(self):
         engine = self._engine(PyPIPackageInfo(name="requests", exists=True,
                                               latest_version="2.34.2"))
         result = engine.analyze_package(
             "requests", "2.28.0", cve_issues=[{"id": "GHSA-x", "severity": "high"}])
 
         upgrades = [a for a in result["alternatives"]
-                    if a["confidence"] == "confirmed"]
+                    if a["confidence"] == "suggested"]
         self.assertTrue(upgrades, result["alternatives"])
         self.assertIn("2.34.2", upgrades[0]["target"])
+        self.assertFalse(upgrades[0]["candidate_verified"])
+        self.assertFalse(upgrades[0]["compatibility_verified"])
 
     def test_skip_pypi_avoids_the_network_entirely(self):
         client = MagicMock()

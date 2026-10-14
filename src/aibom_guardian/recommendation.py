@@ -17,7 +17,7 @@ Output:
     ]
   }
 
-``confirmed`` is a definite fix (version bump, typo correction);
+Package suggestions are unverified candidates;
 ``suggested`` needs a human to look at it.
 """
 
@@ -368,9 +368,12 @@ def detect_typosquatting(
         issues.append(
             {
                 "type": "typosquatting",
+                "informational": True,
+                "evidence": "name_similarity_only",
                 "detail": (
-                    f"Package '{package_name}' is similar to official package "
-                    f"'{official}' (edit distance={dist})"
+                    f"Check the intended package name: '{package_name}' resembles "
+                    f"'{official}' (edit distance={dist}). Name similarity alone "
+                    "does not establish impersonation or justify replacement."
                 ),
                 "official_package": official,
                 "distance": dist,
@@ -515,10 +518,7 @@ def recommend_package_alternatives(
     *,
     has_cve: bool = False,
 ) -> list[dict[str, Any]]:
-    """
-    confidence=\"confirmed\" recommendations:
-      - typosquat → official package name
-      - CVE / yanked → latest non-yanked PyPI version
+    """Suggest candidates; neither safety, user intent nor compatibility is verified.
     """
     alts: list[dict[str, Any]] = []
     seen_targets: set[str] = set()
@@ -530,17 +530,21 @@ def recommend_package_alternatives(
         alts.append(
             {
                 "target": target,
-                "confidence": "confirmed",
+                "confidence": "suggested",
+                "candidate_verified": False,
+                "compatibility_verified": False,
                 "reason": reason,
             }
         )
 
     for issue in issues:
-        if issue.get("type") == "typosquatting" and issue.get("official_package"):
+        if (issue.get("type") == "typosquatting" and issue.get("official_package")
+                and not issue.get("informational")
+                and issue.get("evidence") != "name_similarity_only"):
             official = issue["official_package"]
             _add(
                 official,
-                f"Correct typosquat '{package_name}' -> official '{official}'",
+                f"Check whether '{official}' was intended instead of '{package_name}'; name similarity alone does not establish intent",
             )
 
     if package_info and package_info.exists and package_info.latest_version:
@@ -550,16 +554,16 @@ def recommend_package_alternatives(
             # walk releases by version string order is unreliable;
             # fall back to info.version only if not yanked — else skip
             latest = None
-        if latest and (has_cve or (version and version != latest)):
+        if latest and latest != version:
             if has_cve:
                 _add(
                     f"{package_info.name}=={latest}",
-                    "Upgrade to latest safe release",
+                    "Candidate newer release; rescan vulnerabilities and licenses, then test compatibility",
                 )
             elif version and version in (package_info.yanked_versions or {}):
                 _add(
                     f"{package_info.name}=={latest}",
-                    "Replace yanked version with latest release",
+                    "Candidate replacement for yanked version; rescan and test compatibility",
                 )
 
     return alts
@@ -721,7 +725,7 @@ class RecommendationEngine:
 
         `cve_issues`: optional pre-fetched OSV findings from osv_client
         (type=cve). Passed through into issues and used to trigger
-        confirmed version-upgrade alternatives.
+        unverified version-upgrade candidates.
 
         `min_release_age`: days a release must have been public. 0 disables.
         """

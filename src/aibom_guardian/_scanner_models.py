@@ -25,7 +25,7 @@ def _model_issues(report: dict) -> list:
     """
     type_map = {
         "malicious": "malicious",
-        "suspicious": "malicious",
+        "suspicious": "suspicious",
         "pickle_only": "provenance",
         "pickle_file": "provenance",
         "remote_code": "provenance",
@@ -96,7 +96,8 @@ def scan_model(model_ref: str, max_pickle_size_mb: int = 0) -> dict | None:
         "model_info": model_context,
         "repository_info": None,
     })
-    report["risk_score"] = score_result["trust_score"]
+    report["trust_score"] = score_result["trust_score"]
+    report["risk_score"] = score_result["trust_score"]  # compatibility alias
     report["verdict"] = score_result["verdict"]
     report["hard_block"] = score_result["hard_block"]
     report["hard_block_reasons"] = score_result["hard_block_reasons"]

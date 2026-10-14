@@ -19,6 +19,7 @@ import logging
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -748,7 +749,8 @@ def build_final_sbom(
     """
     packages, models = _packages_and_models(scan_report, model_reports)
 
-    base_sbom = generate_base_sbom(requirements_path)
+    with tempfile.TemporaryDirectory(prefix="aibom-bom-") as temporary:
+        base_sbom = generate_base_sbom(requirements_path, str(Path(temporary) / "base.json"))
     final_sbom = enrich_sbom_with_findings(base_sbom, packages)
     final_sbom = add_models_to_sbom(final_sbom, models)
     ensure_cyclonedx_metadata(
@@ -759,6 +761,8 @@ def build_final_sbom(
         subject=Path(requirements_path).stem or None,
     )
 
+    from .bom_tools import validate_bom
+    validate_bom(final_sbom)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(final_sbom, f, ensure_ascii=False, indent=2)
 

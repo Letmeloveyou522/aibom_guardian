@@ -108,6 +108,7 @@ CATEGORY_ALIASES: dict[str, str] = {
     "deprecated": "provenance",
     # Removed as a weight category (no producer). Old reports still score.
     "pii": "provenance",
+    "suspicious": "provenance",
 }
 
 # Severity to assume when a producer reports a finding without grading it.
@@ -226,6 +227,8 @@ def _is_scoreable(issue: dict) -> bool:
     excluded from deductions (they still affect confidence).
     """
     if not isinstance(issue, dict):
+        return False
+    if issue.get("informational") is True:
         return False
     # Explicit False only; missing / True / other → score as usual.
     return issue.get("verified") is not False
@@ -512,10 +515,11 @@ def _decide_verdict(score: int, confidence: float, hard_block: bool,
         return "BLOCK"
     # Only confirmed (scoreable) high findings block ALLOW — an unverified
     # network failure must not permanently deny ALLOW via a phantom "high".
+    needs_review = any(i.get("type") == "suspicious" for i in issues)
     has_high = any(
         _is_scoreable(i) and _severity_of(i) == "high" for i in issues
     )
-    if score >= ALLOW_THRESHOLD and confidence >= MIN_CONFIDENCE_FOR_ALLOW and not has_high:
+    if score >= ALLOW_THRESHOLD and confidence >= MIN_CONFIDENCE_FOR_ALLOW and not has_high and not needs_review:
         return "ALLOW"
     return "WARNING"
 

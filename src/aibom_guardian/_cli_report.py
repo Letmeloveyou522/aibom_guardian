@@ -229,6 +229,8 @@ def save_report(report_document: dict, out_path: str):
         "models": report_document.get("models") or [],
         "unscanned": report_document.get("unscanned") or [],
     }
+    if "metadata" in report_document:
+        payload["metadata"] = report_document["metadata"]
     if "dependency_source" in report_document:
         payload["dependency_source"] = report_document["dependency_source"]
     with open(out_path, "w", encoding="utf-8") as f:

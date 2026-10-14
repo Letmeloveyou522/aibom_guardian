@@ -140,30 +140,49 @@ def test_recently_updated_package_is_not_reported():
 # Alternatives
 # ---------------------------------------------------------------------------
 
-def test_cve_produces_a_confirmed_upgrade_suggestion():
+def test_cve_produces_an_unverified_upgrade_candidate():
     alts = recommend_package_alternatives(
         "requests", "2.28.0",
         [{"type": "cve", "id": "GHSA-x", "severity": "high"}],
         info(latest="2.34.2"), has_cve=True)
     assert alts
     assert any("2.34.2" in a["target"] for a in alts)
-    assert alts[0]["confidence"] == "confirmed"
+    assert alts[0]["confidence"] == "suggested"
+    assert alts[0]["candidate_verified"] is False
+    assert alts[0]["compatibility_verified"] is False
 
 
-def test_typosquat_produces_a_spelling_correction():
-    """
-    The correction comes from the detector's `official_package` field, not
-    from parsing `detail` - so the two must stay in step. This test drives
-    the real detector output rather than a hand-written fixture.
-    """
+def test_current_version_is_not_proposed_as_a_cve_fix():
+    assert recommend_package_alternatives(
+        "requests", "2.34.2", [{"type": "cve"}],
+        info(latest="2.34.2"), has_cve=True) == []
+
+
+def test_name_similarity_does_not_recommend_replacement():
+    """Name resemblance is visible but does not establish user intent."""
     issues = detect_typosquatting("reqeusts", package_exists=False)
     assert issues[0]["official_package"] == "requests"
 
     alts = recommend_package_alternatives(
         "reqeusts", "1.0.0", issues, info("reqeusts", exists=False),
         has_cve=False)
-    assert any("requests" in a["target"] for a in alts)
-    assert alts[0]["confidence"] == "confirmed"
+    assert alts == []
+    assert issues[0]["informational"] is True
+
+
+def test_pyotp_similarity_does_not_change_score_or_hide_real_findings():
+    from aibom_guardian.score_engine import calculate_trust_score
+    issues = detect_typosquatting("pyotp", package_exists=True)
+    assert issues
+    baseline = {"type": "library", "license_status": "ALLOWED", "issues": []}
+    clean = calculate_trust_score(baseline)
+    checked = calculate_trust_score({**baseline, "issues": issues})
+    for field in ("trust_score", "confidence", "verdict", "hard_block"):
+        assert checked[field] == clean[field]
+    assert recommend_package_alternatives("pyotp", "2.9.0", issues, info("pyotp")) == []
+    dangerous = calculate_trust_score({**baseline, "issues": issues + [
+        {"type": "cve", "severity": "critical", "id": "test"}]})
+    assert dangerous["hard_block"] is True
 
 
 def test_clean_package_gets_no_alternatives():
