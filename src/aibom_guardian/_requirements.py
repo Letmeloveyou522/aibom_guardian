@@ -302,7 +302,7 @@ def expand_transitive(
             for p in packages], list(dict.fromkeys(unresolved))
 
 
-def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
+def parse_requirements(path: str, offline: bool = False, emit=print) -> tuple[list, list]:
     """
     Parse a requirements file into the exact versions to scan.
 
@@ -332,7 +332,7 @@ def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
 
     def skip(line: str, reason: str) -> None:
         unscanned.append(line)
-        print(f"[INFO] Not scanned ({reason}): {line}")
+        emit(f"[INFO] Not scanned ({reason}): {line}")
 
     def add(name: str, version: str, spec: str, resolved: bool, extras=()) -> None:
         # PEP 503: names differing only in case or in -/_/. are one project.
@@ -388,7 +388,7 @@ def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
             if requirement.marker is not None:
                 try:
                     if not requirement.marker.evaluate():
-                        print(f"[INFO] Skipped (marker does not apply here): {line}")
+                        emit(f"[INFO] Skipped (marker does not apply here): {line}")
                         continue
                 except UndefinedEnvironmentName:
                     pass          # extras-only markers; scan the package
@@ -408,7 +408,7 @@ def parse_requirements(path: str, offline: bool = False) -> tuple[list, list]:
                 skip(line, "no published version satisfies this range")
                 continue
 
-            print(f"[INFO] Resolved {line} -> {requirement.name}=={version}")
+            emit(f"[INFO] Resolved {line} -> {requirement.name}=={version}")
             add(requirement.name, version, spec, True, requirement.extras)
 
     return packages, unscanned

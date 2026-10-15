@@ -709,9 +709,15 @@ def run_npm_scan(
 
     from ._npm_lockfile import load_lockfile
 
+    from pathlib import Path
+    from .reporting import scan_metadata, set_scan_scope, scope_message
+    metadata = scan_metadata(package_json_path, {
+        "ecosystem": "npm", "offline": offline, "transitive": transitive})
     locked = load_lockfile(package_json_path, direct_only=not transitive)
     if locked is not None:
         packages, unscanned_lines, dependency_source = locked
+        lock_path = Path(package_json_path).parent / "package-lock.json"
+        metadata["lockfile_sha256"] = scan_metadata(lock_path, {})["input_sha256"]
         print(f"[INFO] Using package-lock.json v{dependency_source['lockfile_version']}; "
               "locked versions will not be re-resolved.")
     else:
@@ -719,12 +725,14 @@ def run_npm_scan(
         packages, unresolved_versions = resolve_direct_versions(packages, offline=offline)
         unscanned_lines.extend(unresolved_versions)
         dependency_source = {"kind": "registry", "path": package_json_path}
+    set_scan_scope(metadata, lockfile=locked is not None)
+    print(scope_message(metadata))
     if not packages:
         print("No npm packages found to scan. Check your package.json.")
         if unscanned_lines:
             print(f"[INFO] {len(unscanned_lines)} entr(y/ies) could not be parsed.")
         save_report({"packages": [], "models": [], "unscanned": unscanned_lines,
-                     "dependency_source": dependency_source}, report_path)
+                     "dependency_source": dependency_source, "metadata": metadata}, report_path)
         result = ScanReport([])
         result.unscanned = unscanned_lines
         return result
@@ -766,7 +774,7 @@ def run_npm_scan(
         print_unscanned_lines(unscanned_lines)
 
     document = {"packages": report, "models": [], "unscanned": unscanned_lines,
-                "dependency_source": dependency_source}
+                "dependency_source": dependency_source, "metadata": metadata}
     save_report(document, report_path)
 
     if explain:

@@ -367,7 +367,7 @@ def test_report_is_written_and_json_serialisable(reqs, no_side_effects,
     scanner.run_scan(reqs, explain=False, report_path="out.json")
 
     data = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
-    assert set(data) == {"packages", "models", "unscanned"}
+    assert set(data) == {"metadata", "packages", "models", "unscanned"}
     assert data["packages"][0]["package"] == "requests"
     assert data["packages"][0]["issues"][0]["id"] == "GHSA-x"
     assert data["models"] == []

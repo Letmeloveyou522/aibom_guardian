@@ -293,7 +293,7 @@ Python 절대 경로를 사용하므로 가상 환경을 옮겼다면 설정을 
 `--check`는 MCP SDK로 서버를 시작하고 도구 목록과 호출 결과를 확인합니다.
 앱에서의 연결과 권한 설정은 별도로 확인해야 합니다.
 
-`aibom-guardian-mcp`는 stdio 방식으로 네 가지 도구를 제공합니다.
+`aibom-guardian-mcp`는 stdio 방식으로 다섯 가지 도구를 제공합니다.
 
 | 도구 | 용도 |
 |---|---|
@@ -301,9 +301,12 @@ Python 절대 경로를 사용하므로 가상 환경을 옮겼다면 설정을 
 | `check_license` | 라이선스 분류와 의무사항 반환 |
 | `check_model` | Hugging Face 모델 한 건 검사 |
 | `check_repo_trust` | 저장소와 출처 정보 검사 |
+| `scan_project` | 허용한 프로젝트 폴더의 Python requirements 파일 검사 |
 
-MCP 서버는 대상 한 건에 대한 JSON을 반환합니다. 의존성 파일 일괄 검사,
-보고서 파일 생성, Ollama 설명은 CLI에서 처리합니다.
+MCP는 검사 결과를 JSON으로 반환합니다. 보고서 파일 생성과 Ollama 설명은 CLI에서 처리합니다.
+
+프로젝트 검사는 아래 `env`에 `"AIBOM_GUARDIAN_PROJECT_ROOT": "D:/projects/my-app"`을 추가하고
+서버를 다시 시작하면 사용할 수 있습니다. 채팅에서 “requirements.txt를 scan_project로 검사해줘”라고 요청하세요.
 
 ```json
 {

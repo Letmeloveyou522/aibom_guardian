@@ -190,77 +190,30 @@ class ScanReport(list):
 # + _RELEASE_CACHE are imported above so ``scanner.Pinned`` etc. keep working.
 
 
-def run_scan(
-    requirements_path: str,
-    supply_chain: bool = False,
-    offline: bool = False,
-    explain: bool = True,
-    report_path: str = "scan_report.json",
-    sbom_path: str = "sbom.json",
-    models: list | None = None,
-    model_pickle_size_mb: int = 0,
-    verbose: bool = False,
-    transitive: bool = True,
-    jobs: int = DEFAULT_JOBS,
-    min_release_age: int = 0,
-    sarif_path: str | None = None,
-) -> list[dict]:
-    """
-    Scan every package `requirements_path` will install.
-
-    Args:
-        supply_chain: also run repository_checker per package (slow; needs
-            and ideally GITHUB_TOKEN).
-        offline: skip every network lookup - OSV, PyPI and supply chain.
-            The license check still runs against installed metadata.
-        explain: run the local Ollama explanation at the end.
-        transitive: also scan what the listed packages pull in. Off means
-            scanning the file rather than the install.
-        jobs: concurrent lookups. 1 disables threading.
-        min_release_age: days a release must have been public. 0 disables.
-
-    Returns the report list, so tests and other callers can assert on it
-    without parsing stdout.
-    """
-    packages, unscanned_lines = parse_requirements(requirements_path,
-                                                   offline=offline)
-    if not packages and not models:
-        print("No packages found to scan. Check your requirements.txt format.")
-        if unscanned_lines:
-            print(f"[INFO] {len(unscanned_lines)} line(s) were not in name==version format.")
-        return []
-
-    if transitive and not offline:
-        direct_count = len(packages)
-        packages, unresolved_deps = expand_transitive(packages)
-        unscanned_lines = list(unscanned_lines) + unresolved_deps
-        pulled_in = len(packages) - direct_count
-        if pulled_in:
-            print(f"[INFO] {direct_count} direct + {pulled_in} transitive "
-                  f"= {len(packages)} packages to scan.")
-        if unresolved_deps:
-            print(f"[WARNING] {len(unresolved_deps)} dependency requirement(s) "
-                  f"could not be resolved; reported as unscanned.")
-
+def collect_packages(packages, *, offline=False, supply_chain=False, jobs=DEFAULT_JOBS,
+                     min_release_age=0, emit=logger.info, evidence=None):
+    """Shared Python package report builder. No files or stdout by default."""
     # The license registries are downloaded and cached on first use; offline
     # means "use whatever is already cached, never fetch".
     set_offline(offline)
 
     engine = None
     if offline:
-        print("[INFO] Offline mode: OSV, PyPI and supply-chain lookups are skipped.")
+        emit("[INFO] Offline mode: OSV, PyPI and supply-chain lookups are skipped.")
+    elif evidence is not None:
+        pass
     elif not HAS_RECOMMENDATION:
-        print("[WARNING] recommendation.py unavailable - typosquatting, "
+        emit("[WARNING] recommendation.py unavailable - typosquatting, "
               "hallucination and deprecation checks will NOT run.")
     else:
         engine = RecommendationEngine()
 
     if supply_chain and not HAS_REPOSITORY_CHECKER:
-        print("[WARNING] repository_checker.py unavailable - supply-chain "
+        emit("[WARNING] repository_checker.py unavailable - supply-chain "
               "checks will NOT run.")
 
     report = []
-    fetched = _prefetch(
+    fetched = evidence if evidence is not None else _prefetch(
         packages,
         engine_factory=lambda: engine,
         offline=offline,
@@ -272,7 +225,7 @@ def run_scan(
     for entry in packages:
         name, version = entry.name, entry.version
         origin = f"  (resolved from {entry.spec})" if entry.resolved else ""
-        print(f"[Scanning] {name}=={version} ...{origin}")
+        emit(f"[Scanning] {name}=={version} ...{origin}")
 
         found = fetched[id(entry)]
         lic = found["license"]
@@ -299,14 +252,14 @@ def run_scan(
                            f"{lic['error']}. Terms may differ from "
                            f"{name}=={version}.")
             license_issue = dict(LICENSE_UNVERIFIED_ISSUE, detail=detail)
-            print(f"  [WARNING] {warning}")
+            emit(f"  [WARNING] {warning}")
 
         # Surfaced here because a cooldown hit rarely moves a package out of
         # ALLOW, and the detail list only shows packages needing attention -
         # so a check the user switched on would otherwise be invisible.
         for issue in found["issues"] or []:
             if "release_age_days" in issue:
-                print(f"  [COOLDOWN] {name}=={version} published "
+                emit(f"  [COOLDOWN] {name}=={version} published "
                       f"{issue['release_age_days']} day(s) ago "
                       f"(threshold {issue['min_release_age_days']}).")
 
@@ -321,7 +274,7 @@ def run_scan(
         # "OSV lookup failed" issue without mislabeling an intentional skip.
         osv_unverified = not offline and vulns is None
         if osv_unverified:
-            print(f"  [WARNING] OSV lookup failed for {name}=={version} — "
+            emit(f"  [WARNING] OSV lookup failed for {name}=={version} — "
                   f"CVE status unverified (not treated as clean).")
 
         repository_info = found["repository_info"]
@@ -340,6 +293,7 @@ def run_scan(
         )
 
         entry = {
+            "ecosystem": "PyPI",
             "package": name,
             "version": version,
             # The requirement as written, not as resolved. A bare "flask"
@@ -372,6 +326,10 @@ def run_scan(
             "hard_block_reasons": score_result["hard_block_reasons"],
             "score_breakdown": score_result["breakdown"],
             "confidence": score_result["confidence"],
+            "checks": {"vulnerabilities": "complete" if vulns is not None else "unverified",
+                       "license": "unverified" if lic["unverified"] else "complete",
+                       "recommendations": "requested" if engine is not None else "not_requested",
+                       "supply_chain": "complete" if repository_info is not None else ("unverified" if supply_chain else "not_requested")},
         }
         if repository_info is not None:
             # Keep the summary, not the full 20-key payload, so scan_report
@@ -390,31 +348,95 @@ def run_scan(
 
         report.append(entry)
 
+    return report
+
+
+def collect_scan(requirements_path, *, supply_chain=False, offline=False,
+                 models=None, model_pickle_size_mb=0, transitive=True,
+                 jobs=DEFAULT_JOBS, min_release_age=0, emit=logger.info):
+    """Collect a project report without creating files or printing to stdout."""
+    from .reporting import scan_metadata, set_scan_scope, scope_message
+    metadata = scan_metadata(requirements_path, {
+        "ecosystem": "PyPI", "offline": offline, "transitive": transitive,
+        "supply_chain": supply_chain, "min_release_age": min_release_age,
+        "models": models or [], "model_pickle_size_mb": model_pickle_size_mb,
+    })
+    set_scan_scope(metadata)
+    emit(scope_message(metadata))
+    packages, unscanned_lines = parse_requirements(requirements_path,
+                                                   offline=offline, emit=emit)
+    if not packages and not models:
+        emit("No packages found to scan. Check your requirements.txt format.")
+        if unscanned_lines:
+            emit(f"[INFO] {len(unscanned_lines)} line(s) were not in name==version format.")
+        return {"packages": [], "models": [], "unscanned": unscanned_lines, "metadata": metadata}
+
+    if transitive and not offline:
+        direct_count = len(packages)
+        packages, unresolved_deps = expand_transitive(packages)
+        unscanned_lines = list(unscanned_lines) + unresolved_deps
+        pulled_in = len(packages) - direct_count
+        if pulled_in:
+            emit(f"[INFO] {direct_count} direct + {pulled_in} transitive "
+                  f"= {len(packages)} packages to scan.")
+        if unresolved_deps:
+            emit(f"[WARNING] {len(unresolved_deps)} dependency requirement(s) "
+                  f"could not be resolved; reported as unscanned.")
+
+    report = collect_packages(packages, offline=offline, supply_chain=supply_chain,
+                              jobs=jobs, min_release_age=min_release_age, emit=emit)
     # -- AI models ------------------------------------------------------
     model_reports = []
     for model_ref in (models or []):
         if offline:
-            print(f"[INFO] Offline: skipping model {model_ref}")
+            emit(f"[INFO] Offline: skipping model {model_ref}")
             unscanned_lines.append(f'model {model_ref}: offline; model checks not performed')
             continue
-        print(f"[Scanning model] {model_ref} ...")
+        emit(f"[Scanning model] {model_ref} ...")
         model_report = scan_model(model_ref, model_pickle_size_mb)
         if model_report:
             model_reports.append(model_report)
         else:
             unscanned_lines.append(f'model {model_ref}: model scan failed or unavailable; see error log')
 
+    report_document = {
+        "metadata": metadata,
+        "packages": report,
+        "models": model_reports,
+        "unscanned": unscanned_lines,
+    }
+    return report_document
+
+
+def run_scan(
+    requirements_path: str,
+    supply_chain: bool = False,
+    offline: bool = False,
+    explain: bool = True,
+    report_path: str = "scan_report.json",
+    sbom_path: str = "sbom.json",
+    models: list | None = None,
+    model_pickle_size_mb: int = 0,
+    verbose: bool = False,
+    transitive: bool = True,
+    jobs: int = DEFAULT_JOBS,
+    min_release_age: int = 0,
+    sarif_path: str | None = None,
+) -> list[dict]:
+    """CLI presentation and artifact output around the shared collector."""
+    report_document = collect_scan(
+        requirements_path, supply_chain=supply_chain, offline=offline, models=models,
+        model_pickle_size_mb=model_pickle_size_mb, transitive=transitive,
+        jobs=jobs, min_release_age=min_release_age, emit=print)
+    report = report_document["packages"]
+    model_reports = report_document["models"]
+    unscanned_lines = report_document["unscanned"]
     print_report(report, verbose=verbose)
     if model_reports:
         print_model_report(model_reports)
     if unscanned_lines:
         print_unscanned_lines(unscanned_lines)
 
-    report_document = {
-        "packages": report,
-        "models": model_reports,
-        "unscanned": unscanned_lines,
-    }
     save_report(report_document, report_path)
     build_final_sbom(requirements_path, report, sbom_path, model_reports)
 
@@ -558,6 +580,11 @@ def _configure_cli_logging(verbose: bool) -> None:
     same functions and stdout is the JSON-RPC channel there. Without a handler
     the CLI would show nothing; stderr keeps the report on stdout pipeable.
     """
+    # Redirected Windows consoles may use cp949. A display character must not
+    # abort the scan before its UTF-8 JSON artifacts are written.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(errors="backslashreplace")
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.WARNING,
         format="  [%(levelname)s] %(message)s",

@@ -253,7 +253,7 @@ Start the server, enable its tools in chat, and call `check_license` with MIT to
 Regenerate the configuration if you move the Python environment: it uses an absolute interpreter path.
 The SDK check covers initialization, tool discovery, and calls; it does not validate client UI settings or permissions.
 
-`aibom-guardian-mcp` exposes four tools over stdio.
+`aibom-guardian-mcp` exposes five tools over stdio.
 
 | Tool | Purpose |
 |---|---|
@@ -261,9 +261,19 @@ The SDK check covers initialization, tool discovery, and calls; it does not vali
 | `check_license` | Classify a license and return its obligations |
 | `check_model` | Inspect one Hugging Face model |
 | `check_repo_trust` | Check repository and provenance evidence |
+| `scan_project` | Scan a Python requirements file within a configured project root |
 
-The server returns one JSON response per target. Batch dependency scans,
-report files, and Ollama explanations are handled by the CLI.
+The server returns JSON. Report files and Ollama explanations remain CLI features.
+`check_package` checks vulnerabilities and licenses only. `scan_project` uses the
+CLI collector, including recommendations and optional transitive dependencies.
+Scores from different check scopes need not match.
+
+Set `AIBOM_GUARDIAN_PROJECT_ROOT` in the MCP server's `env` to your project directory,
+restart the server, then request `scan_project(requirements_path="requirements.txt", direct_only=false)`.
+Absolute paths and files outside that root are rejected; input size is limited to 1 MiB.
+This tool supports Python; use the CLI for npm. Online scans send package names and
+versions to public registries. It does not install packages or write report files.
+`offline=true` skips external lookups and returns unverified findings.
 
 ```json
 {
@@ -341,3 +351,39 @@ and licenses are listed in [`DEPENDENCIES.md`](DEPENDENCIES.md).
 ## License
 
 Released under the Apache License 2.0. See [`LICENSE`](LICENSE).
+
+## Compare reports and deliver a BOM
+
+Python and npm reports include scan time, tool/policy versions, options and input
+SHA-256. npm lockfile scans also record the lockfile SHA-256.
+
+```powershell
+python -m aibom_guardian.reporting before.json after.json
+python -m aibom_guardian.bom_tools sbom.json
+```
+
+Comparison covers package versions and advisory IDs, not models or license changes.
+Failed lookups and unscanned inputs cannot establish remediation. `no_longer_reported`
+means an ID was absent from the subsequent lookup, not proven safety or compatibility.
+Removed packages are listed separately. The second command validates CycloneDX 1.6
+JSON. Python/model BOM generation also validates before writing.
+
+To upload explicitly, set `DEPENDENCY_TRACK_API_KEY` in your environment and use an
+existing Dependency-Track project UUID:
+
+```powershell
+python -m aibom_guardian.bom_tools sbom.json --server https://dtrack.example.com --project <project-UUID>
+```
+
+This sends the BOM and replaces the project's component inventory. Choose a project
+matching the full scan scope. HTTPS is required except for localhost.
+`status=accepted` and `analysis_verified=false` mean upload acceptance only. Check
+analysis and alerts in Dependency-Track; Guardian scores and custom model fields
+are not guaranteed to affect its risk assessment.
+[Dependency-Track integration documentation](https://docs.dependencytrack.org/usage/cicd/)
+
+Package alternatives are unverified candidates (`candidate_verified=false`,
+`compatibility_verified=false`). Rescan and test your application before adopting
+one. Model `trust_score` is higher when fewer deductions apply; `risk_score` remains
+an equal-valued compatibility alias. Suspicious pickle references require review
+and are not automatically treated as confirmed malicious references.
