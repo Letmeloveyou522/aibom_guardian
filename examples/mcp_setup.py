@@ -19,7 +19,8 @@ async def probe(configs, output):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
-    expected = {'check_package', 'check_license', 'check_model', 'check_repo_trust', 'scan_project'}
+    expected = {'check_package', 'check_license', 'check_model', 'check_repo_trust', 'scan_project',
+                'compare_package_candidate', 'monitor_history', 'check_monitor'}
     summary = {'scope': 'SDK stdio probe, not GUI client verification', 'clients': {}}
     for name, config in configs.items():
         entry = config.get('mcpServers', config.get('servers'))['aibom-guardian']

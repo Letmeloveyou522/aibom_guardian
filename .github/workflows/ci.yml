@@ -158,3 +158,19 @@ jobs:
           assert sarif["runs"], "SARIF has no runs"
           print("sarif OK:", len(sarif["runs"][0]["results"]), "results")
           PY
+
+      - name: Show offline scan summary
+        if: ${{ always() && hashFiles('scan_report.json') != '' }}
+        run: python -m aibom_guardian.ci_summary scan_report.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save smoke scan reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-smoke-reports
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            scan_report.json
+            sbom.json
+            aibom-guardian.sarif

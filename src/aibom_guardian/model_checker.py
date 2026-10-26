@@ -692,6 +692,7 @@ def check_model_card(model_id, revision, file_names, card, token, resolved=None)
     result = {
         "present": card_name is not None,
         "card_file": card_name,
+        "read_status": "not_read" if card_name else "not_found",
         "completeness": 0,
         "placeholder_count": 0,
         "is_unedited_template": False,
@@ -726,9 +727,11 @@ def check_model_card(model_id, revision, file_names, card, token, resolved=None)
 
     text, error = _download_text(model_id, card_name, revision, token)
     if error:
+        result["read_status"] = "unverified"
         result["detail"] = f"Model card could not be read: {error}"
         return result, missing
 
+    result["read_status"] = "read"
     body = re.sub(r"^---\s*\n.*?\n---\s*\n", "", text, count=1, flags=re.DOTALL)
     result["placeholder_count"] = len(PLACEHOLDER_RE.findall(body))
     # Discount template scaffolding before judging how much prose is there:
@@ -937,6 +940,8 @@ def check_model(model_ref, revision=None, max_pickle_size_mb=DEFAULT_MAX_PICKLE_
         })
 
     report["issues"] = collect_issues(report)
+    from .aibom_evidence import model_evidence
+    report["aibom_evidence"] = model_evidence(report)
     report["risk"] = (
         "HIGH" if any(i["severity"] == "HIGH" for i in report["issues"]) else
         "MEDIUM" if any(i["severity"] == "MEDIUM" for i in report["issues"]) else

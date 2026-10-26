@@ -85,6 +85,27 @@ def test_project_tool_requires_configured_root(tmp_path, monkeypatch):
     assert mcp_server.scan_project(str(tmp_path / "outside.txt"))["success"] is False
 
 
+def test_monitor_mcp_is_server_configured_and_history_is_readable(tmp_path, monkeypatch):
+    from aibom_guardian.monitoring import initialize
+    monkeypatch.delenv("AIBOM_GUARDIAN_MONITOR_DB", raising=False)
+    assert mcp_server.monitor_history()["success"] is False
+    db = tmp_path / "monitor.db"
+    initialize(db, {"packages": [{"package": "demo", "version": "1.0", "vulnerabilities": []}]})
+    monkeypatch.setenv("AIBOM_GUARDIAN_MONITOR_DB", str(db))
+    assert mcp_server.monitor_history()["runs"] == []
+    assert mcp_server.monitor_history(100)["success"] is False
+
+
+def test_candidate_compare_does_not_claim_compatibility(monkeypatch):
+    monkeypatch.setattr(mcp_server, "check_package", lambda name, version: {
+        "package": name, "version": version, "ecosystem": "PyPI", "scanned": True,
+        "vulnerabilities": [{"id": "old"}] if version == "1.0" else []})
+    result = mcp_server.compare_package_candidate("demo", "1.0", "2.0")
+    assert result["comparison"]["findings"][0]["no_longer_reported"] == ["old"]
+    assert result["compatibility_verified"] is False and result["tests_executed"] is False
+    assert mcp_server.compare_package_candidate("demo", ">=1", "2.0")["success"] is False
+
+
 def report(vulnerabilities, **extra):
     return {"packages": [{"ecosystem": "PyPI", "package": "Demo_pkg", "version": "1",
                           "scanned": True, "vulnerabilities": vulnerabilities, **extra}], "unscanned": []}

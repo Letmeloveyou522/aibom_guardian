@@ -110,6 +110,7 @@ class HuggingFaceMixin:
         readme_url = f"{HF_API}/{encoded_id}/raw/{read_revision}/README.md"
         if repo_type == "dataset":
             readme_url = f"{HF_API}/datasets/{encoded_id}/raw/{read_revision}/README.md"
+        readme_unverified = False
         try:
             validate_public_url(readme_url)
             text, rresp, rerr = self.http.get_text(
@@ -118,17 +119,23 @@ class HuggingFaceMixin:
                 cache_key=f"hf:readme:{repo_type}:{repo_id}:{read_revision}",
             )
             if rerr:
+                readme_unverified = True
                 errors.append({**rerr, "source": "huggingface_readme"})
             elif rresp is not None and rresp.status_code == 200:
                 readme_text = text
+            elif rresp is None or rresp.status_code != 404:
+                readme_unverified = True
         except SSRFError as exc:
+            readme_unverified = True
             errors.append(_error("huggingface_readme", "ssrf_blocked", str(exc), False))
 
         dataset_doc = {
             "checked": False,
             "missing_fields": [],
         }
-        if repo_type == "dataset":
+        if repo_type == "dataset" and readme_unverified:
+            dataset_doc["reason"] = "readme_lookup_unverified"
+        if repo_type == "dataset" and not readme_unverified:
             dataset_doc = check_dataset_documentation(readme_text, card_data)
             if not dataset_doc.get("card_exists"):
                 issues.append(_issue(
