@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import sqlite3
 from pathlib import Path
 from functools import wraps
 from threading import RLock
@@ -426,6 +428,64 @@ def check_package(name: str, version: str, ecosystem: str = "PyPI") -> dict:
     return {**row, "success": True, "tool": TOOL_CHECK_PACKAGE,
             "scoring_model": "score_engine"}
 
+
+
+@mcp.tool(structured_output=False)
+@_serialized
+def compare_package_candidate(name: str, current_version: str, candidate_version: str) -> dict:
+    """Recheck two explicit PyPI versions. Does not modify files, install, or run tests.
+
+    Compatibility is not verified. Advisory absence is not a safe-update guarantee.
+    """
+    from packaging.version import Version, InvalidVersion
+    from .reporting import compare_reports
+    try:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
+            raise ValueError("Invalid package name")
+        Version(current_version)
+        Version(candidate_version)
+    except (ValueError, InvalidVersion, TypeError):
+        return _error_response("invalid_input", "Supply a PyPI name and two exact versions.",
+                               tool="compare_package_candidate")
+    before = check_package(name, current_version)
+    after = check_package(name, candidate_version)
+    comparison = compare_reports({"packages": [before]}, {"packages": [after]})
+    return {"success": True, "tool": "compare_package_candidate", "comparison": comparison,
+            "compatibility_verified": False, "tests_executed": False,
+            "before": before, "candidate": after}
+
+
+def _monitor_database():
+    configured = os.environ.get("AIBOM_GUARDIAN_MONITOR_DB")
+    if not configured:
+        raise ValueError("Configure AIBOM_GUARDIAN_MONITOR_DB after initializing a baseline")
+    return Path(configured).resolve(strict=True)
+
+
+@mcp.tool(structured_output=False)
+@_serialized
+def monitor_history(limit: int = 5) -> dict:
+    """Read saved runs from the server-configured monitor database. No external requests."""
+    from .monitoring import history
+    try:
+        return {"success": True, "tool": "monitor_history", **history(_monitor_database(), limit)}
+    except (OSError, ValueError, sqlite3.Error):
+        return _error_response("monitor_unavailable", "Check the configured monitor database and limit (1-30).",
+                               tool="monitor_history")
+
+
+@mcp.tool(structured_output=False)
+@_serialized
+def check_monitor() -> dict:
+    """Recheck saved exact versions via OSV and model metadata; persist history locally.
+
+    Requires AIBOM_GUARDIAN_MONITOR_DB. Does not send email or modify project dependencies.
+    """
+    from .monitoring import check_once
+    try:
+        return {"success": True, "tool": "check_monitor", **check_once(_monitor_database())}
+    except (OSError, ValueError, sqlite3.Error):
+        return _error_response("monitor_unavailable", "Check the configured monitor database.", tool="check_monitor")
 
 
 @mcp.tool()

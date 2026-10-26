@@ -253,7 +253,7 @@ Start the server, enable its tools in chat, and call `check_license` with MIT to
 Regenerate the configuration if you move the Python environment: it uses an absolute interpreter path.
 The SDK check covers initialization, tool discovery, and calls; it does not validate client UI settings or permissions.
 
-`aibom-guardian-mcp` exposes five tools over stdio.
+`aibom-guardian-mcp` exposes eight tools over stdio.
 
 | Tool | Purpose |
 |---|---|
@@ -262,6 +262,9 @@ The SDK check covers initialization, tool discovery, and calls; it does not vali
 | `check_model` | Inspect one Hugging Face model |
 | `check_repo_trust` | Check repository and provenance evidence |
 | `scan_project` | Scan a Python requirements file within a configured project root |
+| `compare_package_candidate` | Recheck two explicit PyPI versions; compatibility remains unverified |
+| `monitor_history` | Read saved monitoring runs |
+| `check_monitor` | Recheck registered versions and save changes |
 
 The server returns JSON. Report files and Ollama explanations remain CLI features.
 `check_package` checks vulnerabilities and licenses only. `scan_project` uses the
@@ -274,6 +277,12 @@ Absolute paths and files outside that root are rejected; input size is limited t
 This tool supports Python; use the CLI for npm. Online scans send package names and
 versions to public registries. It does not install packages or write report files.
 `offline=true` skips external lookups and returns unverified findings.
+
+Register an existing report with `python -m aibom_guardian.monitoring init scan_report.json --db .aibom-guardian/monitor.db`.
+Run `python -m aibom_guardian.monitoring check --db .aibom-guardian/monitor.db --interval 3600` for periodic checks (Ctrl+C to stop).
+Events are local JSON output; the database retains 30 runs. No email or chat messages are sent.
+Models default to fixed commits; `init --track-model-refs` opts into following the originally requested branches/tags.
+Set server env `AIBOM_GUARDIAN_MONITOR_DB` to the database's absolute path for the MCP history/check tools.
 
 ```json
 {
@@ -359,13 +368,15 @@ SHA-256. npm lockfile scans also record the lockfile SHA-256.
 
 ```powershell
 python -m aibom_guardian.reporting before.json after.json
+python -m aibom_guardian.ci_summary after.json --before before.json
 python -m aibom_guardian.bom_tools sbom.json
 ```
 
 Comparison covers package versions and advisory IDs, not models or license changes.
 Failed lookups and unscanned inputs cannot establish remediation. `no_longer_reported`
 means an ID was absent from the subsequent lookup, not proven safety or compatibility.
-Removed packages are listed separately. The second command validates CycloneDX 1.6
+Removed packages are listed separately. The summary command renders Markdown for CI.
+The last command validates CycloneDX 1.6
 JSON. Python/model BOM generation also validates before writing.
 
 To upload explicitly, set `DEPENDENCY_TRACK_API_KEY` in your environment and use an

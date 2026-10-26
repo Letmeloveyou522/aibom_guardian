@@ -1,0 +1,25 @@
+{
+  "description": "Synthetic rule checks only. Replace or extend with independently reviewed cases before assessing real-world validity.",
+  "cases": [
+    {
+      "id": "synthetic-no-findings",
+      "input": {"type": "library", "license_status": "ALLOWED", "issues": []},
+      "label": {"verdict": "ALLOW", "basis": "synthetic", "rationale": "Current policy permits a package with sufficient evidence and no reported findings."}
+    },
+    {
+      "id": "synthetic-high-advisory",
+      "input": {"type": "library", "license_status": "ALLOWED", "issues": [{"type": "cve", "severity": "high", "id": "synthetic-advisory"}]},
+      "label": {"verdict": "WARNING", "basis": "synthetic", "rationale": "Current policy requires review of a confirmed high-severity finding."}
+    },
+    {
+      "id": "synthetic-malicious-reference",
+      "input": {"type": "model", "license_status": "ALLOWED", "issues": [{"type": "malicious", "severity": "critical"}]},
+      "label": {"verdict": "BLOCK", "basis": "synthetic", "rationale": "Current policy hard-blocks a malicious finding. This is not a real malware detection experiment."}
+    },
+    {
+      "id": "unreviewed-license-unknown",
+      "input": {"type": "library", "license_status": "UNKNOWN", "issues": []},
+      "label": null
+    }
+  ]
+}

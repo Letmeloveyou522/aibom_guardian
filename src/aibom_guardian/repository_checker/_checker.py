@@ -128,6 +128,8 @@ class RepositoryChecker(
             )
         elif dtype == "local":
             result["target"]["type"] = "local"
+            if local_file is None:
+                local_file = detected['normalized']
 
         # Provenance / hash / signature (shared)
         revision_evidence = result.pop('_github_revision', {})

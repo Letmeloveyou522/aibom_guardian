@@ -306,14 +306,15 @@ class ProvenanceMixin:
         cmd = [cosign, "verify-blob", local_file]
         if signature_bundle:
             cmd.extend(["--bundle", signature_bundle])
+            if signature_key:
+                cmd.extend(["--key", signature_key])
+            if certificate_identity and certificate_oidc_issuer:
+                cmd.extend([
+                    "--certificate-identity", certificate_identity,
+                    "--certificate-oidc-issuer", certificate_oidc_issuer,
+                ])
         elif signature_file and signature_key:
             cmd.extend(["--key", signature_key, "--signature", signature_file])
-        elif certificate_identity and certificate_oidc_issuer and signature_bundle:
-            cmd.extend([
-                "--bundle", signature_bundle,
-                "--certificate-identity", certificate_identity,
-                "--certificate-oidc-issuer", certificate_oidc_issuer,
-            ])
         elif certificate_identity and certificate_oidc_issuer and signature_file:
             cmd.extend([
                 "--signature", signature_file,

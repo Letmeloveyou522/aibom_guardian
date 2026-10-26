@@ -221,6 +221,13 @@ class TestFileSummary(HuggingFaceTestCase):
 
 
 class TestDatasetDocumentation(HuggingFaceTestCase):
+    def test_unreadable_card_is_not_reported_as_missing_documentation(self):
+        result = self.check(_model_payload(), repo_type="dataset", readme_status=503)
+        self.assertFalse(result["dataset"]["checked"])
+        self.assertEqual(result["dataset"]["missing_fields"], [])
+        self.assertEqual(result["dataset"]["reason"], "readme_lookup_unverified")
+        self.assertEqual([i for i in result["issues"] if i["type"] == "dataset"], [])
+
     def test_a_dataset_without_a_card_is_flagged(self):
         result = self.check(_model_payload(cardData={}), repo_type="dataset",
                             readme="", readme_status=404)

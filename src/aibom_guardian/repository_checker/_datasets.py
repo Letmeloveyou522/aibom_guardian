@@ -89,6 +89,15 @@ def check_dataset_documentation(
         "processing_method_documented": processing_documented,
         "citation_documented": citation_documented,
         "missing_fields": missing,
+        "assessment_scope": "Metadata and recognized documentation sections only; absence is not proven.",
+        "field_status": {
+            key: "present" if value is True else "not_observed" if value is False else "unverified"
+            for key, value in {
+                "source": source_documented, "collection_method": collection_documented,
+                "processing_method": processing_documented, "citation": citation_documented,
+                "license": license_documented,
+            }.items()
+        },
         "evidence": {
             "source": source_evidence,
             "collection_method": collection_evidence,
@@ -130,8 +139,12 @@ def _extract_dataset_license(card_data: dict, text: str) -> str | None:
     # License section
     section = _extract_section(text, (r"license", r"licence", r"라이선스"))
     if section:
-        # Prefer an SPDX-like token
-        token = re.search(r"\b([A-Za-z0-9.+-]+(?:-[0-9.]+)?)\b", section)
+        # Do not turn the first English word (e.g. "Licensed") into a license.
+        # Metadata remains the preferred path for custom license identifiers.
+        token = re.search(
+            r"\b(MIT|Apache-2\.0|BSD-[234]-Clause|CC0-1\.0|CC-BY(?:-NC)?(?:-SA|-ND)?-[1-4]\.0|"
+            r"(?:A?GPL|LGPL)-[123]\.0(?:-only|-or-later)?|MPL-2\.0|ISC|Unlicense)\b",
+            section, re.IGNORECASE)
         if token:
             lic = token.group(1)
             if lic.lower() not in INVALID_LICENSE_VALUES and lic.lower() not in (
@@ -146,7 +159,7 @@ def _extract_section(text: str, heading_patterns: tuple[str, ...]) -> str | None
         return None
     heading_re = "|".join(heading_patterns)
     pattern = re.compile(
-        rf"^(?:\#{{1,3}}\s*|{re.escape('##')}\s*)?(?:{heading_re})\s*$",
+        rf"^(?:\#{{1,6}}\s*)?(?:{heading_re})\s*[:：]?\s*$",
         re.IGNORECASE | re.MULTILINE,
     )
     match = pattern.search(text)
@@ -160,7 +173,7 @@ def _extract_section(text: str, heading_patterns: tuple[str, ...]) -> str | None
     if not match:
         return None
     start = match.end()
-    next_heading = re.search(r"^\#{1,3}\s+\S", text[start:], re.MULTILINE)
+    next_heading = re.search(r"^(?:\#{1,6}\s+\S|\*\*[^*\n]+\*\*\s*$)", text[start:], re.MULTILINE)
     end = start + next_heading.start() if next_heading else min(len(text), start + 800)
     return text[start:end].strip()
 
@@ -172,6 +185,9 @@ def _section_documented(
 ) -> tuple[bool | None, str | None, str]:
     section = _extract_section(text, headings)
     if section:
+        if re.fullmatch(r"[\s\[\].!_-]*(?:more information needed|todo|tbd|n/?a|unknown|추가 정보 필요)[\s\[\].!_-]*",
+                        section, re.IGNORECASE):
+            return None, section[:MAX_EVIDENCE_CHARS], "low"
         snippet = section[:MAX_EVIDENCE_CHARS]
         # Require some substance beyond the heading itself
         if len(section) >= 20 and re.search("|".join(body_hints), section, re.IGNORECASE):
@@ -181,4 +197,4 @@ def _section_documented(
         return None, snippet, "low"
 
     # Do not treat a lone keyword in the body as documented
-    return False, None, "high"
+    return False, None, "low"

@@ -71,6 +71,20 @@ class TestDocumentShape:
 
 
 class TestLocations:
+    @pytest.mark.parametrize('path,expected', [
+        (r'C:\work folder\requirements.txt', 'file:///C:/work%20folder/requirements.txt'),
+        (r'folder\requirements #1.txt', 'folder/requirements%20%231.txt'),
+        ('/work folder/requirements.txt', 'file:///work%20folder/requirements.txt'),
+        (r'\\server\share\requirements.txt', 'file://server/share/requirements.txt'),
+        ('deps/requirements.txt', 'deps/requirements.txt'),
+    ])
+    def test_filesystem_paths_are_uri_references(self, path, expected):
+        from jsonschema import FormatChecker
+        [result] = results([package(issues=[CVE])], path)
+        uri = result['locations'][0]['physicalLocation']['artifactLocation']['uri']
+        assert uri == expected
+        FormatChecker().check(uri, 'uri-reference')
+
     def test_a_finding_points_at_the_line_that_caused_it(self):
         [result] = results([package(issues=[CVE], line=7)])
         region = result["locations"][0]["physicalLocation"]["region"]
