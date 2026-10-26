@@ -12,6 +12,8 @@ and name the package in the message.
 from __future__ import annotations
 
 import json
+from pathlib import PurePosixPath, PureWindowsPath
+from urllib.parse import quote
 
 from . import __version__
 
@@ -65,6 +67,18 @@ def _location(uri: str, line: int) -> dict:
     }
 
 
+def _artifact_uri(path: str) -> str:
+    """Encode filesystem paths as URI references on either host platform."""
+    text = str(path)
+    windows = PureWindowsPath(text)
+    if windows.is_absolute():
+        return windows.as_uri()
+    text = text.replace('\\', '/')
+    if text.startswith('/'):
+        return PurePosixPath(text).as_uri()
+    return quote(text, safe='/')
+
+
 def _message(package: dict, issue: dict) -> str:
     name = f"{package['package']}=={package['version']}"
     detail = issue.get("detail") or issue.get("summary") or issue.get("id") or ""
@@ -96,7 +110,7 @@ def build_sarif(scan_report: list[dict], requirements_path: str) -> dict:
                 "ruleId": rule_id,
                 "level": _level(issue),
                 "message": {"text": _message(package, issue)},
-                "locations": [_location(requirements_path, line)],
+                "locations": [_location(_artifact_uri(requirements_path), line)],
                 "partialFingerprints": {
                     "aibomGuard/v1": f"{package['package']}@{package['version']}"
                                      f"/{issue_type}/{issue.get('id') or ''}",
