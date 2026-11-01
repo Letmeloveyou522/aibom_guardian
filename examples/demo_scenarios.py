@@ -1,7 +1,7 @@
 """
 examples/demo_scenarios.py
 -----------------------------------
-One-shot demo of the three presentation scenarios:
+One-shot demo of the four presentation scenarios:
 
   1) Normal (clean) model          — safetensors / no pickle risk
   2) Malicious pickle model        — picklescan-style dangerous globals
@@ -34,7 +34,7 @@ from aibom_guardian.recommendation import (  # noqa: E402
     PyPIPackageInfo,
     RecommendationEngine,
 )
-from aibom_guardian.scanner import _model_issues  # noqa: E402
+from aibom_guardian._scanner_models import _model_issues  # noqa: E402
 from aibom_guardian.score_engine import calculate_trust_score  # noqa: E402
 
 

@@ -1,26 +1,89 @@
-# AIBOM-Guardian
+# AIBOM Guardian
 
 [![CI](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CycloneDX](https://img.shields.io/badge/CycloneDX-1.6-brightgreen)](https://cyclonedx.org/)
 
-## Scan packages and AI models in one workflow
+## Inspect package and AI model supply-chain risks together
 
-AIBOM-Guardian scans Python and npm dependencies, checks optional Hugging Face
-models, and records the results in a CycloneDX 1.6 SBOM or ML-BOM. It can run
-locally, in CI, or as an MCP server.
+AIBOM Guardian checks **Python/npm dependencies and Hugging Face models** for known
+vulnerabilities, license issues and model-file risk signals. It preserves evidence and
+unverified states, supports CLI/CI/MCP workflows, produces CycloneDX 1.6 SBOM/ML-BOM output,
+and tracks changes in a registered inventory with optional Slack notifications.
 
-Each component receives a Trust Score and an `ALLOW`, `WARNING`, or `BLOCK`
-verdict based on vulnerabilities, license terms, risk signals, and available
-provenance. A failed lookup remains unverified instead of being reported as a
-clean result.
+[Demo](#demo) · [Validation](#validation) · [Quick start](#quick-start) · [Detailed usage](docs/usage.en.md) · [Monitoring](docs/monitoring.en.md) · [한국어](README.md)
 
-[한국어 README](README.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Changelog](CHANGELOG.md)
+## Problem and contribution
+
+Adopting an AI application requires reviewing software dependencies alongside model licenses,
+weight formats, remote-code settings and provenance. Evidence from different checks needs to
+be assembled, incomplete lookups kept visible, and newly reported risks followed over time.
+
+Guardian connects **pre-adoption checks → evidence-based review → BOM records → change monitoring**.
+`ALLOW`, `WARNING` and `BLOCK` support review and CI policy; they do not certify safety.
+
+| Project implementation | Result for the developer | Code |
+|---|---|---|
+| Dependency parsing and collection | Python transitive dependencies/extras, npm lockfile versions/paths, explicit unscanned inputs | [`_requirements.py`](src/aibom_guardian/_requirements.py), [`npm_checker.py`](src/aibom_guardian/npm_checker.py) |
+| Shared policy engine | Consistent scoring rules across CLI and MCP, with evidence confidence separate from risk | [`_adapters.py`](src/aibom_guardian/_adapters.py), [`score_engine.py`](src/aibom_guardian/score_engine.py) |
+| Package and model BOM records | Model commits, formats, licenses and available base-model/dataset references alongside findings | [`model_checker.py`](src/aibom_guardian/model_checker.py), [`sbom_generator.py`](src/aibom_guardian/sbom_generator.py) |
+| Persistent monitoring | Fixed-version rechecks, change events, SQLite history and a Slack retry queue | [`monitoring.py`](src/aibom_guardian/monitoring.py), [`notifications.py`](src/aibom_guardian/notifications.py) |
+
+External sources and tools include **OSV, PyPI, npm, Hugging Face, SPDX, Blue Oak, picklescan,
+OpenSSF Scorecard and cosign**. Guardian implements the collection, normalization, policy
+decisions and workflow integration around that evidence. [Dependencies and licenses](DEPENDENCIES.md)
+
+## Demo
+
+<p align="center">
+  <img width="413" height="244" alt="Python package scan" src="https://github.com/user-attachments/assets/04687cd8-a9d0-4e9a-ab9d-227aa1933746" />
+  <img width="410" height="295" alt="AI model scan" src="https://github.com/user-attachments/assets/bb46e442-a08f-4857-99f2-758f0134d9b0" />
+</p>
+
+<p align="center">
+  <sub>Example Python package and AI model results</sub>
+</p>
+
+
+Screenshots are example runs. Live advisory counts and verdicts can change with upstream data.
+
+| Input | Inspect | Next action |
+|---|---|---|
+| [`sample-requirements.txt`](examples/sample-requirements.txt) | Deliberately old versions, transitive findings and license evidence | Recheck candidate versions and test the application |
+| Same input plus `--model sshleifer/tiny-gpt2` | Package/model results, file formats, license and resolved commit | Review unverified evidence; enable pickle content scanning when needed |
+| A registered scan report | New advisory observations, metadata changes and lookup failures/recovery | Review Slack summaries and saved history |
+
+After installation:
+
+```bash
+aibom-guardian examples/sample-requirements.txt --model sshleifer/tiny-gpt2 --no-explain
+```
+
+Output is displayed in the terminal and saved as `scan_report.json` and `sbom.json`.
+[Example JSON](examples/scan_report.sample.json) · [Example BOM](examples/sbom.sample.json)
+
+For an offline policy demonstration, run `python examples/demo_scenarios.py --compact`.
+Its default mode uses **synthetic model reports and mocked PyPI responses**, not live malware experiments.
+
+## Validation
+
+Verification snapshot: **2026-11-01, working tree based on `4fec520` with the demo import fix and regression test**.
+See the [validation record](docs/validation.md) for commands, environment and limits.
+
+| Check | Observed result | Evidence |
+|---|---|---|
+| Automated tests | 1,052 passed, including 44 monitoring/Slack tests | [Summary](docs/evidence/verification-2026-11-01.json), [tests](tests/) |
+| Live Slack integration | One synthetic change delivered through a real webhook; success response, history and no repeat delivery on the next check verified | [Integration record](docs/evidence/verification-2026-11-01.json) |
+| Windows scheduled check | Seven packages and one model rechecked successfully; no lookup failures; last task exit code 0 | [Validation scope](docs/validation.md#실제-연동-확인) |
+| CI configuration | Python 3.10–3.13 tests, static checks, packaging and an offline CLI smoke test configured | [Workflow](.github/workflows/ci.yml), [runs](https://github.com/Letmeloveyou522/aibom_guardian/actions/workflows/ci.yml) |
+
+Passing tests establish implementation behavior, **not real-world detection accuracy or external score validity**.
+Reboot recovery, long-running operation and evaluation against independently labelled data remain unverified.
 
 ## Quick start
 
-Python 3.10 or newer is required.
+Requires Python 3.10 or newer.
 
 ```bash
 git clone https://github.com/Letmeloveyou522/aibom_guardian.git
@@ -28,404 +91,113 @@ cd aibom_guardian
 python -m venv .venv
 ```
 
-Activate the environment using the command for your shell:
+Activate the environment with the command for your shell:
 
-```bash
+```powershell
 # Windows PowerShell
 .\.venv\Scripts\Activate.ps1
-
-# Windows Command Prompt (cmd)
-.venv\Scripts\activate.bat
-
-# macOS or Linux
-source .venv/bin/activate
-
 ```
 
-Install the project. Run this command again after updating the repository:
+```bash
+# macOS / Linux
+source .venv/bin/activate
+# Windows cmd: .venv\Scripts\activate.bat
+```
+
+Install the tool and scan the included example. Repeat installation after updating the checkout.
 
 ```bash
 python -m pip install .
+aibom-guardian examples/sample-requirements.txt --no-explain
 ```
 
-Replace the input paths below with files from your own project.
-You do not need to install the packages being scanned into the scanner's environment.
+You do not need to install the scanned dependencies. Demo inputs contain deliberately vulnerable
+versions; use them as scanner input, not production dependencies. Exit **2 (BLOCK) or 3 (WARNING)**
+can be an expected scan result. Exit 1 indicates invalid input or arguments.
+`--no-explain` skips only the optional Ollama explanation; findings and saved reports remain available.
+The basic scan needs neither Ollama nor GitHub/Hugging Face tokens.
 
 ```bash
+aibom-guardian --npm examples/npm-live-before.json --no-explain
 aibom-guardian ../my-project/requirements.txt --no-explain
 aibom-guardian --npm ../my-project/package.json --no-explain
-aibom-guardian ../my-project/requirements.txt --model sshleifer/tiny-gpt2 --no-explain
 ```
 
-The files under [`examples/`](examples/) contain deliberately vulnerable
-versions for demonstration. Do not install them in production.
+## Scoring and verification states
 
-## Scan coverage
+Trust Score is a **project-defined policy score**, starting at 100. Its weights are not prescribed
+or certified by an international standard. Confidence represents available evidence, not a probability of safety.
 
-### Python packages
-
-- Direct and indirect dependencies from `requirements.txt`
-- Known vulnerabilities from OSV, with duplicate aliases merged
-- License classification and obligations using SPDX and Blue Oak data
-- Nonexistent names, typosquatting signals, yanked releases, and release age
-- Optional repository, signature, and OpenSSF checks
-
-Ranges such as `>=` and `~=` are resolved against PyPI. Environment markers are
-evaluated and dependencies requested by extras are expanded. JSON records
-requested options in `extras`. Includes, URLs, VCS requirements, and unresolved lines are
-reported under `unscanned`. Transitive conflicts, metadata lookup failures and
-depth limits are also reported there. This is not pip's full dependency solver
-and does not guarantee an installable set.
-
-### npm packages
-
-A sibling `package-lock.json` v2/v3 supplies pinned versions and installation
-paths. JSON records `dependency_source`, `resolution_source`, `installation_path`
-and `required_by_paths`. This does not inspect installed files or verify integrity.
-Mismatched root dependency declarations, v1 locks and npm-shrinkwrap cause an error.
-Local links, aliases and private registry entries are reported as `unscanned`.
-
-Without a lockfile, supported direct ranges such as `^` and `~` select the highest
-matching registry version. JSON preserves the original range and `resolution_source`.
-Unresolved ranges are recorded as `unscanned`, rather than scanning their lower bounds.
-
-Without a lockfile, the npm path reads `dependencies` and `devDependencies` from `package.json`,
-resolves indirect dependencies through the npm registry, and checks licenses
-and known vulnerabilities.
-
-### AI models
-
-- Hugging Face metadata, revision, license, and gated status
-- Pickle and safetensors weight formats
-- Dangerous pickle patterns when file scanning is enabled
-- Remote-code settings such as `trust_remote_code` and `auto_map`
-- Model Card completeness and static PII signals
-- Base-model and training-dataset references when available
-
-Model files are pinned to a commit revision during inspection. Pickle content
-scanning is off by default to avoid downloading large files. Enable it with
-`--model-pickle-scan MB`.
-
-## Example output
-
-```text
-[INFO] 3 direct + 4 transitive = 7 packages to scan.
-
-+----------+---------+----------------+-------+-------------+---------+
-| Package  | Version | License Status | Vulns | Trust Score | Verdict |
-+----------+---------+----------------+-------+-------------+---------+
-| requests |  2.28.0 |    ALLOWED     |   4   |      75     | WARNING |
-| numpy    |  1.24.0 |    ALLOWED     |   0   |     100     | ALLOW   |
-| pyyaml   |  5.3.1  |    ALLOWED     |   1   |      49     | BLOCK   |
-+----------+---------+----------------+-------+-------------+---------+
-
-- pyyaml==5.3.1 (BLOCK, score 49)
-    [HARD BLOCK] Critical severity cve finding: GHSA-8q59-q68h-6hv4
-    -> suggested: PyYAML==6.0.3 (confirmed) - Upgrade to latest safe release
-```
-
-Indirect dependencies remain marked as indirect in the JSON report and SBOM.
-Detailed findings include severity, evidence, and a recommended action when
-one can be confirmed.
-
-## Trust Score
-
-The score starts at 100 and applies deductions across six categories.
-
-| Category | Weight |
+| Category | Maximum category deduction |
 |---|---:|
 | Malicious code | 28 |
 | Vulnerabilities | 25 |
 | License | 15 |
 | Typosquatting | 12 |
-| Hallucinated package or model | 10 |
+| Nonexistent package or model | 10 |
 | Provenance | 10 |
 
-- `BLOCK`: a hard-block condition or a score below 50
-- `ALLOW`: a score of at least 80, confidence of at least 0.7, and no high-severity finding
-- `WARNING`: all other cases, including incomplete verification
+Decision priority:
 
-A blocked license, confirmed malicious code, or critical finding causes a hard
-block regardless of score. The CLI and MCP interfaces use the same scoring
-engine.
+1. A hard-block policy condition produces `BLOCK`.
+2. Without a hard block, confidence below 0.5 produces `WARNING`.
+3. Otherwise, a score below 50 produces `BLOCK`.
+4. A score of at least 80, confidence of at least 0.7, and no confirmed High or suspicious finding produces `ALLOW`.
+5. All other cases produce `WARNING`.
 
-### Verification states
+A completed vulnerability lookup with no findings is `vulnerabilities: []`; an unverified lookup is `null`.
+License and Model Card checks also preserve unverified states. CLI and MCP use the same scoring engine,
+but different collection scopes can produce different results.
+[Methodology, policy and evaluation](docs/trust_score_methodology.md)
 
-| Field | Check completed, no finding | Unverified |
+## Usage and documentation
+
+| Goal | Capability | Guide |
 |---|---|---|
-| `vulnerabilities` | `[]` | `null` |
-| `license_unverified` | `false` | `true` |
-| `pii_scan_unverified` | `false` | `true` |
+| Pre-adoption review | Python/npm/model checks and JSON/BOM output | [Coverage and CLI](docs/usage.en.md) |
+| CI policy | Exit codes, SARIF and report summaries | [Output and integration](docs/usage.en.md#output-files-and-exit-codes) |
+| AI clients | Eight MCP tools for checks, project scanning, version comparison and monitoring | [MCP setup](docs/usage.en.md#mcp-server) |
+| Ongoing monitoring | Fixed-version rechecks, Slack and Windows scheduling | [Monitoring guide](docs/monitoring.en.md) |
 
-Unverified evidence lowers confidence and normally produces `WARNING`. A
-network or metadata failure cannot appear as a successful check.
+After generating a report:
 
-## Main options
-
-| Option | Description |
-|---|---|
-| `--npm PATH` | Scan an npm `package.json` file |
-| `--model REF` | Add a Hugging Face model; repeatable |
-| `--direct-only` | Skip indirect dependency resolution |
-| `--min-release-age DAYS` | Warn about newer releases; off by default |
-| `--supply-chain` | Enable repository and provenance checks |
-| `--model-pickle-scan MB` | Inspect pickle files up to the given size |
-| `--sarif PATH` | Write a SARIF 2.1.0 report |
-| `--json PATH` | Set the JSON path; default `scan_report.json` |
-| `--sbom PATH` | Set the SBOM path; default `sbom.json` |
-| `-j`, `--jobs N` | Concurrent package workers; default 8 |
-| `--offline` | Disable network access |
-| `--no-explain` | Skip the optional Ollama explanation |
-| `--verbose` | Print all vulnerability details |
-| `--fail-on POLICY` | Choose `warning`, `block`, or `never` |
-| `--version` | Print the installed version |
-
-Packages are processed concurrently. Checks within one package run in sequence
-so later analysis can use earlier results. Report order follows input order.
-
-## Output files and exit codes
-
-The standalone `python -m aibom_guardian.repository_checker` also accepts
-`--fail-on warning|block|never`. With the default `warning` policy, WARNING or
-reported collection errors return 3, and BLOCK returns 2. Use `--fail-on never`
-for the previous report-only behavior that returned 0 regardless of findings.
-
-| File | Contents |
-|---|---|
-| `scan_report.json` | Results, findings, confidence, and score breakdown |
-| `sbom.json` | CycloneDX 1.6 SBOM or ML-BOM |
-| Optional `.sarif` file | SARIF 2.1.0 findings for code scanning |
-
-Reference outputs are available at
-[`examples/scan_report.sample.json`](examples/scan_report.sample.json) and
-[`examples/sbom.sample.json`](examples/sbom.sample.json).
-
-| Code | Meaning |
-|---:|---|
-| `0` | All results are `ALLOW` and nothing is unscanned |
-| `1` | Invalid input or arguments |
-| `2` | At least one result is `BLOCK` |
-| `3` | Warning or unscanned input, with no block |
-
-Use `--fail-on block` to gate only on blocked results or `--fail-on never` to
-record findings without failing the build.
-
-## GitHub Actions
-
-```yaml
-- uses: Letmeloveyou522/aibom_guardian@v1
-  with:
-    requirements: requirements.txt
-    min-release-age: 1
-
-- uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: aibom-guardian.sarif
+```bash
+python -m aibom_guardian.monitoring init scan_report.json --db .aibom-guardian/monitor.db
+python -m aibom_guardian.monitoring check --db .aibom-guardian/monitor.db --interval 3600
 ```
 
-See [`action.yml`](action.yml) for the supported inputs.
-
-## Optional integrations
-
-| Item | Purpose |
-|---|---|
-| `GITHUB_TOKEN` | Higher GitHub API limits for supply-chain checks |
-| `HF_TOKEN` | Access to gated models after license acceptance |
-| Ollama | Local explanations using `qwen2.5:0.5b` |
-| `cosign` | Signature verification |
-
-The base package scan does not require these integrations.
-
-## MCP server
-
-Generate Claude Desktop, Cursor, and VS Code configuration fragments with the installed environment's Python:
-`python examples/mcp_setup.py --output mcp-client-configs --check`.
-This probes each configured command with the MCP SDK; it does not modify client settings.
-Use a new output directory. Merge the generated `aibom-guardian` entry into the existing configuration:
-
-| Client | Generated file | Configuration destination |
-|---|---|---|
-| Claude Desktop | claude-desktop.json | Windows: `%APPDATA%\Claude\claude_desktop_config.json`, under `mcpServers` |
-| Cursor | cursor.json | Project `.cursor/mcp.json`, under `mcpServers` |
-| VS Code | vscode.json | Project `.vscode/mcp.json`, under `servers` |
-
-Start the server, enable its tools in chat, and call `check_license` with MIT to check the connection.
-Regenerate the configuration if you move the Python environment: it uses an absolute interpreter path.
-The SDK check covers initialization, tool discovery, and calls; it does not validate client UI settings or permissions.
-
-`aibom-guardian-mcp` exposes eight tools over stdio.
-
-| Tool | Purpose |
-|---|---|
-| `check_package` | Check one PyPI package |
-| `check_license` | Classify a license and return its obligations |
-| `check_model` | Inspect one Hugging Face model |
-| `check_repo_trust` | Check repository and provenance evidence |
-| `scan_project` | Scan a Python requirements file within a configured project root |
-| `compare_package_candidate` | Recheck two explicit PyPI versions; compatibility remains unverified |
-| `monitor_history` | Read saved monitoring runs |
-| `check_monitor` | Recheck registered versions and save changes |
-
-The server returns JSON. Report files and Ollama explanations remain CLI features.
-`check_package` checks vulnerabilities and licenses only. `scan_project` uses the
-CLI collector, including recommendations and optional transitive dependencies.
-Scores from different check scopes need not match.
-
-Set `AIBOM_GUARDIAN_PROJECT_ROOT` in the MCP server's `env` to your project directory,
-restart the server, then request `scan_project(requirements_path="requirements.txt", direct_only=false)`.
-Absolute paths and files outside that root are rejected; input size is limited to 1 MiB.
-This tool supports Python; use the CLI for npm. Online scans send package names and
-versions to public registries. It does not install packages or write report files.
-`offline=true` skips external lookups and returns unverified findings.
-
-Register an existing report with `python -m aibom_guardian.monitoring init scan_report.json --db .aibom-guardian/monitor.db`.
-Run `python -m aibom_guardian.monitoring check --db .aibom-guardian/monitor.db --interval 3600` for periodic checks (Ctrl+C to stop).
-Events are local JSON output; the database retains 30 runs. Slack delivery is opt-in; email is not supported.
-Models default to fixed commits; `init --track-model-refs` opts into following the originally requested branches/tags.
-Set server env `AIBOM_GUARDIAN_MONITOR_DB` to the database's absolute path for the MCP history/check tools.
-
-To enable Slack, create an app, enable **Incoming Webhooks**, and use **Add New Webhook to Workspace**
-to choose a channel ([Slack setup guide](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)).
-Set `AIBOM_GUARDIAN_SLACK_WEBHOOK_URL` to the issued HTTPS URL before running `monitoring check`.
-For MCP, add the same variable to the server environment and restart it. Keep the URL secret and out of version control.
-Only new change events are queued while configured; earlier history is not sent retroactively.
-Summaries include component names, versions and advisory IDs, but exclude local paths and full reports.
-
-Each check attempts the oldest queued notification once. Failures remain in SQLite for subsequent checks,
-independently of the 30-run history limit. Retries retain the notification ID; a lost response after delivery
-can still cause duplicates. Removing the variable pauses delivery; setting it again sends pending alerts
-to the currently configured URL. JSON `notification` records delivery status and pending count;
-a one-shot check exits with code `3` while notifications remain pending.
-
-Windows scheduled monitoring is available through `scripts/monitor-windows.ps1`.
-Create `.aibom-guardian`, then securely prompt for the webhook and save its user-bound DPAPI ciphertext:
-
-```powershell
-New-Item -ItemType Directory -Force .aibom-guardian | Out-Null
-$secureWebhook = Read-Host "Slack Webhook URL" -AsSecureString
-$secureWebhook | ConvertFrom-SecureString | Set-Content .aibom-guardian/slack-webhook.dpapi
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/monitor-windows.ps1 -Action Install
-```
-
-Installation initializes `monitor.db` from the current `scan_report.json` only if no baseline exists.
-It checks immediately, hourly, and at logon while the current Windows user is logged in.
-Checks cannot run while the PC is off or asleep; missed checks resume when execution is possible.
-The registered inventory stays fixed even if the report or installed packages change.
-Use `-IntervalHours 2` during installation to change the interval, and `-Action Status`, `Disable`, or `Enable`
-to manage the task. The task command contains no webhook secret. Latest results are saved in
-`.aibom-guardian/last-run.json`; lookup or notification failures trigger up to three retries five minutes apart.
-
-```json
-{
-  "mcpServers": {
-    "aibom-guardian": {
-      "command": "aibom-guardian-mcp",
-      "env": { "GITHUB_TOKEN": "...", "HF_TOKEN": "..." }
-    }
-  }
-}
-```
-
-Do not commit real tokens.
+Events are local JSON by default; Slack delivery requires webhook configuration.
+Registered versions stay fixed and do not automatically follow the installed environment.
 
 ## Architecture
 
 ```text
-requirements.txt / package.json / model reference
-                         |
-                         v
-                  parse and resolve
-                         |
-                         v
- collect license, vulnerability, risk, and provenance evidence
-                         |
-                         v
-             shared result adapter
-                         |
-                         v
-                  score_engine
-                         |
-                         v
- terminal / JSON / CycloneDX / SARIF / exit code
+requirements / package.json (+ lockfile) / model reference
+    -> parse and collect evidence
+    -> shared adapter -> policy score, confidence and verdict
+    -> terminal / JSON / CycloneDX / SARIF / CI exit code
+
+saved report -> fixed inventory -> periodic recheck -> SQLite history / Slack
 ```
-
-Collectors gather evidence without assigning final verdicts. The CLI and MCP
-server normalize findings through `_adapters.py` and pass them to
-`score_engine.py`, keeping verdicts consistent across interfaces.
-
-| Module | Responsibility |
-|---|---|
-| `scanner.py` | CLI orchestration |
-| `_requirements.py` | Python requirement parsing and expansion |
-| `npm_checker.py` | npm project scanning |
-| `osv_client.py` | OSV and CVSS processing |
-| `license_checker.py` | License classification and obligations |
-| `model_checker.py` | Hugging Face model inspection |
-| `repository_checker/` | Repository and provenance checks |
-| `_adapters.py` | Shared scoring input |
-| `score_engine.py` | Trust Score and verdict |
-| `sbom_generator.py` | CycloneDX SBOM and ML-BOM |
-| `mcp_server.py` | MCP tools |
 
 ## Known limitations
 
-- MCP `check_package` supports PyPI only; use `--npm` for npm projects.
-- Model Card PII checks inspect static text and do not provide runtime masking.
-- Version ranges use current registry data and may differ from an earlier install.
-- Pickle scanning is off by default and detects known dangerous patterns only.
-- Gated models require an accepted license and a valid `HF_TOKEN`.
-- Signature verification requires a local `cosign` binary.
-- Network failures produce unverified findings, not verified clean results.
+- Checks cover known vulnerabilities and available evidence, not model behavior, backdoors or all malicious code.
+- Pickle content scanning is opt-in and limited to known dangerous patterns.
+- Model Card PII inspection is static text analysis, not runtime masking.
+- Registry-resolved versions do not prove installation success or application compatibility.
+- MCP `check_package` supports PyPI; use the CLI for npm. Collection scope affects results.
+- Gated models need accepted terms and `HF_TOKEN`; signature verification requires local `cosign`.
+- Windows scheduled checks require an awake PC and the configured user to be logged in. Lost Slack responses can cause duplicate delivery on retry.
 
-## Development and contribution
+## Development and license
 
 ```bash
-pytest
-pyflakes src/aibom_guardian tests examples
+python -m pip install -e ".[dev]"
+python -m pytest
+python -m pyflakes src/aibom_guardian tests examples
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the contribution process and
-[`SECURITY.md`](SECURITY.md) for vulnerability reports. Runtime dependencies
-and licenses are listed in [`DEPENDENCIES.md`](DEPENDENCIES.md).
+[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md) · [Dependencies](DEPENDENCIES.md)
 
-## License
-
-Released under the Apache License 2.0. See [`LICENSE`](LICENSE).
-
-## Compare reports and deliver a BOM
-
-Python and npm reports include scan time, tool/policy versions, options and input
-SHA-256. npm lockfile scans also record the lockfile SHA-256.
-
-```powershell
-python -m aibom_guardian.reporting before.json after.json
-python -m aibom_guardian.ci_summary after.json --before before.json
-python -m aibom_guardian.bom_tools sbom.json
-```
-
-Comparison covers package versions and advisory IDs, not models or license changes.
-Failed lookups and unscanned inputs cannot establish remediation. `no_longer_reported`
-means an ID was absent from the subsequent lookup, not proven safety or compatibility.
-Removed packages are listed separately. The summary command renders Markdown for CI.
-The last command validates CycloneDX 1.6
-JSON. Python/model BOM generation also validates before writing.
-
-To upload explicitly, set `DEPENDENCY_TRACK_API_KEY` in your environment and use an
-existing Dependency-Track project UUID:
-
-```powershell
-python -m aibom_guardian.bom_tools sbom.json --server https://dtrack.example.com --project <project-UUID>
-```
-
-This sends the BOM and replaces the project's component inventory. Choose a project
-matching the full scan scope. HTTPS is required except for localhost.
-`status=accepted` and `analysis_verified=false` mean upload acceptance only. Check
-analysis and alerts in Dependency-Track; Guardian scores and custom model fields
-are not guaranteed to affect its risk assessment.
-[Dependency-Track integration documentation](https://docs.dependencytrack.org/usage/cicd/)
-
-Package alternatives are unverified candidates (`candidate_verified=false`,
-`compatibility_verified=false`). Rescan and test your application before adopting
-one. Model `trust_score` is higher when fewer deductions apply; `risk_score` remains
-an equal-valued compatibility alias. Suspicious pickle references require review
-and are not automatically treated as confirmed malicious references.
+Released under [Apache License 2.0](LICENSE).
