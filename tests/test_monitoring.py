@@ -6,6 +6,16 @@ import pytest
 from aibom_guardian.monitoring import initialize, check_once, history
 
 
+@pytest.fixture(autouse=True)
+def no_real_notifications(monkeypatch):
+    monkeypatch.delenv("AIBOM_GUARDIAN_SLACK_WEBHOOK_URL", raising=False)
+
+    def unexpected_request(*args, **kwargs):
+        pytest.fail("Tests must mock Slack delivery")
+
+    monkeypatch.setattr("aibom_guardian.notifications.requests.post", unexpected_request)
+
+
 def report(ids=(), unverified=False):
     return {"metadata": {"scope": {"basis": "registry_candidates"}}, "packages": [
         {"package": "Demo_Pkg", "version": "1.0", "ecosystem": "PyPI", "direct": True,
@@ -150,3 +160,81 @@ def test_malformed_exact_versions_rejected(tmp_path, ecosystem, version):
     data['packages'][0].update(ecosystem=ecosystem, version=version)
     with pytest.raises(ValueError):
         initialize(tmp_path / 'db', data)
+
+
+def test_slack_delivery_retries_persisted_events_without_duplicate_changes(tmp_path, monkeypatch):
+    from aibom_guardian import monitoring
+
+    db = tmp_path / "monitor.db"
+    initialize(db, report())
+    monkeypatch.setenv("AIBOM_GUARDIAN_SLACK_WEBHOOK_URL",
+                       "https://hooks.slack.com/services/test/channel/secret")
+    deliveries = []
+
+    def send(url, payload):
+        deliveries.append(payload)
+        return {"status": "failed", "error": "request_failed"}
+
+    monkeypatch.setattr(monitoring, "send_slack", send)
+    query = lambda *a, **kw: [{"id": "CVE-new"}]
+    first = check_once(db, package_query=query)
+    assert first["complete"] and not first["external_notifications_sent"]
+    assert first["notification"]["pending_count"] == 1
+    assert first["notification"]["status"] == "failed"
+
+    def recover(url, payload):
+        deliveries.append(payload)
+        return {"status": "sent"}
+
+    monkeypatch.setattr(monitoring, "send_slack", recover)
+    second = check_once(db, package_query=query)
+    assert not second["events"] and second["external_notifications_sent"]
+    assert second["notification"]["pending_count"] == 0
+    assert deliveries[0] == deliveries[1]
+    third = check_once(db, package_query=query)
+    assert third["notification"]["status"] == "no_events"
+    assert not third["external_notifications_sent"]
+    assert len(deliveries) == 2
+    saved = history(db)["runs"]
+    assert saved[1]["notification"] == second["notification"]
+    assert "secret" not in json.dumps(saved)
+
+
+def test_pending_slack_survives_history_retention_and_disabled_config(tmp_path, monkeypatch):
+    db = tmp_path / "monitor.db"
+    initialize(db, report())
+    monkeypatch.setenv("AIBOM_GUARDIAN_SLACK_WEBHOOK_URL",
+                       "https://hooks.slack.com/services/test/channel/secret")
+    monkeypatch.setattr("aibom_guardian.monitoring.send_slack",
+                        lambda *a: {"status": "failed", "error": "request_failed"})
+    query = lambda *a, **kw: [{"id": "CVE-new"}]
+    check_once(db, package_query=query)
+    monkeypatch.delenv("AIBOM_GUARDIAN_SLACK_WEBHOOK_URL")
+    for _ in range(31):
+        result = check_once(db, package_query=query)
+    assert result["notification"] == {"status": "disabled", "sent_count": 0, "pending_count": 1}
+    monkeypatch.setenv("AIBOM_GUARDIAN_SLACK_WEBHOOK_URL",
+                       "https://hooks.slack.com/services/test/channel/secret")
+    monkeypatch.setattr("aibom_guardian.monitoring.send_slack", lambda *a: {"status": "sent"})
+    assert check_once(db, package_query=query)["external_notifications_sent"]
+
+
+def test_invalid_slack_config_does_not_advance_baseline(tmp_path, monkeypatch):
+    db = tmp_path / "monitor.db"
+    initialize(db, report())
+    monkeypatch.setenv("AIBOM_GUARDIAN_SLACK_WEBHOOK_URL", "invalid-secret")
+    with pytest.raises(ValueError, match="Invalid AIBOM_GUARDIAN_SLACK_WEBHOOK_URL"):
+        check_once(db, package_query=lambda *a, **kw: [{"id": "CVE-new"}])
+    assert history(db)["runs"] == []
+    monkeypatch.delenv("AIBOM_GUARDIAN_SLACK_WEBHOOK_URL")
+    assert check_once(db, package_query=lambda *a, **kw: [{"id": "CVE-new"}])["events"]
+
+
+def test_cli_pending_notification_exits_with_warning(monkeypatch, capsys):
+    from aibom_guardian import monitoring
+
+    monkeypatch.setattr("sys.argv", ["monitor", "check", "--db", "unused"])
+    monkeypatch.setattr(monitoring, "check_once", lambda *a: {
+        "complete": True, "events": [], "notification": {"pending_count": 1}})
+    assert monitoring.main() == 3
+    assert json.loads(capsys.readouterr().out)["notification"]["pending_count"] == 1

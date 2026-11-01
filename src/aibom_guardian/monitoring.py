@@ -1,4 +1,4 @@
-"""Monitor a fixed scan inventory. SQLite history and local JSON alerts; no daemon setup."""
+"""Monitor fixed versions with SQLite history and optional Slack notifications."""
 import argparse
 from contextlib import closing
 from datetime import datetime, timezone
@@ -8,8 +8,11 @@ from pathlib import Path
 import re
 import sqlite3
 import time
+import uuid
 
 from packaging.version import Version, InvalidVersion
+
+from .notifications import slack_webhook_url, slack_payload, send_slack
 
 
 SCHEMA = 1
@@ -135,6 +138,7 @@ def _connect(database):
 
 def check_once(database, *, package_query=None, model_query=None):
     """Query pinned identities, retain last good evidence on failure, emit changes once."""
+    webhook_url = slack_webhook_url()
     if package_query is None:
         from .osv_client import query_vulnerabilities
         package_query = query_vulnerabilities
@@ -145,6 +149,9 @@ def check_once(database, *, package_query=None, model_query=None):
     try:
         with db:
             db.execute("BEGIN IMMEDIATE")
+            # Additive migration keeps existing schema-1 baselines usable.
+            db.execute("""CREATE TABLE IF NOT EXISTS notification_outbox
+                       (id TEXT PRIMARY KEY, payload TEXT NOT NULL)""")
             events, failures = [], []
             targets = db.execute("SELECT key,target,evidence,unavailable FROM components ORDER BY key").fetchall()
             for key, encoded, old_encoded, unavailable in targets:
@@ -199,9 +206,33 @@ def check_once(database, *, package_query=None, model_query=None):
                       "baseline_unscanned": metadata["baseline_unscanned"],
                       "complete": not failures and not metadata["baseline_unscanned"],
                       "scope": metadata["scope"], "external_notifications_sent": False}
-            db.execute("INSERT INTO runs(at,result) VALUES (?,?)", (result["checked_at"], _json(result)))
+            if webhook_url and events:
+                notification_id = uuid.uuid4().hex
+                db.execute("INSERT INTO notification_outbox VALUES (?,?)",
+                           (notification_id, _json(slack_payload(result, notification_id))))
+            run_id = db.execute("INSERT INTO runs(at,result) VALUES (?,?)",
+                                (result["checked_at"], _json(result))).lastrowid
             db.execute("DELETE FROM runs WHERE id NOT IN (SELECT id FROM runs ORDER BY id DESC LIMIT 30)")
-            return result
+        # Persist events before delivery. A failed request must not lose an alert
+        # when the next lookup no longer produces the same change event.
+        with db:
+            db.execute("BEGIN IMMEDIATE")
+            delivery = {"status": "disabled" if not webhook_url else "no_events",
+                        "sent_count": 0}
+            if webhook_url:
+                # One request per check bounds latency and avoids Slack bursts.
+                pending = db.execute("SELECT id,payload FROM notification_outbox ORDER BY rowid LIMIT 1").fetchone()
+                if pending:
+                    delivery.update(send_slack(webhook_url, json.loads(pending[1])))
+                    delivery["notification_id"] = pending[0]
+                    if delivery["status"] == "sent":
+                        db.execute("DELETE FROM notification_outbox WHERE id=?", (pending[0],))
+                        delivery["sent_count"] = 1
+            delivery["pending_count"] = db.execute("SELECT COUNT(*) FROM notification_outbox").fetchone()[0]
+            result["notification"] = delivery
+            result["external_notifications_sent"] = delivery["sent_count"] > 0
+            db.execute("UPDATE runs SET result=? WHERE id=?", (_json(result), run_id))
+        return result
     finally:
         db.close()
 
@@ -244,7 +275,8 @@ def main():
                 result = check_once(args.db)
                 print(_json(result), flush=True)
                 if not args.interval:
-                    return 3 if not result["complete"] or result["events"] else 0
+                    return 3 if (not result["complete"] or result["events"]
+                                 or result["notification"]["pending_count"]) else 0
                 time.sleep(args.interval)
     except (OSError, ValueError, sqlite3.Error) as exc:
         parser.exit(1, f"Monitor failed: {type(exc).__name__}\n")
