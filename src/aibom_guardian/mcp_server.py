@@ -479,7 +479,9 @@ def monitor_history(limit: int = 5) -> dict:
 def check_monitor() -> dict:
     """Recheck saved exact versions via OSV and model metadata; persist history locally.
 
-    Requires AIBOM_GUARDIAN_MONITOR_DB. Does not send email or modify project dependencies.
+    Requires AIBOM_GUARDIAN_MONITOR_DB. Sends event summaries to Slack when the
+    server sets AIBOM_GUARDIAN_SLACK_WEBHOOK_URL; retries queued notifications.
+    Does not send email or modify project dependencies.
     """
     from .monitoring import check_once
     try:

@@ -1,0 +1,119 @@
+{
+  "record_date": "2026-11-01",
+  "record_kind": "development_environment_verification_summary",
+  "base_commit": "4fec5204edddaf4e1e654615c6b1ea2b5f0f0cd7",
+  "working_tree_code_changes": [
+    "examples/demo_scenarios.py",
+    "tests/test_demo_scenarios.py"
+  ],
+  "file_sha256": {
+    "examples/demo_scenarios.py": "0a3c101c16a001f06db11a55612b6b69bf5f0c91f995ac6b9e16a27793b2da95",
+    "tests/test_demo_scenarios.py": "0837955e45f5539b43535c13e4039071f953b58cf768eab7986073852546cc6a",
+    "src/aibom_guardian/monitoring.py": "2f7210e897f854d7d34a982ceee9981502338c3113b601e6a2ffd0cf23bce94a",
+    "src/aibom_guardian/notifications.py": "01f620d8e89b06895128ded2db74b2ff1ad2099ac8a98047e7a9482cc9f46dd6",
+    "scripts/monitor-windows.ps1": "b0a5e36b1853931fd3177516997990c04e081516108b7d91bf09d6e52effddbb"
+  },
+  "environment": {
+    "os": "Windows",
+    "python": "3.13.2"
+  },
+  "automated_tests": {
+    "command": "python -m pytest -o addopts= -q -p no:cacheprovider --basetemp artifacts/readme-final-verification-tests --junitxml artifacts/readme-final-verification.xml",
+    "timestamp": "2026-11-01T11:49:10.855657+09:00",
+    "tests_passed": 1052,
+    "subtests_passed": 14,
+    "junit_cases_including_subtests": 1066,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "monitoring_and_slack_tests": 44,
+    "seconds": 19.18,
+    "junit_sha256": "c3b5f5a6fc34afc223e0c20c809d732a1f79dc6e7b54e6c2385acbd9f0cc883c",
+    "network_mode": "external_services_mocked_by_tests"
+  },
+  "static_analysis": {
+    "command": "python -m pyflakes src/aibom_guardian tests examples",
+    "exit_code": 0
+  },
+  "offline_demo": {
+    "command": "python examples/demo_scenarios.py --compact",
+    "exit_code": 0,
+    "mode": "offline",
+    "scenarios": [
+      {
+        "scenario": "1_normal_model",
+        "verdict": "ALLOW",
+        "trust_score": 100,
+        "issue_types": []
+      },
+      {
+        "scenario": "2_malicious_pickle_model",
+        "verdict": "BLOCK",
+        "trust_score": 49,
+        "issue_types": [
+          "malicious",
+          "pickle_only"
+        ]
+      },
+      {
+        "scenario": "3_typosquat_package",
+        "verdict": "ALLOW",
+        "trust_score": 100,
+        "issue_types": [
+          "typosquatting"
+        ]
+      },
+      {
+        "scenario": "4_hallucinated_package",
+        "verdict": "WARNING",
+        "trust_score": 93,
+        "issue_types": [
+          "hallucination"
+        ]
+      }
+    ],
+    "scope": "Synthetic model reports and mocked package evidence; not malware-detection accuracy."
+  },
+  "live_slack": {
+    "observed_date": "2026-11-01",
+    "synthetic_inventory": true,
+    "status": "sent",
+    "sent_count": 1,
+    "pending_count": 0,
+    "history_matches": true,
+    "duplicate_suppressed": true,
+    "success_condition": "send_slack returns sent only after HTTP 200 and body ok.",
+    "scope": "Real webhook transport of one synthetic event; channel UI and long-term delivery not evaluated."
+  },
+  "scheduled_monitor": {
+    "checked_at": "2026-11-01T02:34:11.782526+00:00",
+    "packages": 7,
+    "models": 1,
+    "component_count": 8,
+    "complete": true,
+    "events": 0,
+    "lookup_failures": 0,
+    "notification": {
+      "pending_count": 0,
+      "sent_count": 0,
+      "status": "no_events"
+    },
+    "scheduler_query_observation": {
+      "observed_date": "2026-11-01",
+      "state": "Ready",
+      "enabled": true,
+      "last_task_result": 0,
+      "interval": "PT1H",
+      "logon_trigger": true,
+      "logon_type": "Interactive",
+      "note": "Recorded during setup; a historical observation, not a live status endpoint."
+    }
+  },
+  "not_established": [
+    "Real-world detection accuracy",
+    "Independent Trust Score validity",
+    "Reboot recovery",
+    "Long-running availability",
+    "Exactly-once delivery"
+  ]
+}
